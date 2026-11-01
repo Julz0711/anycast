@@ -3,7 +3,7 @@
  * Every change applies immediately (optimistic) and syncs to the profile's other devices.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ACCENTS, DEFAULT_PREFERENCES, type AccentId, type HideRules, type MediaKind, type Preferences, type Profile, type TabId } from '@anycast/shared';
+import { ACCENTS, ALL_TABS, DEFAULT_PREFERENCES, normalizeTabOrder, type AccentId, type HideRules, type MediaKind, type Preferences, type Profile, type TabId } from '@anycast/shared';
 import { useApp } from '../store/app';
 import { logout, patchPrefs, saveHideRules, selectProfile, setDeviceOverride, setPref, toast } from '../store/actions';
 import { ApiError, cachedGet, call, errorMessage } from '../api/client';
@@ -294,7 +294,7 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
 function StartTabs({ prefs, all }: { prefs: P; all?: boolean }) {
   const s = prefs.start;
   const vis = visibleTabs(s.tabOrder, s.hiddenTabs);
-  const order: TabId[] = [...s.tabOrder, ...(['live', 'movies', 'series', 'search'] as TabId[]).filter((t) => !s.tabOrder.includes(t))];
+  const order: TabId[] = normalizeTabOrder(s.tabOrder);
   const [drag, setDrag] = useState<TabId | null>(null);
   const move = (id: TabId, to: number) => {
     const next = order.filter((t) => t !== id);
@@ -303,7 +303,7 @@ function StartTabs({ prefs, all }: { prefs: P; all?: boolean }) {
   };
   const setHidden = (id: TabId, hide: boolean) => {
     const hidden = hide ? [...s.hiddenTabs, id] : s.hiddenTabs.filter((t) => t !== id);
-    if (visibleTabs(order, hidden).length === 0 || hidden.length >= 4) return toast('Keep at least one tab visible.');
+    if (visibleTabs(order, hidden).length === 0 || hidden.length >= ALL_TABS.length) return toast('Keep at least one tab visible.');
     const patch: Partial<P['start']> = { hiddenTabs: hidden };
     if (hide && s.startTab === id) patch.startTab = visibleTabs(order, hidden)[0]!;
     setPref('start', patch);

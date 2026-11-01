@@ -207,6 +207,16 @@ describe('user data', () => {
     expect((await json<{ setupDone: boolean }>({ url: '/api/preferences' })).setupDone).toBe(true);
   });
 
+  test('a tab order saved before Favorites existed gets Favorites after Live TV', async () => {
+    const p = await json<{ start: { tabOrder: string[]; hiddenTabs: string[] } }>({
+      method: 'PUT',
+      url: '/api/preferences',
+      payload: { start: { tabOrder: ['series', 'live', 'movies', 'search'], hiddenTabs: ['search', 'bogus'] } },
+    });
+    expect(p.start.tabOrder).toEqual(['series', 'live', 'favorites', 'movies', 'search']);
+    expect(p.start.hiddenTabs).toEqual(['search']);
+  });
+
   test('SSE delivers profile events only to that profile, with catalog updates to all', async () => {
     const base = await built.app.listen({ port: 0, host: '127.0.0.1' });
     const other = await json<Profile>({ method: 'POST', url: '/api/profiles', payload: { name: 'Other' } });

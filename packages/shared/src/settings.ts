@@ -14,7 +14,21 @@ export const ACCENTS = {
 } as const;
 export type AccentId = keyof typeof ACCENTS;
 
-export type TabId = 'live' | 'movies' | 'series' | 'search';
+export type TabId = 'live' | 'favorites' | 'movies' | 'series' | 'search';
+/** Every main tab, in the default order. */
+export const ALL_TABS: readonly TabId[] = ['live', 'favorites', 'movies', 'series', 'search'];
+
+/**
+ * A saved tab order made valid: unknown and repeated ids dropped, missing tabs added in default order.
+ * Orders saved before Favorites existed get it right after Live TV.
+ */
+export function normalizeTabOrder(order: unknown): TabId[] {
+  const out: TabId[] = [];
+  for (const t of Array.isArray(order) ? order : []) if (ALL_TABS.includes(t as TabId) && !out.includes(t as TabId)) out.push(t as TabId);
+  for (const t of ALL_TABS) if (t !== 'favorites' && !out.includes(t)) out.push(t);
+  if (!out.includes('favorites')) out.splice(out.indexOf('live') + 1, 0, 'favorites');
+  return out;
+}
 
 export interface Preferences {
   appearance: {
@@ -90,7 +104,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   },
   start: {
     startTab: 'live',
-    tabOrder: ['live', 'movies', 'series', 'search'],
+    tabOrder: ['live', 'favorites', 'movies', 'series', 'search'],
     hiddenTabs: [],
   },
   settingsMode: 'basic',
@@ -112,5 +126,10 @@ export function mergePreferences(partial: unknown): Preferences {
       out[section] = value;
     }
   }
-  return out as unknown as Preferences;
+  const prefs = out as unknown as Preferences;
+  const start = prefs.start;
+  start.tabOrder = normalizeTabOrder(start.tabOrder);
+  start.hiddenTabs = Array.isArray(start.hiddenTabs) ? start.tabOrder.filter((t) => start.hiddenTabs.includes(t)) : [];
+  if (!ALL_TABS.includes(start.startTab)) start.startTab = DEFAULT_PREFERENCES.start.startTab;
+  return prefs;
 }

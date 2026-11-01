@@ -18,7 +18,7 @@ export function Shell() {
   const loc = useLocation();
   const profile = me?.profiles.find((p) => p.id === profileId);
 
-  // Desktop keyboard shortcuts: L M S / ,
+  // Desktop keyboard shortcuts: L F M S / ,
   useEffect(() => {
     if (form !== 'large') return;
     const onKey = (e: KeyboardEvent) => {
@@ -41,7 +41,7 @@ export function Shell() {
         <main className={`main${fullBleed ? ' full' : ''}`} id="main">
           <Outlet />
         </main>
-        <nav className="tabbar" aria-label="Main">
+        <nav className={`tabbar${tabs.length > 5 ? ' many' : ''}`} aria-label="Main">
           {tabs.map((id) => {
             const t = TABS[id];
             return (

@@ -23,22 +23,26 @@ const shots = [
   ['player-live', `/play/live/ch101?at=${at}`, {}, 2500],
   ['settings-basic', '/settings', { settingsMode: 'basic' }],
   ['settings-all', '/settings', { settingsMode: 'all' }],
+  ['favorites-live', '/favorites/live', { live: { layoutPhone: 'simple' } }],
+  ['favorites-movies', '/favorites/movies', {}],
+  ['favorites-series-az', '/favorites/series', {}, 700, { 'anycast.favSort': 'az' }],
 ];
 
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const problems = [];
 for (const [dev, cfg] of Object.entries(devices)) {
-  for (const [name, path, prefs, extraWait = 700] of shots) {
-    const file = `${dev}-${name}.png`;
+  for (const [name, path, prefs, extraWait = 700, local = {}] of shots) {
+    const file = name.startsWith('favorites') ? `${name}-${dev}.png` : `${dev}-${name}.png`;
     if (filter && !file.includes(filter)) continue;
     const ctx = await browser.newContext({ viewport: cfg.viewport, deviceScaleFactor: cfg.deviceScaleFactor, isMobile: cfg.isMobile, hasTouch: cfg.hasTouch });
     const p = { ...prefs, appearance: { accent: cfg.accent } };
-    await ctx.addInitScript((p) => {
+    await ctx.addInitScript(([p, local]) => {
+      for (const [k, v] of Object.entries(local)) localStorage.setItem(k, v);
       localStorage.setItem('anycast.profile.u1', 'p1');
       sessionStorage.setItem('anycast.demo', '1');
       sessionStorage.setItem('anycast.demo.prefs.p1', JSON.stringify(p));
       localStorage.removeItem('anycast.prefs.p1');
-    }, p);
+    }, [p, local]);
     const page = await ctx.newPage();
     page.on('console', (m) => m.type() === 'error' && problems.push(`${file}: ${m.text()}`));
     page.on('pageerror', (e) => problems.push(`${file}: ${e.message}`));

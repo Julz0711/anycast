@@ -4,10 +4,12 @@ import { initials } from '../lib/misc';
 
 export function Segmented<T extends string | number>(props: {
   value: T;
-  options: readonly { value: T; label: string }[];
+  options: readonly { value: T; label: string; count?: number }[];
   onChange: (v: T) => void;
   label: string;
   size?: 'lg';
+  /** TV: the chosen option takes focus when the screen opens */
+  autoFocus?: boolean;
 }) {
   return (
     <div className={`seg${props.size ? ' ' + props.size : ''}`} role="radiogroup" aria-label={props.label} data-nav-row={`seg-${props.label}`}>
@@ -17,9 +19,11 @@ export function Segmented<T extends string | number>(props: {
           type="button"
           role="radio"
           aria-checked={o.value === props.value}
+          data-nav-autofocus={props.autoFocus && o.value === props.value ? '' : undefined}
           onClick={() => props.onChange(o.value)}
         >
           {o.label}
+          {o.count !== undefined && <> <span className="seg-count tabnum">{o.count}</span></>}
         </button>
       ))}
     </div>

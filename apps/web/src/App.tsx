@@ -10,6 +10,7 @@ import { MoviesScreen, MovieDetail } from './screens/Movies';
 import { SeriesScreen } from './screens/Series';
 import { SeriesDetailScreen } from './screens/SeriesDetail';
 import { SearchScreen } from './screens/Search';
+import { FavoritesIndex, FavoritesScreen } from './screens/Favorites';
 import { LoginScreen } from './screens/Login';
 import { ProfilePicker } from './screens/Profiles';
 import { SetupScreen } from './screens/Setup';
@@ -114,6 +115,8 @@ function AuthedRoutes() {
           <Route path="/movies/:id" element={<MovieDetail />} />
           <Route path="/series" element={<SeriesScreen />} />
           <Route path="/series/:id" element={<SeriesDetailScreen />} />
+          <Route path="/favorites" element={<FavoritesIndex />} />
+          <Route path="/favorites/:tab" element={<FavoritesScreen />} />
           <Route path="/search" element={<SearchScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
         </Route>

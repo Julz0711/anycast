@@ -25,7 +25,7 @@ function Art(props: { id: string; name: string; src: string | null; children?: R
   );
 }
 
-export const PosterCard = memo(function PosterCard(props: { kind: 'movie' | 'series'; item: Movie | Series; navRow?: string }) {
+export const PosterCard = memo(function PosterCard(props: { kind: 'movie' | 'series'; item: Movie | Series; navRow?: string; /** the caller shows its own star */ noBadge?: boolean }) {
   const { item, kind } = props;
   const fav = useIsFavorite(kind, item.id);
   const to = kind === 'movie' ? `/movies/${item.id}` : `/series/${item.id}`;
@@ -34,7 +34,7 @@ export const PosterCard = memo(function PosterCard(props: { kind: 'movie' | 'ser
   return (
     <Link to={to} className="poster" onMouseEnter={warm} onFocus={warm} aria-label={`${item.name}${meta ? ', ' + meta : ''}${fav ? ', favorite' : ''}`}>
       <Art id={item.id} name={item.name} src={item.poster}>
-        {fav && (
+        {fav && !props.noBadge && (
           <span className="badge">
             <IconStar filled />
           </span>
@@ -67,6 +67,8 @@ export const ChannelRow = memo(function ChannelRow(props: {
   showNext?: boolean;
   /** shown instead of now/next when the channel has no guide data */
   category?: string;
+  /** the caller shows its own star */
+  noFavMark?: boolean;
 }) {
   const { ch, now } = props;
   const live = useApp((s) => s.prefs.live);
@@ -86,7 +88,7 @@ export const ChannelRow = memo(function ChannelRow(props: {
       <div className="ch-main">
         <div className="ch-top">
           <span className="name">
-            {ch.name} {fav && <IconStar filled className="ico ch-fav" />}
+            {ch.name} {fav && !props.noFavMark && <IconStar filled className="ico ch-fav" />}
           </span>
           {live.showChannelNumbers && <span className="ch-num tabnum">{ch.number}</span>}
         </div>
