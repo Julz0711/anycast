@@ -158,6 +158,9 @@ src/
   in the server's time zone (`This channel has no archive before 21:03`). Clients format the cause
   with `describeGap` from `@anycast/shared`, so times show in the viewer's time zone. Asking for a
   time inside a gap answers `422 {error: 'gap', message, cause}`.
+- **Provider time zone:** the provider's `server_info.timezone` (e.g. `Europe/Amsterdam`) is used
+  for timeshift start times (`YYYY-MM-DD:HH-MM`) and for XMLTV times written without an offset;
+  the server's own time zone never enters. An unknown or invalid zone falls back to UTC.
 - **Rolling buffer** (`playback/buffer.ts`): while a live channel is watched, a recorder taps the
   channel's fan-out (no second provider connection) and runs `ffmpeg -c copy -copyts -f segment`
   into `BUFFER_DIR/<channel>/<run>/<seq>.ts`. Each finished segment is indexed in SQLite

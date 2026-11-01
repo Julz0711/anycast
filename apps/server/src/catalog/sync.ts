@@ -267,7 +267,7 @@ export class CatalogSync {
         });
         let batch: [string, number, number, string, string | null][] = [];
         let count = 0;
-        for await (const p of parseXmltv(await client.xmltv())) {
+        for await (const p of parseXmltv(await client.xmltv(), this.source.timezone())) {
           if (!known.has(p.channel) || p.stop < minStart || p.start > maxStart) continue;
           batch.push([p.channel, p.start, p.stop, p.title, p.description]);
           if (batch.length >= BATCH) {

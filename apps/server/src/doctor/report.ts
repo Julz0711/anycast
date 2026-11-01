@@ -113,7 +113,7 @@ export async function runDoctor(creds: XtreamCredentials, opts: DoctorOptions): 
   const epg: DoctorReport['epg'] = { percentWithId: pct(withEpgId.length, live.length), percentWithProgramNow: null, error: null };
   try {
     const airing = new Set<string>();
-    for await (const p of parseXmltv(await client.xmltv())) {
+    for await (const p of parseXmltv(await client.xmltv(), auth.server_info.timezone)) {
       if (p.start <= now && p.stop > now) airing.add(p.channel);
     }
     epg.percentWithProgramNow = pct(withEpgId.filter((s) => airing.has(s.epg_channel_id!.trim())).length, live.length);
