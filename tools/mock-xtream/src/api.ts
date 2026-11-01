@@ -243,14 +243,14 @@ function listing(ctx: MockContext, c: LiveChannel, p: Programme, now: number, wi
 }
 
 function shortEpg(ctx: MockContext, c: LiveChannel, limit: number) {
-  if (!c.epgChannelId) return { epg_listings: [] };
+  if (!c.epgChannelId || !c.epgListed) return { epg_listings: [] };
   const now = nowSec(ctx);
   const progs = programmesBetween(c.epgChannelId, now, now + 2 * DAY).slice(0, limit);
   return { epg_listings: progs.map((p) => listing(ctx, c, p, now, false)) };
 }
 
 function simpleDataTable(ctx: MockContext, c: LiveChannel) {
-  if (!c.epgChannelId) return { epg_listings: [] };
+  if (!c.epgChannelId || !c.epgListed) return { epg_listings: [] };
   const now = nowSec(ctx);
   const from = now - Math.max(c.archiveDays, 1) * DAY;
   const progs = programmesBetween(c.epgChannelId, from, now + 2 * DAY);

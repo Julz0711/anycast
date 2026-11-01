@@ -16,9 +16,10 @@ pnpm --filter @anycast/mock-xtream start -- --size small --username demo --passw
 | `PORT` / `--port` | 8899 | |
 | `HOST` / `--host` | 0.0.0.0 | (`createMockXtream` defaults to 127.0.0.1) |
 | `USERNAME`, `PASSWORD` (or `MOCK_USERNAME`, `MOCK_PASSWORD`, which win; Windows always sets `USERNAME`) | test / test | |
-| `SIZE` / `--size` | full | `full` = 2000 live, 5000 movies, 500 series; `small` = 60 / 100 / 20 |
+| `SIZE` / `--size` | full | `full` = 2000 live, 5000 movies, 500 series; `small` = 60 / 100 / 20; `huge` = 19,810 / 139,250 / 35,663 (see below) |
 | `MAX_CONNECTIONS` / `--max-connections` | 2 | |
 | `SEED` / `--seed` | 42 | |
+| `MOCK_TIMEZONE` / `--timezone` | Europe/Berlin | panel timezone (`server_info.timezone`) |
 | `FFMPEG_PATH`, `MOCK_FONT_FILE`, `MOCK_DEBUG=1` | | override ffmpeg binary / font; log ffmpeg errors |
 
 ## Programmatic use
@@ -30,8 +31,9 @@ const mock = await createMockXtream({ size: 'small' });   // port 0 = random fre
 // mock.url, mock.port, mock.catalog, mock.setFaults({...}), mock.state(), await mock.reset(), await mock.close()
 ```
 
-Options: `{ port?, host?, username?, password?, size?: 'full'|'small', maxConnections? (2), seed? (42),
-now?: () => number (ms), faults?: Partial<Faults>, timezone? ('Europe/Berlin'), cacheDir?, logger? }`.
+Options: `{ port?, host?, username?, password?, size?: 'full'|'small'|'huge', maxConnections? (2), seed? (42),
+now?: () => number (ms), faults?: Partial<Faults>, timezone? ('Europe/Berlin'), xmltvOffsets? (true), cacheDir?, logger? }`.
+`xmltvOffsets: false` writes XMLTV times without a UTC offset (bare panel-local time), like some panels.
 
 ## Endpoints
 
@@ -137,6 +139,13 @@ Names are written the ways providers write them: `DE | ARD HD`, `UK: BBC One`, `
 `(BACKUP)`, …). Each region has a primary style (about 85%) and alternates. About 40% of channels
 have an archive (1–7 days), and about 10% have no `epg_channel_id`.
 
+The `huge` size has the shape of a large real panel: 19,810 channels in 522 categories, 139,250
+movies in 145 and 35,663 series in 128 (generated categories such as `DE | REGIONAL 3` fill up
+each region). About 3.2% of channels have an archive (mostly 1 day, a few 3 days), about 20% have
+an `epg_channel_id`, and about a fifth of those ids have no programmes in the guide, so roughly 16%
+of channels show something "now". Building it takes a few seconds and about 700 MB of memory. The
+first 60 channels keep the ids and format profiles of `small`.
+
 `expectedTags(name)` returns `{ country, language, adult }` for any category or item name the mock
 produced. `country` is ISO‑3166 alpha‑2 lowercase (`UK` → `gb`), `language` is ISO‑639‑1, and each is
 `null` when the name cannot tell. Conventions:
@@ -171,7 +180,8 @@ with a JSON body. Unknown keys and wrong types get a `400`.
 Each open stream response counts as one connection: live TS, timeshift, and each VOD request,
 including parallel Range requests. An HLS viewer (account + IP + channel) counts while it fetched a
 playlist or segment within the last 20 s. `user_info.active_cons` and `GET /__mock/state` report the
-live count.
+live count; the state also has `peakConnections`, the most connections open at the same time since
+start or the last reset (tests use it to prove a client never held two at once).
 
 ## Tests
 

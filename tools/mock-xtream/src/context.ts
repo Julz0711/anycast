@@ -14,6 +14,8 @@ export interface MockContext {
   now: () => number;
   /** Panel timezone: EPG strings, timeshift URLs and burned-in clocks use it. */
   timezone: string;
+  /** XMLTV times carry a UTC offset (default); false writes bare panel-local times */
+  xmltvOffsets: boolean;
   cacheDir: string;
   /** Unix seconds when the account was "created". */
   createdAt: number;

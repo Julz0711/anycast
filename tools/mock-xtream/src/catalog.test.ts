@@ -86,6 +86,25 @@ describe('catalog', () => {
     expect(missing).toBeGreaterThan(0);
     expect(missing / full.live.length).toBeLessThan(0.2);
   });
+
+  it('huge has the shape of a large real panel', () => {
+    const huge = buildCatalog('huge');
+    expect([huge.live.length, huge.movies.length, huge.series.length]).toEqual([19810, 139250, 35663]);
+    expect([huge.liveCategories.length, huge.vodCategories.length, huge.seriesCategories.length]).toEqual([522, 145, 128]);
+    const archive = huge.live.filter((c) => c.archive);
+    expect(archive.length / huge.live.length).toBeGreaterThan(0.025);
+    expect(archive.length / huge.live.length).toBeLessThan(0.04);
+    expect(new Set(archive.map((c) => c.archiveDays))).toEqual(new Set([1, 3]));
+    const withEpg = huge.live.filter((c) => c.epgChannelId);
+    expect(withEpg.length / huge.live.length).toBeGreaterThan(0.17);
+    expect(withEpg.length / huge.live.length).toBeLessThan(0.24);
+    const listed = withEpg.filter((c) => c.epgListed);
+    expect(listed.length / huge.live.length).toBeGreaterThan(0.13);
+    expect(listed.length).toBeLessThan(withEpg.length);
+    // every category name tags like its region, and the first channels keep their ids and profiles
+    for (const c of huge.liveCategories) expect(expectedTags(c.category_name)).toEqual(c.tags);
+    expect(huge.live.slice(0, 60).map((c) => [c.id, c.profile])).toEqual(small.live.map((c) => [c.id, c.profile]));
+  });
 });
 
 describe('FORMAT_MATRIX', () => {

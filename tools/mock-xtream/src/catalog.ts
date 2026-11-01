@@ -14,9 +14,9 @@ import {
   type LiveProfileId,
   type VodProfileId,
 } from './formats.js';
-import { intBetween, pick, rngFor, type Rng } from './random.js';
+import { hashString, intBetween, pick, rngFor, type Rng } from './random.js';
 
-export type CatalogSize = 'full' | 'small';
+export type CatalogSize = 'full' | 'small' | 'huge';
 
 export interface Tags {
   /** ISO-3166 alpha-2, lowercase ("gb" for UK), null when the name does not tell. */
@@ -43,6 +43,8 @@ export interface LiveChannel {
   icon: string | null;
   /** Real panels omit this in two ways: null and "". */
   epgChannelId: string | null;
+  /** false when the id has no programmes in the guide (real panels list ids they have no data for) */
+  epgListed: boolean;
   archive: boolean;
   archiveDays: number;
   added: number;
@@ -125,7 +127,59 @@ export const DEFAULT_SEED = 42;
 export const SIZES: Record<CatalogSize, { live: number; movies: number; series: number }> = {
   full: { live: 2000, movies: 5000, series: 500 },
   small: { live: 60, movies: 100, series: 20 },
+  // the shape of a large real panel: ~195k items, few archives, sparse EPG
+  huge: { live: 19810, movies: 139250, series: 35663 },
 };
+
+/**
+ * How a size spreads its items. `full` and `small` use the hand-written categories only; `huge`
+ * adds generated categories per region up to the counts, gives few channels an archive (1 or 3
+ * days) and few an EPG id, and leaves some EPG ids without programmes.
+ */
+interface Shape {
+  categories: { live: number; vod: number; series: number } | null;
+  /** first category id of each kind */
+  firstCategoryId: { live: number; vod: number; series: number };
+  /** archive days from the archive roll (and the rng, for the length) */
+  archiveDays: (roll: number, rng: Rng) => number;
+  /** roll < this: no epg id (half null, half "") */
+  noEpg: number;
+  /** epg ids are unique per channel group instead of shared by every variant of a base name */
+  uniqueEpg: boolean;
+}
+
+const SHAPES: Record<CatalogSize, Shape> = {
+  full: {
+    categories: null,
+    firstCategoryId: { live: 1, vod: 100, series: 500 },
+    archiveDays: (roll, rng) => (roll < 0.4 ? intBetween(rng, 1, 7) : 0),
+    noEpg: 0.1,
+    uniqueEpg: false,
+  },
+  small: {
+    categories: null,
+    firstCategoryId: { live: 1, vod: 100, series: 500 },
+    archiveDays: (roll, rng) => (roll < 0.4 ? intBetween(rng, 1, 7) : 0),
+    noEpg: 0.1,
+    uniqueEpg: false,
+  },
+  huge: {
+    categories: { live: 522, vod: 145, series: 128 },
+    firstCategoryId: { live: 1, vod: 1000, series: 2000 },
+    // ~3.2% of channels: 578 with 1 day, 54 with 3 days in a 19,810 channel panel
+    archiveDays: (roll) => (roll < 0.0292 ? 1 : roll < 0.0319 ? 3 : 0),
+    noEpg: 0.794,
+    uniqueEpg: true,
+  },
+};
+
+const EXTRA_CATEGORY_WORDS = ['CHANNELS', 'REGIONAL', 'LOCAL', 'EXTRA', 'MIX', 'PLUS', 'CINEMA', 'MUSIC', 'NEWS', 'KIDS', 'DOCS', 'EVENTS'];
+
+/** Generated category names for a region ("DE | REGIONAL 3"), tagged like the region. */
+function extraCategoryName(region: Region, n: number, kindWord = ''): string {
+  const word = EXTRA_CATEGORY_WORDS[n % EXTRA_CATEGORY_WORDS.length]!;
+  return `${region.styles[0] ?? ''}${word}${kindWord} ${Math.floor(n / EXTRA_CATEGORY_WORDS.length) + 1}`;
+}
 
 // ---------------------------------------------------------------------------------------------
 // Regions: prefix styles and ground truth
@@ -443,7 +497,7 @@ function yearSuffix(rng: Rng, year: number): string {
   return '';
 }
 
-function buildLive(seed: number, count: number, tags: Map<string, Tags>) {
+function buildLive(seed: number, count: number, tags: Map<string, Tags>, shape: Shape) {
   const catNames: { name: string; region: Region }[] = [];
   const bases: { region: Region; catIndex: number; base: string }[][] = [];
   for (const region of REGIONS) {
@@ -454,10 +508,17 @@ function buildLive(seed: number, count: number, tags: Map<string, Tags>) {
     }
     bases.push(list);
   }
-  const categories = makeCategories(catNames, 1, tags);
+  // generated categories (huge): channels of a region spread over its categories
+  const regionCats = new Map<Region, number[]>();
+  catNames.forEach((c, i) => regionCats.set(c.region, [...(regionCats.get(c.region) ?? []), i]));
+  for (let n = 0; shape.categories && catNames.length < shape.categories.live; n++) {
+    const region = REGIONS[n % REGIONS.length]!;
+    regionCats.get(region)!.push(catNames.push({ name: extraCategoryName(region, Math.floor(n / REGIONS.length)), region }) - 1);
+  }
+  const categories = makeCategories(catNames, shape.firstCategoryId.live, tags);
 
   // Interleave: variant -> base position -> region, so a small catalog still spans every region.
-  const order: { region: Region; catIndex: number; base: string; variant: string }[] = [];
+  const order: { region: Region; catIndex: number; base: string; variant: string; round: number }[] = [];
   const maxBases = Math.max(...bases.map((b) => b.length));
   // Each base cycles through every variant once (rotated by base position) before numbering kicks in.
   for (let round = 0; order.length < count; round++) {
@@ -466,7 +527,7 @@ function buildLive(seed: number, count: number, tags: Map<string, Tags>) {
         round < VARIANTS.length ? (VARIANTS[(round + b) % VARIANTS.length] ?? '') : ` (${round - VARIANTS.length + 2})`;
       for (const list of bases) {
         const entry = list[b];
-        if (entry && order.length < count) order.push({ ...entry, variant });
+        if (entry && order.length < count) order.push({ ...entry, variant, round });
       }
     }
   }
@@ -479,20 +540,30 @@ function buildLive(seed: number, count: number, tags: Map<string, Tags>) {
     const t = tagsOf(o.region);
     tags.set(name, t);
     const epgRoll = rng();
-    const epgChannelId = epgRoll < 0.06 ? null : epgRoll < 0.1 ? '' : `${slug(o.base)}.${o.region.epgSuffix}`;
-    const archive = rng() < 0.4;
+    // huge: variants of a base share an id in groups of four ("ard.de", "ard-2.de", ...)
+    const group = shape.uniqueEpg && o.round >= 4 ? `-${Math.floor(o.round / 4) + 1}` : '';
+    const epgChannelId =
+      epgRoll < shape.noEpg * 0.6 ? null : epgRoll < shape.noEpg ? '' : `${slug(o.base)}${group}.${o.region.epgSuffix}`;
+    const archiveRoll = rng();
     const id = liveIdAt(i);
-    const category = categories[o.catIndex];
+    const cats = regionCats.get(o.region)!;
+    const catIndex = shape.categories && o.round > 0 ? cats[(i * 7919) % cats.length]! : o.catIndex;
+    const category = categories[catIndex];
+    const icon = rng() < 0.1 ? null : `${slug(o.base)}`;
+    const archiveDays = shape.archiveDays(archiveRoll, rng);
+    const archive = archiveDays > 0;
     return {
       index: i,
       id,
       num: i + 1,
       name,
       categoryId: category?.category_id ?? '1',
-      icon: rng() < 0.1 ? null : `${slug(o.base)}`,
+      icon,
       epgChannelId,
+      // huge: about a fifth of the epg ids have no programmes, like real guides
+      epgListed: !shape.uniqueEpg || !epgChannelId || hashString(epgChannelId) % 5 !== 0,
       archive,
-      archiveDays: archive ? intBetween(rng, 1, 7) : 0,
+      archiveDays,
       added: ADDED_BASE + Math.floor(rng() * 60_000_000),
       customSid: rng() < 0.8 ? '' : `:0:1:${(id * 37).toString(16).toUpperCase()}:0:0:0:0:0:0:`,
       profile: liveProfileForIndex(i),
@@ -502,9 +573,15 @@ function buildLive(seed: number, count: number, tags: Map<string, Tags>) {
   return { categories, channels };
 }
 
-function vodCategoryList(kind: 'vod' | 'series'): { name: string; region: Region }[] {
+function vodCategoryList(kind: 'vod' | 'series', total: number | null): { name: string; region: Region }[] {
   const out: { name: string; region: Region }[] = [];
   for (const region of REGIONS) for (const name of region[kind]) out.push({ name, region });
+  // generated categories only for regions that have this kind at all
+  const regions = REGIONS.filter((r) => r[kind].length > 0);
+  for (let n = 0; total !== null && out.length < total; n++) {
+    const region = regions[n % regions.length]!;
+    out.push({ name: extraCategoryName(region, Math.floor(n / regions.length), kind === 'vod' ? ' MOVIES' : ' SERIES'), region });
+  }
   return out;
 }
 
@@ -516,9 +593,9 @@ function itemName(rng: Rng, region: Region, title: string, year: number, categor
   return name;
 }
 
-function buildMovies(seed: number, count: number, tags: Map<string, Tags>) {
-  const catList = vodCategoryList('vod');
-  const categories = makeCategories(catList, 100, tags);
+function buildMovies(seed: number, count: number, tags: Map<string, Tags>, shape: Shape) {
+  const catList = vodCategoryList('vod', shape.categories?.vod ?? null);
+  const categories = makeCategories(catList, shape.firstCategoryId.vod, tags);
   const movies: Movie[] = [];
   for (let i = 0; i < count; i++) {
     const rng = rngFor(seed, `movie:${i}`);
@@ -557,9 +634,9 @@ function buildMovies(seed: number, count: number, tags: Map<string, Tags>) {
   return { categories, movies };
 }
 
-function buildSeries(seed: number, count: number, tags: Map<string, Tags>) {
-  const catList = vodCategoryList('series');
-  const categories = makeCategories(catList, 500, tags);
+function buildSeries(seed: number, count: number, tags: Map<string, Tags>, shape: Shape) {
+  const catList = vodCategoryList('series', shape.categories?.series ?? null);
+  const categories = makeCategories(catList, shape.firstCategoryId.series, tags);
   const series: Series[] = [];
   for (let i = 0; i < count; i++) {
     const rng = rngFor(seed, `series:${i}`);
@@ -623,9 +700,10 @@ function buildSeries(seed: number, count: number, tags: Map<string, Tags>) {
 export function buildCatalog(size: CatalogSize = 'full', seed: number = DEFAULT_SEED): Catalog {
   const counts = SIZES[size];
   const tags = new Map<string, Tags>();
-  const live = buildLive(seed, counts.live, tags);
-  const vod = buildMovies(seed, counts.movies, tags);
-  const ser = buildSeries(seed, counts.series, tags);
+  const shape = SHAPES[size];
+  const live = buildLive(seed, counts.live, tags, shape);
+  const vod = buildMovies(seed, counts.movies, tags, shape);
+  const ser = buildSeries(seed, counts.series, tags, shape);
   for (const [k, v] of tags) globalTags.set(k, v);
   if (size === 'full' && seed === DEFAULT_SEED) defaultFullBuilt = true;
 

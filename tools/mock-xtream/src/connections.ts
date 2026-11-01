@@ -18,6 +18,16 @@ export class ConnectionTracker {
   private nextId = 1;
   private readonly open = new Map<number, ConnectionInfo>();
   private readonly hls = new Map<string, ConnectionInfo & { lastSeen: number }>();
+  /** most connections open at once since the start (or the last reset), per account */
+  private readonly peaks = new Map<string, number>();
+
+  private notePeak(username: string): void {
+    this.peaks.set(username, Math.max(this.peaks.get(username) ?? 0, this.count(username)));
+  }
+
+  peak(username: string): number {
+    return this.peaks.get(username) ?? 0;
+  }
 
   private pruneHls(): void {
     const cutoff = Date.now() - HLS_SESSION_TIMEOUT_MS;
@@ -37,6 +47,7 @@ export class ConnectionTracker {
     if (this.count(info.username) >= max) return null;
     const id = this.nextId++;
     this.open.set(id, { ...info, id, startedAt: Date.now() });
+    this.notePeak(info.username);
     return id;
   }
 
@@ -55,6 +66,7 @@ export class ConnectionTracker {
     if (this.count(info.username) >= max) return false;
     const now = Date.now();
     this.hls.set(key, { ...info, kind: 'hls', id: this.nextId++, startedAt: now, lastSeen: now });
+    this.notePeak(info.username);
     return true;
   }
 
@@ -66,5 +78,6 @@ export class ConnectionTracker {
   clear(): void {
     this.open.clear();
     this.hls.clear();
+    this.peaks.clear();
   }
 }

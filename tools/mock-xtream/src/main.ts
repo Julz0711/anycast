@@ -1,4 +1,4 @@
-/** CLI: pnpm --filter @anycast/mock-xtream start [--port 8899] [--size full|small] [--username test] [--password test] */
+/** CLI: pnpm --filter @anycast/mock-xtream start [--port 8899] [--size full|small|huge] [--timezone Europe/Berlin] [--username test] [--password test] */
 import { parseArgs } from 'node:util';
 import { createMockXtream } from './server.js';
 
@@ -12,13 +12,14 @@ const { values } = parseArgs({
     size: { type: 'string' },
     'max-connections': { type: 'string' },
     seed: { type: 'string' },
+    timezone: { type: 'string' },
     log: { type: 'boolean' },
   },
 });
 
 const env = process.env;
 const size = values.size ?? env.SIZE ?? 'full';
-if (size !== 'full' && size !== 'small') throw new Error(`SIZE must be full or small, got ${size}`);
+if (size !== 'full' && size !== 'small' && size !== 'huge') throw new Error(`SIZE must be full, small or huge, got ${size}`);
 
 const mock = await createMockXtream({
   port: Number(values.port ?? env.PORT ?? 8899),
@@ -28,6 +29,7 @@ const mock = await createMockXtream({
   size,
   maxConnections: Number(values['max-connections'] ?? env.MAX_CONNECTIONS ?? 2),
   seed: Number(values.seed ?? env.SEED ?? 42),
+  timezone: values.timezone ?? env.MOCK_TIMEZONE ?? 'Europe/Berlin',
   logger: values.log ?? false,
 });
 

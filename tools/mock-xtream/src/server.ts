@@ -28,6 +28,8 @@ export interface MockXtreamOptions {
   faults?: Partial<Faults>;
   /** Panel timezone (default Europe/Berlin). */
   timezone?: string;
+  /** XMLTV times with a UTC offset (default true); false writes bare panel-local times, like some panels. */
+  xmltvOffsets?: boolean;
   /** Where VOD fixtures, HLS segments and text files go (default os.tmpdir()/anycast-mock-cache). */
   cacheDir?: string;
   /** Fastify request logging. */
@@ -36,6 +38,8 @@ export interface MockXtreamOptions {
 
 export interface MockState {
   activeConnections: number;
+  /** most connections open at the same time since start or the last reset */
+  peakConnections: number;
   maxConnections: number;
   connections: ReturnType<ConnectionTracker['list']>;
   hlsChannels: number[];
@@ -118,6 +122,7 @@ export async function createMockXtream(opts: MockXtreamOptions = {}): Promise<Mo
     connections: new ConnectionTracker(),
     now,
     timezone: opts.timezone ?? 'Europe/Berlin',
+    xmltvOffsets: opts.xmltvOffsets ?? true,
     cacheDir,
     createdAt: Math.floor(now() / 1000 / 86400) * 86400 - 200 * 86400,
   };
@@ -202,6 +207,7 @@ export async function createMockXtream(opts: MockXtreamOptions = {}): Promise<Mo
   // --- Test control ----------------------------------------------------------------------------
   const state = (): MockState => ({
     activeConnections: ctx.connections.count(ctx.username),
+    peakConnections: ctx.connections.peak(ctx.username),
     maxConnections: ctx.maxConnections,
     connections: ctx.connections.list(),
     hlsChannels: streams.activeHlsChannels(),

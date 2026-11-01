@@ -19,7 +19,7 @@ async function* generate(ctx: MockContext, req: RequestInfo): AsyncGenerator<str
   // Variants of a channel share their epg_channel_id; XMLTV lists each id once.
   const channels = new Map<string, { name: string; icon: string | null }>();
   for (const c of ctx.catalog.live) {
-    if (c.epgChannelId && !channels.has(c.epgChannelId)) channels.set(c.epgChannelId, { name: c.name, icon: c.icon });
+    if (c.epgChannelId && c.epgListed && !channels.has(c.epgChannelId)) channels.set(c.epgChannelId, { name: c.name, icon: c.icon });
   }
 
   yield '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE tv SYSTEM "xmltv.dtd">\n' +
@@ -40,10 +40,12 @@ async function* generate(ctx: MockContext, req: RequestInfo): AsyncGenerator<str
       buf = '';
     }
   }
+  // some panels write local times without an offset; they mean the panel timezone
+  const time = (t: number) => (ctx.xmltvOffsets ? formatXmltv(t, tz) : formatXmltv(t, tz).slice(0, 14));
   for (const id of channels.keys()) {
     for (const p of programmesBetween(id, from, to)) {
       buf +=
-        `  <programme start="${formatXmltv(p.start, tz)}" stop="${formatXmltv(p.stop, tz)}" channel="${xmlEscape(id)}">\n` +
+        `  <programme start="${time(p.start)}" stop="${time(p.stop)}" channel="${xmlEscape(id)}">\n` +
         `    <title lang="en">${xmlEscape(p.title)}</title>\n    <desc lang="en">${xmlEscape(p.description)}</desc>\n  </programme>\n`;
       if (buf.length > CHUNK) {
         yield buf;
