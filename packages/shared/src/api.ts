@@ -62,6 +62,13 @@ export interface Api {
   'POST /api/auth/logout': { res: { ok: true } };
   'GET /api/me': { res: Me };
 
+  /** Profiles share the user's login and the one Xtream source; each has its own favorites, progress, preferences and hide rules */
+  'GET /api/profiles': { res: Profile[] };
+  'POST /api/profiles': { body: { name: string }; res: Profile };
+  'PATCH /api/profiles/:id': { body: { name: string }; res: Profile };
+  /** cannot delete the last profile */
+  'DELETE /api/profiles/:id': { res: { ok: true } };
+
   'GET /api/source': { res: SourceStatus };
   'POST /api/source/sync': { res: { ok: true } };
 
