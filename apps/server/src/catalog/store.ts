@@ -10,6 +10,8 @@ export const EMPTY_RULES: HideRules = { countries: [], languages: [], categoryId
 export interface ChannelRow {
   id: string; name: string; raw_name: string; number: number; category_id: string; logo: string | null;
   country: string | null; language: string | null; archive_days: number; epg_channel_id: string | null;
+  /** 1 when the stored guide has programmes for the channel */
+  has_epg: number;
 }
 export interface MovieRow {
   id: string; name: string; raw_name: string; category_id: string; poster: string | null; year: number | null;
@@ -32,7 +34,7 @@ export const artUrl = (kind: MediaKind, id: string, raw: string | null) => (raw 
 
 export const toChannel = (r: ChannelRow): Channel => ({
   id: r.id, name: r.name, rawName: r.raw_name, number: r.number, categoryId: r.category_id, logo: artUrl('live', r.id, r.logo),
-  country: r.country, language: r.language, archiveDays: r.archive_days, epgChannelId: r.epg_channel_id,
+  country: r.country, language: r.language, archiveDays: r.archive_days, epgChannelId: r.epg_channel_id, hasEpg: r.has_epg === 1,
 });
 export const toMovie = (r: MovieRow): Movie => ({
   id: r.id, name: r.name, rawName: r.raw_name, categoryId: r.category_id, poster: artUrl('movie', r.id, r.poster), year: r.year,
@@ -76,7 +78,7 @@ export function listCategories(db: Db, kind: MediaKind, rules: HideRules): Categ
   return rows.filter((r) => !categoryHidden(rules, r)).map((r) => ({ ...r, adult: r.adult === 1 }));
 }
 
-export interface PageQuery { categoryId?: string; offset: number; limit: number }
+export interface PageQuery { categoryId?: string; offset: number; limit: number; hasEpg?: boolean }
 
 function page<R, T>(db: Db, table: string, order: string, rules: HideRules, q: PageQuery, map: (r: R) => T) {
   const hide = hideClause(rules, 't');
@@ -86,15 +88,21 @@ function page<R, T>(db: Db, table: string, order: string, rules: HideRules, q: P
     where.push('t.category_id = ?');
     params.push(q.categoryId);
   }
+  // "+ 0": an equality on an index column makes SQLite sort the ties itself instead of walking the index in order
+  if (q.hasEpg && table === 'channels') where.push('t.has_epg + 0 = 1');
   const w = where.join(' AND ');
   const total = (db.prepare(`SELECT count(*) AS n FROM ${table} t WHERE ${w}`).get(...params) as { n: number }).n;
   const rows = db.prepare(`SELECT t.* FROM ${table} t WHERE ${w} ORDER BY ${order} LIMIT ? OFFSET ?`).all(...params, q.limit, q.offset) as R[];
   return { items: rows.map(map), total };
 }
 
-export const pageChannels = (db: Db, rules: HideRules, q: PageQuery) => page(db, 'channels', 't.number, t.rowid', rules, q, toChannel);
-export const pageMovies = (db: Db, rules: HideRules, q: PageQuery) => page(db, 'movies', 't.added DESC, t.rowid', rules, q, toMovie);
-export const pageSeries = (db: Db, rules: HideRules, q: PageQuery) => page(db, 'series', 't.added DESC, t.rowid', rules, q, toSeries);
+// Orders spell out the list index columns (see migrations) so pages are a plain walk of the index,
+// even deep into a 140k item list; the trailing rowid makes the order total.
+const CHANNEL_ORDER = 't.number, t.country, t.language, t.category_id, t.has_epg, t.rowid';
+const ADDED_ORDER = 't.added DESC, t.country, t.language, t.category_id, t.rowid';
+export const pageChannels = (db: Db, rules: HideRules, q: PageQuery) => page(db, 'channels', CHANNEL_ORDER, rules, q, toChannel);
+export const pageMovies = (db: Db, rules: HideRules, q: PageQuery) => page(db, 'movies', ADDED_ORDER, rules, q, toMovie);
+export const pageSeries = (db: Db, rules: HideRules, q: PageQuery) => page(db, 'series', ADDED_ORDER, rules, q, toSeries);
 
 export const getChannel = (db: Db, id: string) => db.prepare('SELECT * FROM channels WHERE id = ?').get(id) as ChannelRow | undefined;
 export const getMovie = (db: Db, id: string) => db.prepare('SELECT * FROM movies WHERE id = ?').get(id) as MovieRow | undefined;
@@ -102,6 +110,14 @@ export const getSeries = (db: Db, id: string) => db.prepare('SELECT * FROM serie
 export const getEpisode = (db: Db, id: string) => db.prepare('SELECT * FROM episodes WHERE id = ?').get(id) as EpisodeRow | undefined;
 export const listEpisodes = (db: Db, seriesId: string) =>
   db.prepare('SELECT * FROM episodes WHERE series_id = ? ORDER BY season, episode').all(seriesId) as EpisodeRow[];
+
+/** Recomputes channels.has_epg from the stored guide (after a catalog or EPG sync). */
+export function refreshHasEpg(db: Db): void {
+  db.prepare(
+    `UPDATE channels SET has_epg = EXISTS (SELECT 1 FROM epg WHERE epg.epg_id = channels.epg_channel_id)
+     WHERE has_epg != EXISTS (SELECT 1 FROM epg WHERE epg.epg_id = channels.epg_channel_id)`,
+  ).run();
+}
 
 /** Programs overlapping [from, to) for the given channels, keyed by AnyCast channel id. */
 export function epgFor(db: Db, channels: Pick<ChannelRow, 'id' | 'epg_channel_id'>[], from: number, to: number): Record<string, EpgProgram[]> {

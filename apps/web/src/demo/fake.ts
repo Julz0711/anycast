@@ -202,7 +202,8 @@ const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/live$/, (_m, q, _b, st) => {
     const now = Date.now();
     const cat = q.get('categoryId');
-    const items = fx.channels.filter((c) => !hidden(st.rules, c) && (!cat || c.categoryId === cat));
+    const withEpg = q.get('hasEpg') === '1';
+    const items = fx.channels.filter((c) => !hidden(st.rules, c) && (!cat || c.categoryId === cat) && (!withEpg || c.hasEpg));
     const p = page(items, q);
     return { total: p.total, items: p.items.map((c) => withNow(c, now)) };
   }],

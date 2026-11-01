@@ -27,6 +27,8 @@ export interface Channel {
   /** Days of provider catchup; 0 = no archive */
   archiveDays: number;
   epgChannelId: string | null;
+  /** The guide has programmes for this channel (many panels have guide data for few channels) */
+  hasEpg: boolean;
 }
 
 export interface EpgProgram {

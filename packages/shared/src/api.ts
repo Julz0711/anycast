@@ -94,8 +94,8 @@ export interface Api {
   'GET /api/categories': { query: { kind: 'live' | 'movie' | 'series'; all?: '1' }; res: Category[] };
   'GET /api/tags': { res: { countries: TagSummary[]; languages: TagSummary[] } };
 
-  /** hidden items already filtered out for the current profile */
-  'GET /api/live': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<LiveChannelWithNow> };
+  /** hidden items already filtered out for the current profile; hasEpg=1: only channels with guide data */
+  'GET /api/live': { query: { categoryId?: string; offset?: number; limit?: number; hasEpg?: '1' }; res: Page<LiveChannelWithNow> };
   'GET /api/epg': { query: { channelIds: string; from: number; to: number }; res: Record<string, EpgProgram[]> };
   'GET /api/movies': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Movie> };
   'GET /api/series': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Series> };

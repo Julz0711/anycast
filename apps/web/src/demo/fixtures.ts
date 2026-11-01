@@ -110,7 +110,9 @@ export function buildFixtures(): Fixtures {
         country: c.country,
         language: c.language,
         archiveDays: r() < 0.45 ? pick(r, [1, 3, 7]) : 0,
-        epgChannelId: `${id}.epg`,
+        // like real panels, some channels come without guide data
+        epgChannelId: number % 7 === 3 ? null : `${id}.epg`,
+        hasEpg: number % 7 !== 3,
       });
       number++;
     }
@@ -202,6 +204,7 @@ export function buildFixtures(): Fixtures {
   const epgFor = (ch: Channel): EpgProgram[] => {
     const hit = epgCache.get(ch.id);
     if (hit) return hit;
+    if (!ch.hasEpg) return [];
     const r = rng(hash(ch.id));
     const d = new Date();
     d.setHours(0, 0, 0, 0);

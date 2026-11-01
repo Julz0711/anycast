@@ -188,4 +188,23 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX buffer_segments_channel ON buffer_segments(channel_id, start_ms);
   CREATE INDEX buffer_segments_start ON buffer_segments(start_ms);
   `,
+  `
+  -- channels with programmes in the stored guide ("only channels with a guide", guide rows)
+  ALTER TABLE channels ADD COLUMN has_epg INTEGER NOT NULL DEFAULT 0;
+  UPDATE channels SET has_epg = EXISTS (SELECT 1 FROM epg WHERE epg.epg_id = channels.epg_channel_id);
+  -- list indexes carry the hide-rule columns, so filtered pages and counts are answered from the
+  -- index (no table reads for hidden rows) on 100k+ item catalogs
+  DROP INDEX channels_cat;
+  DROP INDEX channels_number;
+  CREATE INDEX channels_number ON channels(number, country, language, category_id, has_epg);
+  CREATE INDEX channels_cat ON channels(category_id, number, country, language, has_epg);
+  DROP INDEX movies_cat;
+  DROP INDEX movies_added;
+  CREATE INDEX movies_added ON movies(added DESC, country, language, category_id);
+  CREATE INDEX movies_cat ON movies(category_id, added DESC, country, language);
+  DROP INDEX series_cat;
+  DROP INDEX series_added;
+  CREATE INDEX series_added ON series(added DESC, country, language, category_id);
+  CREATE INDEX series_cat ON series(category_id, added DESC, country, language);
+  `,
 ];

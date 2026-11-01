@@ -77,6 +77,30 @@ pnpm --filter @anycast/server test
 The integration tests start `tools/mock-xtream` in-process. They also use a small fixture panel in
 `test/fixtures` that has 50k items and real-panel quirks.
 
+```sh
+pnpm --filter @anycast/server test:perf   # opt-in, a few minutes
+```
+
+The scale suite (`test/perf`) runs the mock with its `huge` catalog (~195k items, shaped like a big
+real panel) and the server as separate processes, then reports and checks: the first catalog and
+EPG sync, the server's peak and idle memory, search p95 over a set of queries (down to one-letter
+prefixes), list pages (also deep ones and with most of the catalog hidden), categories and the
+guide. The default suite keeps a smaller version of these checks on the 50k item fixture panel.
+
+Measured on a 4-core container (huge mock): catalog sync 22 s, EPG sync 19 s, server peak 286 MB
+during the sync and 264 MB idle after it, search p95 17 ms (19 ms with everything but English
+hidden), every list page, category list and guide window under 50 ms p95.
+
+What keeps it there:
+
+- The big lists (`get_live_streams`, `get_vod_streams`, `get_series`) are parsed as a stream, one
+  item at a time (`xtream/jsonstream.ts`), so a 100+ MB movie list never sits in memory whole.
+- Search ranks at most 600 visible matches per kind and returns 40 per kind, names that start with
+  the query first, so one-letter prefixes cost the same as whole words.
+- The list indexes carry the hide-rule columns (country, language, category, has-guide), and
+  pages order by exactly those columns, so filtered pages and counts are index walks.
+- `channels.has_epg` is kept up to date after each sync, for `GET /api/live?hasEpg=1`.
+
 ## Layout
 
 ```

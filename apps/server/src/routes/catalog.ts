@@ -12,6 +12,7 @@ const PageQuery = z.object({
   categoryId: z.string().optional(),
   offset: z.coerce.number().int().min(0).catch(0),
   limit: z.coerce.number().int().min(1).max(500).catch(100),
+  hasEpg: z.string().optional().transform((v) => v === '1' || v === 'true'),
 });
 const MAX_IDS = 500;
 const IdList = z
@@ -47,7 +48,11 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
     return listCategories(s.db, q.data.kind as MediaKind, q.data.all === '1' ? EMPTY_RULES : rules(req));
   });
 
+  // grouping ~200k rows takes ~80 ms on a big panel; the answer only changes with a catalog sync
+  let tagsCache: { at: number | null; value: { countries: TagSummary[]; languages: TagSummary[] } } | null = null;
   app.get('/api/tags', async () => {
+    const at = s.sync.lastCatalog();
+    if (tagsCache && tagsCache.at === at && at !== null) return tagsCache.value;
     const rows = s.db
       .prepare(
         `SELECT country, language, count(*) AS n FROM (
@@ -73,6 +78,7 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
     };
     out.countries.sort((a, b) => b.count - a.count);
     out.languages.sort((a, b) => b.count - a.count);
+    tagsCache = { at, value: out };
     return out;
   });
 

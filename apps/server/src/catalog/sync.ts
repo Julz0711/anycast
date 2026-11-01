@@ -11,7 +11,7 @@ import type { SourceService } from '../source';
 import type { XtreamClient } from '../xtream/client';
 import type { XCategory, XLiveStream, XSeries, XVodStream } from '../xtream/schemas';
 import { parseXmltv } from '../xtream/xmltv';
-import { KIND_INDEX } from './store';
+import { KIND_INDEX, refreshHasEpg } from './store';
 import { tagCategory, tagItem, type Tag } from './tagger';
 
 const BATCH = 2000;
@@ -36,12 +36,18 @@ function splitYear(name: string): { name: string; year: number | null } {
 
 const rating = (r: number | null) => (r && r > 0 ? Math.round(r * 10) / 10 : null);
 
-async function inBatches<T>(db: Db, rows: T[], write: (row: T) => void): Promise<void> {
+async function inBatches<T>(db: Db, rows: Iterable<T> | AsyncIterable<T>, write: (row: T) => void): Promise<void> {
   const tx = db.transaction((chunk: T[]) => chunk.forEach(write));
-  for (let i = 0; i < rows.length; i += BATCH) {
-    tx(rows.slice(i, i + BATCH));
-    await yieldLoop();
+  let chunk: T[] = [];
+  for await (const row of rows) {
+    chunk.push(row);
+    if (chunk.length >= BATCH) {
+      tx(chunk);
+      chunk = [];
+      await yieldLoop();
+    }
   }
+  if (chunk.length) tx(chunk);
 }
 
 export class CatalogSync {
@@ -121,10 +127,12 @@ export class CatalogSync {
       await this.writeCategories('live', liveCats, gen, catTags);
       await this.writeCategories('movie', vodCats, gen, catTags);
       await this.writeCategories('series', seriesCats, gen, catTags);
-      await this.writeLive(await client.liveStreams(), gen, catTags);
-      await this.writeMovies(await client.vodStreams(), gen, catTags);
-      await this.writeSeries(await client.series(), gen, catTags);
+      // streamed: the movie list of a big panel is 100+ MB of JSON
+      await this.writeLive(client.liveStreamsIter(), gen, catTags);
+      await this.writeMovies(client.vodStreamsIter(), gen, catTags);
+      await this.writeSeries(client.seriesIter(), gen, catTags);
       this.prune(gen);
+      refreshHasEpg(this.db);
       kvSet(this.db, 'lastCatalogSync', String(Date.now()));
       this.log.info({ ms: Date.now() - started }, 'catalog sync finished');
       this.bus.emit({ type: 'catalog-updated' });
@@ -154,7 +162,7 @@ export class CatalogSync {
     return (rowid: number, name: string, id: string) => stmt.run(rowid * 4 + KIND_INDEX[kind], name, kind, id);
   }
 
-  private async writeLive(streams: XLiveStream[], gen: number, catTags: Map<string, Tag>) {
+  private async writeLive(streams: AsyncIterable<XLiveStream>, gen: number, catTags: Map<string, Tag>) {
     const stmt = this.db.prepare(
       `INSERT INTO channels (id, name, raw_name, number, category_id, logo, country, language, archive_days, epg_channel_id, gen)
        VALUES (@id, @name, @raw, @number, @cat, @logo, @country, @language, @archive, @epg, @gen)
@@ -177,7 +185,7 @@ export class CatalogSync {
     });
   }
 
-  private async writeMovies(streams: XVodStream[], gen: number, catTags: Map<string, Tag>) {
+  private async writeMovies(streams: AsyncIterable<XVodStream>, gen: number, catTags: Map<string, Tag>) {
     const stmt = this.db.prepare(
       `INSERT INTO movies (id, name, raw_name, category_id, poster, year, rating, plot, duration, container, country, language, added, gen)
        VALUES (@id, @name, @raw, @cat, @poster, @year, @rating, @plot, @duration, @container, @country, @language, @added, @gen)
@@ -201,7 +209,7 @@ export class CatalogSync {
     });
   }
 
-  private async writeSeries(list: XSeries[], gen: number, catTags: Map<string, Tag>) {
+  private async writeSeries(list: AsyncIterable<XSeries>, gen: number, catTags: Map<string, Tag>) {
     const stmt = this.db.prepare(
       `INSERT INTO series (id, name, raw_name, category_id, poster, year, rating, plot, country, language, added, gen)
        VALUES (@id, @name, @raw, @cat, @poster, @year, @rating, @plot, @country, @language, @added, @gen)
@@ -279,6 +287,7 @@ export class CatalogSync {
             )
             .run(gen, gen);
           this.db.prepare('DELETE FROM epg WHERE end < ?').run(minStart);
+          refreshHasEpg(this.db);
         })();
         kvSet(this.db, 'lastEpgSync', String(Date.now()));
         this.log.info({ ms: Date.now() - started, programs: count }, 'epg sync finished');
