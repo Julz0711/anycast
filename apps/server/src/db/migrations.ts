@@ -159,4 +159,33 @@ export const MIGRATIONS: string[] = [
     prefix = '1 2 3'
   );
   `,
+  `
+  CREATE TABLE pinned_channels (
+    channel_id TEXT PRIMARY KEY,
+    pinned_at INTEGER NOT NULL
+  );
+  -- one recording of a channel; a new run starts after every stop or drop
+  CREATE TABLE buffer_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id TEXT NOT NULL,
+    dir TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    end_reason TEXT
+  );
+  CREATE INDEX buffer_runs_channel ON buffer_runs(channel_id);
+  -- wall-clock (epoch ms) span of each recorded MPEG-TS segment
+  CREATE TABLE buffer_segments (
+    run_id INTEGER NOT NULL REFERENCES buffer_runs(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    channel_id TEXT NOT NULL,
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER NOT NULL,
+    pts REAL NOT NULL,
+    bytes INTEGER NOT NULL,
+    PRIMARY KEY (run_id, seq)
+  ) WITHOUT ROWID;
+  CREATE INDEX buffer_segments_channel ON buffer_segments(channel_id, start_ms);
+  CREATE INDEX buffer_segments_start ON buffer_segments(start_ms);
+  `,
 ];

@@ -13,7 +13,9 @@ import { LiveFanouts } from './fanout';
 import { HlsError, HlsSessions, StreamHlsSession, VodHlsSession } from './hls';
 import { choosePipeline } from './pipeline';
 import { ProbeCache, type ProbeResult } from './probe';
-import { buildTimeline, LIVE_EDGE_MS, noArchiveReason, sourceAt, type TimelineSource } from './timeline';
+import { BufferManager } from './buffer';
+import { buildTimeline, gapReasonAt, sourceAt, type TimelineSource } from './timeline';
+import type { BufferConfig } from '../config';
 import { openUpstream, UpstreamError, UpstreamPool } from './upstream';
 
 export type VodKind = 'movie' | 'episode';
@@ -36,6 +38,9 @@ export class PlaybackService {
   readonly pool: UpstreamPool;
   readonly fanouts: LiveFanouts;
   readonly sessions: HlsSessions;
+  /** rolling live buffer; null when disabled */
+  readonly buffer: BufferManager | null;
+  private readonly timelineSources: TimelineSource[];
 
   constructor(
     private readonly db: Db,
@@ -43,11 +48,23 @@ export class PlaybackService {
     readonly probes: ProbeCache,
     private readonly log: FastifyBaseLogger,
     private readonly redact: () => (s: string) => string,
-    private readonly timelineSources: TimelineSource[],
+    timelineSources: TimelineSource[],
+    buffer: { dir: string; config: BufferConfig } | null = null,
   ) {
     this.pool = new UpstreamPool(() => source.maxConnections());
     this.fanouts = new LiveFanouts(this.pool);
     this.sessions = new HlsSessions();
+    this.buffer =
+      buffer && buffer.config.enabled
+        ? new BufferManager(buffer.dir, buffer.config, {
+            db,
+            fanouts: this.fanouts,
+            liveUrl: (id) => this.client().liveUrl(id),
+            maxConnections: () => source.maxConnections(),
+            onError: (msg) => this.log.warn({ buffer: this.redact()(msg) }, 'live buffer problem'),
+          })
+        : null;
+    this.timelineSources = this.buffer ? [...timelineSources, this.buffer.source] : timelineSources;
   }
 
   private client(): XtreamClient {
@@ -111,10 +128,15 @@ export class PlaybackService {
   async atInfo(id: string, at: number, caps: ClientCaps): Promise<PlaybackInfo> {
     const channel = this.channel(id);
     const now = Date.now();
-    if (at >= now - LIVE_EDGE_MS) return this.liveInfo(id, caps);
-    const range = sourceAt(buildTimeline(channel, this.timelineSources, now), at);
-    if (!range || range.source !== 'archive') {
-      throw new UpstreamError(422, noArchiveReason(this.timelineSources));
+    if (at >= now) return this.liveInfo(id, caps);
+    const timeline = buildTimeline(channel, this.timelineSources, now);
+    const range = sourceAt(timeline, at);
+    if (!range) throw new UpstreamError(422, gapReasonAt(timeline, at));
+    if (range.source === 'live') return this.liveInfo(id, caps);
+    if (range.source === 'buffer') {
+      const seg = this.buffer?.segmentAt(id, at);
+      if (seg) return this.bufferInfo(id, seg.run_id, seg.seq, seg.start_ms, caps);
+      throw new UpstreamError(422, gapReasonAt(timeline, at));
     }
     const startMin = Math.floor(at / 60_000);
     const durMin = Math.min(MAX_TIMESHIFT_MIN, Math.ceil((now - startMin * 60_000) / 60_000));
@@ -129,6 +151,43 @@ export class PlaybackService {
       pipeline: choice.pipeline,
       startsAt: startMin * 60_000,
     };
+  }
+
+  /** Buffered playback: the recorded TS segments as an EVENT playlist, or through FFmpeg when the client needs other codecs. */
+  private bufferInfo(id: string, run: number, seq: number, startsAt: number, caps: ClientCaps): PlaybackInfo {
+    const probe = this.probes.cached(`live:${id}`) ?? ASSUMED_LIVE;
+    const choice = choosePipeline({ ...probe, container: 'ts' }, caps, 'live');
+    const base = `/api/stream/buffer/${encodeURIComponent(id)}/${run}/${seq}`;
+    if (choice.pipeline === 'transcode' || choice.pipeline === 'transcode-audio') {
+      return { url: `${base}/${choice.pipeline}/index.m3u8`, type: 'hls', pipeline: choice.pipeline, startsAt };
+    }
+    return { url: `${base}/index.m3u8`, type: 'hls', pipeline: 'passthrough', startsAt };
+  }
+
+  private requireBuffer(): BufferManager {
+    if (!this.buffer) throw new NotFoundError('The live buffer is turned off');
+    return this.buffer;
+  }
+
+  bufferPlaylist(id: string, run: number, from: number): string {
+    const text = this.requireBuffer().playlist(id, run, from);
+    if (!text) throw new NotFoundError('This part of the buffer is no longer available');
+    return text;
+  }
+
+  bufferSegment(id: string, run: number, seq: number): string {
+    const file = this.requireBuffer().segment(id, run, seq);
+    if (!file) throw new HlsError(404, 'Segment not available');
+    return file;
+  }
+
+  async bufferHls(id: string, run: number, from: number, pipeline: HlsPipeline, file: string) {
+    const buffer = this.requireBuffer();
+    if (!buffer.playlist(id, run, from)) throw new NotFoundError('This part of the buffer is no longer available');
+    const session = await this.sessions.getOrCreate(`buf:${id}:${run}:${from}:${pipeline}`, (dir) => {
+      return new StreamHlsSession(dir, { stream: buffer.reader(id, run, from) }, pipeline, 'event', null, this.ffmpegError);
+    });
+    return file === 'index.m3u8' ? { text: await session.playlist() } : { files: await session.file(file) };
   }
 
   async vodInfo(kind: VodKind, id: string, caps: ClientCaps, resumeAt: number | null): Promise<PlaybackInfo> {
@@ -231,7 +290,8 @@ export class PlaybackService {
     return { files: await session.segment(Number(m[1])) };
   }
 
-  close(): void {
+  async close(): Promise<void> {
+    await this.buffer?.close();
     this.sessions.closeAll();
   }
 }

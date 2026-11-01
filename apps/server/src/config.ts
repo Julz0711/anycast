@@ -9,6 +9,30 @@ export interface XtreamCredentials {
   password: string;
 }
 
+export interface BufferConfig {
+  /** record live channels while watched (and pinned ones always) */
+  enabled: boolean;
+  /** per-channel cap, in milliseconds of recorded media */
+  maxMsPerChannel: number;
+  /** total cap over all channels, in bytes */
+  maxBytes: number;
+  /** keep recording this long after the last viewer leaves */
+  graceMs: number;
+  /** target segment length (cuts land on the next keyframe) */
+  segmentSeconds: number;
+  /** pinned recorders that drop are restarted after this delay */
+  retryMs: number;
+}
+
+export const DEFAULT_BUFFER: BufferConfig = {
+  enabled: true,
+  maxMsPerChannel: 2 * 3600_000,
+  maxBytes: 20 * 1024 ** 3,
+  graceMs: 10 * 60_000,
+  segmentSeconds: 6,
+  retryMs: 10_000,
+};
+
 export interface Config {
   port: number;
   host: string;
@@ -23,6 +47,25 @@ export interface Config {
   trustProxy: boolean;
   /** background sync scheduler; tests turn it off */
   scheduler: boolean;
+  /** rolling live buffer; missing fields take DEFAULT_BUFFER values */
+  buffer?: Partial<BufferConfig>;
+}
+
+const num = (v: string | undefined): number | null => {
+  const n = Number(v?.trim());
+  return v?.trim() && Number.isFinite(n) && n >= 0 ? n : null;
+};
+
+export function bufferFromEnv(env: NodeJS.ProcessEnv): Partial<BufferConfig> {
+  const out: Partial<BufferConfig> = {};
+  const hours = num(env.BUFFER_MAX_HOURS_PER_CHANNEL);
+  const gb = num(env.BUFFER_MAX_GB);
+  const grace = num(env.BUFFER_GRACE_MINUTES);
+  if (hours !== null) out.maxMsPerChannel = hours * 3600_000;
+  if (gb !== null) out.maxBytes = gb * 1024 ** 3;
+  if (grace !== null) out.graceMs = grace * 60_000;
+  if (/^(0|false|no|off)$/i.test(env.BUFFER_ENABLED?.trim() ?? '')) out.enabled = false;
+  return out;
 }
 
 export const VERSION = '0.1.0';
@@ -66,5 +109,6 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: env.LOG_LEVEL?.trim() || 'info',
     trustProxy: /^(1|true|yes)$/i.test(env.TRUST_PROXY?.trim() ?? ''),
     scheduler: true,
+    buffer: bufferFromEnv(env),
   };
 }

@@ -5,7 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import path from 'node:path';
 import { HttpError, Users } from './auth/users';
 import { CatalogSync } from './catalog/sync';
-import { VERSION, type Config } from './config';
+import { DEFAULT_BUFFER, VERSION, type Config } from './config';
 import type { Services } from './context';
 import { openDb } from './db';
 import { EventBus } from './events';
@@ -17,6 +17,7 @@ import { ConnectionLimitError, UpstreamError } from './playback/upstream';
 import { createRedactor, redactDeep, type Redactor } from './redact';
 import { artRoutes } from './routes/art';
 import { authRoutes, registerAuthHook } from './routes/auth';
+import { bufferRoutes } from './routes/buffer';
 import { catalogRoutes } from './routes/catalog';
 import { eventRoutes } from './routes/events';
 import { playbackRoutes } from './routes/playback';
@@ -72,7 +73,10 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   const users = new Users(db);
   await users.ensureAdmin(config.admin);
   const sync = new CatalogSync(db, source, bus, app.log);
-  const playback = new PlaybackService(db, source, new ProbeCache(db), app.log, redact, [archiveSource]);
+  const playback = new PlaybackService(db, source, new ProbeCache(db), app.log, redact, [archiveSource], {
+    dir: config.bufferDir,
+    config: { ...DEFAULT_BUFFER, ...config.buffer },
+  });
   const services: Services = { config, db, users, source, sync, bus, userData: new UserData(db, bus), playback };
 
   await app.register(cookie);
@@ -97,6 +101,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   catalogRoutes(app, services);
   userDataRoutes(app, services);
   playbackRoutes(app, services);
+  bufferRoutes(app, services);
   eventRoutes(app, services);
   artRoutes(app, services);
 
@@ -110,7 +115,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
 
   app.addHook('onClose', async () => {
     await sync.stop();
-    playback.close();
+    await playback.close();
     db.close();
   });
 

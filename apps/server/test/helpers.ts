@@ -13,7 +13,9 @@ export function testConfig(xtream: Config['xtream'], overrides: Partial<Config> 
   const dir = mkdtempSync(path.join(os.tmpdir(), 'anycast-test-'));
   return {
     port: 0, host: '127.0.0.1', dataDir: dir, bufferDir: path.join(dir, 'buffer'), webDist: null,
-    secret: 'test-secret-0123456789abcdef', admin: ADMIN, xtream, logLevel: 'silent', trustProxy: false, scheduler: false, ...overrides,
+    secret: 'test-secret-0123456789abcdef', admin: ADMIN, xtream, logLevel: 'silent', trustProxy: false, scheduler: false,
+    // the rolling buffer is off unless a test turns it on
+    buffer: { enabled: false }, ...overrides,
   };
 }
 

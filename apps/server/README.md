@@ -21,7 +21,10 @@ working directory and from the repo root.
 | `ANYCAST_ADMIN_USER`, `ANYCAST_ADMIN_PASSWORD` | Creates the first account on first start (only when no account exists yet). |
 | `PORT` (8787), `HOST` (0.0.0.0) | Where the server listens. |
 | `DATA_DIR` (`./data`) | Where the SQLite database lives. |
-| `BUFFER_DIR` (`./buffer`) | Reserved for the rolling live buffer. |
+| `BUFFER_DIR` (`./buffer`) | Where the rolling live buffer keeps its segments. |
+| `BUFFER_MAX_HOURS_PER_CHANNEL` (2), `BUFFER_MAX_GB` (20) | Buffer caps. The oldest segments are evicted first. |
+| `BUFFER_GRACE_MINUTES` (10) | Keep recording this long after the last viewer leaves. |
+| `BUFFER_ENABLED` (on) | Set to `0` to turn the rolling buffer off. |
 | `WEB_DIST` | The built web app. Defaults to `apps/web/dist` if that folder exists. Any unknown non-API path gets `index.html`. |
 | `TRUST_PROXY` | Set to `1` behind a reverse proxy that sets `X-Forwarded-*`. |
 | `LOG_LEVEL` | Pino level (`info` by default). |
@@ -111,5 +114,15 @@ src/
   Asking for a slot the current FFmpeg run won't reach soon restarts FFmpeg at that slot (`-ss`).
   `-copyts` with `movflags=+frag_discont` keeps each segment's real media time. Runs that get far
   ahead of playback are paused. A session ends after 60 s without requests.
-- **Timeline:** archive ranges come from `TimelineSource`s. Only the provider archive exists
-  today; a rolling buffer can plug in as another source.
+- **Timeline:** ranges come from `TimelineSource`s: the provider archive and the rolling buffer.
+  Where both cover a moment the buffer wins. Gaps carry a reason (`This channel has no archive
+  before 21:03`, `Stream dropped`, `Not recorded: nobody was watching`, ...).
+- **Rolling buffer** (`playback/buffer.ts`): while a live channel is watched, a recorder taps the
+  channel's fan-out (no second provider connection) and runs `ffmpeg -c copy -copyts -f segment`
+  into `BUFFER_DIR/<channel>/<run>/<seq>.ts`. Each finished segment is indexed in SQLite
+  (`buffer_segments`) with its wall-clock span (PTS anchored to the clock as segments complete).
+  Recording continues for the grace period after the last viewer leaves. Pinned channels
+  (`PUT /api/buffer/pins`) record all the time; at most `max_connections - 1` can be pinned.
+  `GET /api/play/live/:id/at` serves buffered times as a growing EVENT playlist of the recorded
+  TS segments (or through FFmpeg when the client needs other codecs). On start the index is checked
+  against the disk: unmatched rows and files are removed. `GET /api/buffer/status` reports it all.

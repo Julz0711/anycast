@@ -34,6 +34,16 @@ export interface SourceStatus {
   counts: { live: number; movie: number; series: number };
 }
 
+export interface BufferPins { channelIds: string[]; maxPins: number | null }
+export interface BufferChannelStatus {
+  channelId: string; name: string | null; pinned: boolean; recording: boolean;
+  ranges: { start: number; end: number }[]; durationMs: number; bytes: number;
+}
+export interface BufferStatus {
+  enabled: boolean; channels: BufferChannelStatus[]; totalBytes: number;
+  caps: { maxHoursPerChannel: number; maxBytes: number; maxPins: number | null };
+}
+
 export interface Page<T> { items: T[]; total: number; }
 
 export interface LiveChannelWithNow extends Channel {
@@ -91,6 +101,11 @@ export interface Api {
   'GET /api/timeline/:channelId': { res: TimelineInfo };
   'GET /api/play/movie/:id': { res: PlaybackInfo };
   'GET /api/play/episode/:id': { res: PlaybackInfo };
+
+  /** Rolling buffer: pinned channels record continuously (TL-4) */
+  'GET /api/buffer/pins': { res: BufferPins };
+  'PUT /api/buffer/pins': { body: { channelId: string; pinned: boolean }; res: BufferPins };
+  'GET /api/buffer/status': { res: BufferStatus };
 
   'GET /api/favorites': { res: Favorite[] };
   'PUT /api/favorites': { body: { kind: Favorite['kind']; id: string; favorite: boolean }; res: Favorite[] };
