@@ -6,3 +6,5 @@ data
 buffer
 .git
 apps/web/screenshots
+apps/web/e2e-report
+apps/web/e2e-results

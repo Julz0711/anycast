@@ -115,14 +115,18 @@ src/
   `-copyts` with `movflags=+frag_discont` keeps each segment's real media time. Runs that get far
   ahead of playback are paused. A session ends after 60 s without requests.
 - **Timeline:** ranges come from `TimelineSource`s: the provider archive and the rolling buffer.
-  Where both cover a moment the buffer wins. Gaps carry a reason (`This channel has no archive
-  before 21:03`, `Stream dropped`, `Not recorded: nobody was watching`, ...).
+  Where both cover a moment the buffer wins. Gaps carry a structured `cause` (`{code, at?}`, e.g.
+  `{code: 'no_archive', at}`, `{code: 'dropped'}`, `{code: 'idle'}`) plus the same text formatted
+  in the server's time zone (`This channel has no archive before 21:03`). Clients format the cause
+  with `describeGap` from `@anycast/shared`, so times show in the viewer's time zone. Asking for a
+  time inside a gap answers `422 {error: 'gap', message, cause}`.
 - **Rolling buffer** (`playback/buffer.ts`): while a live channel is watched, a recorder taps the
   channel's fan-out (no second provider connection) and runs `ffmpeg -c copy -copyts -f segment`
   into `BUFFER_DIR/<channel>/<run>/<seq>.ts`. Each finished segment is indexed in SQLite
   (`buffer_segments`) with its wall-clock span (PTS anchored to the clock as segments complete).
   Recording continues for the grace period after the last viewer leaves. Pinned channels
-  (`PUT /api/buffer/pins`) record all the time; at most `max_connections - 1` can be pinned.
+  (`PUT /api/buffer/pins`, admins only) record all the time; at most `max_connections - 1` can be
+  pinned (`409 pin_limit` otherwise, with a message meant to be shown as is).
   `GET /api/play/live/:id/at` serves buffered times as a growing EVENT playlist of the recorded
   TS segments (or through FFmpeg when the client needs other codecs). On start the index is checked
   against the disk: unmatched rows and files are removed. `GET /api/buffer/status` reports it all.
