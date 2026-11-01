@@ -43,7 +43,7 @@ reverse proxy, log level) are listed in [apps/server/README.md](apps/server/READ
 
 To update: `git pull && docker compose up -d --build`.
 
-## Check your provider: `pnpm doctor`
+## Check your provider: `pnpm run doctor`
 
 The doctor talks to your provider and reports what AnyCast will find there: account status and
 connection limit, timezone, catalog sizes, countries and languages, archive and EPG coverage,
@@ -51,8 +51,11 @@ stream formats and one timeshift test.
 
 ```sh
 pnpm install
-pnpm doctor            # or: pnpm doctor --json, --samples 4, --no-streams
+pnpm run doctor          # or: pnpm run doctor -- --json  (also --samples 4, --no-streams)
 ```
+
+Use `pnpm run doctor`, not `pnpm doctor`: the short form runs pnpm's own built-in `doctor` command, which
+prints nothing.
 
 **Run it on your own machine**, with your login in your own `.env`. The report contains no
 credentials, hostnames or URLs, so it is safe to share when you ask for help. **Never paste your

@@ -47,10 +47,10 @@ on port 8899 with user and password `test`). Then point `XTREAM_URL` at `http://
 ## Doctor
 
 ```sh
-pnpm doctor                 # human-readable report
-pnpm doctor --json          # machine-readable
-pnpm doctor --samples 4     # probe 4 random live channels (default 8), plus 5 movies and 3 episodes
-pnpm doctor --no-streams    # skip ffprobe sampling and the timeshift test
+pnpm run doctor              # human-readable report
+pnpm run doctor -- --json    # machine-readable
+pnpm run doctor -- --samples 4 # probe 4 random live channels (default 8), plus 5 movies and 3 episodes
+pnpm run doctor -- --no-streams # skip ffprobe sampling and the timeshift test
 ```
 
 The doctor talks to your provider directly, using the `XTREAM_*` values from `.env`. Its report

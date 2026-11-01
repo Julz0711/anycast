@@ -9,7 +9,7 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "mock": "pnpm --filter @anycast/mock-xtream start",
-    "doctor": "pnpm --filter @anycast/server doctor",
+    "doctor": "pnpm --filter @anycast/server run doctor",
     "e2e": "pnpm --filter @anycast/web e2e"
   },
   "engines": {

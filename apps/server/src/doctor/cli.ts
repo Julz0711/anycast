@@ -1,4 +1,4 @@
-/** `pnpm doctor [--samples N] [--json] [--no-streams]` */
+/** `pnpm run doctor -- [--samples N] [--json] [--no-streams]` */
 import { loadEnvFiles, xtreamFromEnv } from '../config';
 import { createRedactor } from '../redact';
 import { DoctorAuthError, formatReport, parseArgs, runDoctor } from './report';
