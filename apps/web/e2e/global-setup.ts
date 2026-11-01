@@ -164,6 +164,17 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
   const detail = await get<{ name: string; seasons: { episodes: { id: string; title: string }[] }[] }>(`/api/series/${binge.series_id}`);
   const [ep1, ep2] = detail.seasons[0]!.episodes;
 
+  // The mock generates each VOD file with FFmpeg on first request (several seconds each, longer on
+  // small CI runners). A real provider serves files instantly, so generate them here, before the
+  // tests start their playback timers.
+  const warm = (kind: 'movie' | 'series', id: string) =>
+    fetch(`${mockUrl}/${kind}/${MOCK.username}/${MOCK.password}/${id}.bin`, { headers: { range: 'bytes=0-0' } }).then(async (r) => {
+      await r.arrayBuffer();
+      if (!r.ok) throw new Error(`warming mock ${kind} ${id} failed: ${r.status}`);
+    });
+
+  await Promise.all([warm('movie', movie.id), warm('series', ep1!.id), warm('series', ep2!.id)]);
+
   const liveCats = await get<Cat[]>('/api/categories?kind=live&all=1');
   const movieCats = await get<Cat[]>('/api/categories?kind=movie&all=1');
   const pick = <T extends { language: string | null }>(xs: T[], lang: string, what: string) => {
