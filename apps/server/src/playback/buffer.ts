@@ -12,7 +12,8 @@
  * A run is one continuous recording. Runs end because nobody watches any more (after a grace
  * period), the channel was unpinned, the server stopped, or the upstream dropped; the reason is
  * stored and becomes the gap reason after the run's last segment. Caps (per channel duration,
- * total bytes) are enforced before a segment is indexed, evicting the oldest segments first.
+ * total bytes) are enforced before a segment is indexed, evicting the oldest segments first (for the
+ * disk cap, from the channel using the most space).
  */
 import type { GapCode, TimelineRange } from '@anycast/shared';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
@@ -343,7 +344,13 @@ export class BufferManager {
     }
     this.db.transaction(() => {
       const oldestOf = this.db.prepare('SELECT * FROM buffer_segments WHERE channel_id = ? ORDER BY start_ms LIMIT 1');
-      const oldest = this.db.prepare('SELECT * FROM buffer_segments ORDER BY start_ms LIMIT 1');
+      // Over the disk cap, take from the channel using the most space, so one busy channel can't
+      // starve another (e.g. a channel someone just tuned to) of its only segments.
+      const oldest = this.db.prepare(
+        `SELECT * FROM buffer_segments WHERE channel_id = (
+           SELECT channel_id FROM buffer_segments GROUP BY channel_id ORDER BY SUM(bytes) DESC, MIN(start_ms) LIMIT 1
+         ) ORDER BY start_ms LIMIT 1`,
+      );
       while (this.channelMs(seg.channel_id) + dur > this.cfg.maxMsPerChannel) this.evict(oldestOf.get(seg.channel_id) as SegmentRow);
       while (this.totalBytes() + seg.bytes > this.cfg.maxBytes) this.evict(oldest.get() as SegmentRow);
       this.db

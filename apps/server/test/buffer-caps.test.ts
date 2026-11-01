@@ -48,7 +48,7 @@ const tsFiles = (dir: string): string[] =>
 
 test('caps are never exceeded: oldest segments are evicted first', async () => {
   const maxMsPerChannel = 5000;
-  const maxBytes = 150_000;
+  const maxBytes = 300_000; // about 3–4 segments: the disk cap binds before the per-channel cap
   const app = await start(testConfig(xtream(), { buffer: { ...BUFFER_TEST, graceMs: 0, maxMsPerChannel, maxBytes } }));
   const [a, b] = noArchive();
   await Promise.all([app.watch(a!), app.watch(b!)]);
