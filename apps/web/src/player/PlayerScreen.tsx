@@ -9,6 +9,7 @@ import { useApp, useIsFavorite } from '../store/app';
 import { saveProgress, saveProgressOnUnload, setZapList, toggleFavorite } from '../store/actions';
 import { cachedGet, call } from '../api/client';
 import { lookup, resolveItems } from '../api/catalog';
+import { setBufferPin, useBufferPins } from '../api/buffer';
 import { useAsync, useFormFactor } from '../lib/hooks';
 import { writeLocal } from '../lib/storage';
 import { isTypingTarget } from '../lib/misc';
@@ -69,6 +70,12 @@ export default function PlayerScreen() {
   const [ripple, setRipple] = useState<{ side: 'l' | 'r'; text: string; key: number } | null>(null);
   const dragging = useRef(false);
   const overlay = form === 'tv' || fullscreen;
+  const isAdmin = useApp((s) => s.me?.user.isAdmin ?? false);
+  const bufPins = useBufferPins(isLive && isAdmin);
+  const pinned = !!bufPins.pins?.channelIds.includes(id);
+  const [pinMsg, setPinMsg] = useState<{ text: string; error: boolean } | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
+  useEffect(() => setPinMsg(null), [id]);
 
   /* ---------------- metadata ---------------- */
   const channel = useAsync(
@@ -556,6 +563,22 @@ export default function PlayerScreen() {
     return () => clearTimeout(t);
   }, [ripple]);
 
+  const togglePin = async () => {
+    setPinBusy(true);
+    try {
+      const next = await setBufferPin(id, !pinned);
+      bufPins.setPins(next);
+      setPinMsg({
+        text: next.channelIds.includes(id) ? 'This channel now keeps a rewind buffer, even when nobody watches it.' : 'This channel no longer keeps a rewind buffer when nobody watches it.',
+        error: false,
+      });
+    } catch (e) {
+      setPinMsg({ text: (e as Error).message, error: true });
+    } finally {
+      setPinBusy(false);
+    }
+  };
+
   const toggleFav = () => void toggleFavorite(isLive ? 'live' : kind === 'episode' ? 'series' : 'movie', isLive ? id : kind === 'episode' ? seriesId! : id);
 
   // TV: start with focus on the timeline so left/right seek straight away.
@@ -745,6 +768,14 @@ export default function PlayerScreen() {
             {notice}
           </p>
         )}
+        {pinMsg && (
+          <p className={`pl-notice${pinMsg.error ? ' error' : ''}`} role={pinMsg.error ? 'alert' : 'status'} data-testid="pin-message">
+            {pinMsg.text}{' '}
+            <button type="button" className="link-btn" onClick={() => setPinMsg(null)}>
+              OK
+            </button>
+          </p>
+        )}
 
         <div className="pl-controls" data-nav-row="pl-controls">
           <button type="button" className="pl-round" onClick={() => skip(-1)} aria-label={`Back ${prefs.skipBackSeconds} seconds`}>
@@ -770,6 +801,19 @@ export default function PlayerScreen() {
           {isLive && (
             <button type="button" className="btn btn-primary" onClick={goLive} disabled={atLive} aria-label={atLive ? 'Watching live' : `Go live, ${fmtBehind(behind)} behind`}>
               {atLive ? 'Live' : 'Go live'}
+            </button>
+          )}
+          {isLive && isAdmin && bufPins.pins && (
+            <button
+              type="button"
+              className={`btn${pinned ? ' on' : ''}`}
+              aria-pressed={pinned}
+              aria-label="Keep a rewind buffer for this channel"
+              title="Record this channel all the time, so you can always rewind it"
+              disabled={pinBusy}
+              onClick={() => void togglePin()}
+            >
+              <IconClock /> Keep a rewind buffer
             </button>
           )}
           {hasTracks && (

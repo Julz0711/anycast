@@ -6,14 +6,15 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ACCENTS, DEFAULT_PREFERENCES, type AccentId, type HideRules, type MediaKind, type Preferences, type Profile, type TabId } from '@anycast/shared';
 import { useApp } from '../store/app';
 import { logout, patchPrefs, saveHideRules, selectProfile, setDeviceOverride, setPref, toast } from '../store/actions';
-import { cachedGet, call, errorMessage } from '../api/client';
+import { ApiError, cachedGet, call, errorMessage } from '../api/client';
+import { fmtBytes, setBufferPin } from '../api/buffer';
 import { useAsync, useFormFactor } from '../lib/hooks';
 import { COMMON_LANGUAGES, countryName, languageName } from '../lib/lang';
-import { fmtRelativeAgo } from '../lib/time';
+import { fmtLength, fmtRelativeAgo } from '../lib/time';
 import { capsHeader } from '../player/caps';
 import { isDemo } from '../demo/flag';
 import { TABS, visibleTabs } from '../layout/tabs';
-import { Segmented, Skeleton, Toggle } from '../components/ui';
+import { ProgressBar, Segmented, Skeleton, Toggle } from '../components/ui';
 import { IconDown, IconDrag, IconRefresh, IconUp } from '../components/Icons';
 import type { DeviceOverride, FormFactor } from '../lib/device';
 import '../theme/settings.css';
@@ -38,6 +39,7 @@ export default function SettingsScreen() {
         { id: 'player', title: 'Player', body: <PlayerSettings prefs={prefs} all /> },
         { id: 'tabs', title: 'Start & tabs', body: <StartTabs prefs={prefs} all /> },
         { id: 'filters', title: 'Filters', body: <Filters all /> },
+        { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
         { id: 'profiles', title: 'Profiles', body: <Profiles /> },
         { id: 'source', title: 'Source & account', body: <Source /> },
         { id: 'about', title: 'About', body: <About /> },
@@ -533,6 +535,91 @@ function Profiles() {
       <p className="set-hint" style={{ marginTop: '0.75rem' }}>
         Profiles share this login and TV source. Each has its own favorites, progress, settings and filters.
       </p>
+    </>
+  );
+}
+
+/* ---------------- Rewind buffer ---------------- */
+function RewindBuffer() {
+  const isAdmin = useApp((s) => s.me?.user.isAdmin ?? false);
+  const [tick, setTick] = useState(0);
+  const st = useAsync(() => call('GET /api/buffer/status'), [tick]);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => {
+    const t = setInterval(() => setTick((x) => x + 1), 10_000);
+    return () => clearInterval(t);
+  }, []);
+  if (st.error) {
+    const off = st.error instanceof ApiError && st.error.status === 404;
+    return <p className={`notice${off ? '' : ' error'}`}>{off ? 'The rewind buffer is turned off on this server.' : `Couldn't read the buffer status: ${errorMessage(st.error)}`}</p>;
+  }
+  const s = st.data;
+  if (!s) return <Skeleton h="8rem" />;
+  if (!s.enabled) return <p className="notice">The rewind buffer is turned off on this server.</p>;
+  const pinned = s.channels.filter((c) => c.pinned);
+  const unpin = async (id: string) => {
+    setBusy(id);
+    setMsg(null);
+    try {
+      await setBufferPin(id, false);
+      setTick((x) => x + 1);
+    } catch (e) {
+      setMsg(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <>
+      <p className="set-hint" style={{ marginBottom: '0.5rem' }}>
+        The server records live channels while someone watches them, so you can rewind even where the provider has no archive.
+      </p>
+      <Row label="Space used" hint={`Up to ${s.caps.maxHoursPerChannel} h per channel. The oldest recordings are removed first.`}>
+        <div className="buf-total">
+          <span className="tabnum">
+            {fmtBytes(s.totalBytes)} of {fmtBytes(s.caps.maxBytes)}
+          </span>
+          <ProgressBar value={s.caps.maxBytes ? s.totalBytes / s.caps.maxBytes : 0} label="Rewind buffer space used" />
+        </div>
+      </Row>
+      <Row
+        label="Always buffered"
+        hint={
+          isAdmin
+            ? 'Pin a channel from its player with "Keep a rewind buffer". Each pinned channel uses one provider connection; one always stays free for watching.'
+            : 'Only an admin can choose which channels are always buffered.'
+        }
+      >
+        <span className="tabnum">
+          {pinned.length} of {s.caps.maxPins ?? '?'} channel{s.caps.maxPins === 1 ? '' : 's'}
+        </span>
+      </Row>
+      {msg && (
+        <p className="notice error" role="alert">
+          {msg}
+        </p>
+      )}
+      <div className="buf-list" aria-label="Buffered channels" role="list">
+        {s.channels.length === 0 && <p className="muted">Nothing buffered yet.</p>}
+        {s.channels.map((c) => (
+          <div key={c.channelId} role="listitem" className="set-row" data-nav-row={`buf-${c.channelId}`}>
+            <div className="set-text">
+              <div className="set-label">{c.name ?? `Channel ${c.channelId}`}</div>
+              <div className="set-hint tabnum">
+                {[fmtLength(c.durationMs / 1000), fmtBytes(c.bytes), c.recording ? 'recording' : null, c.pinned ? 'pinned' : null].filter(Boolean).join(' · ')}
+              </div>
+            </div>
+            {c.pinned && isAdmin && (
+              <div className="set-ctl">
+                <button type="button" className="btn" disabled={busy === c.channelId} onClick={() => void unpin(c.channelId)} aria-label={`Unpin ${c.name ?? c.channelId}`}>
+                  Unpin
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </>
   );
 }
