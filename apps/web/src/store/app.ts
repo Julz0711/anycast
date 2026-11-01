@@ -28,6 +28,8 @@ export interface AppState {
   zapList: string[];
   toasts: Toast[];
   online: boolean;
+  /** set when another device took over this tab's provider connection (SSE 'playback-stopped') */
+  playbackStopped: { by: { profileName: string; device?: string }; at: number } | null;
 }
 
 export const EMPTY_RULES: HideRules = { countries: [], languages: [], categoryIds: [] };
@@ -47,6 +49,7 @@ export const useApp = create<AppState>(() => ({
   zapList: [],
   toasts: [],
   online: true,
+  playbackStopped: null,
 }));
 
 export const progressKey = (kind: Progress['kind'], id: string) => `${kind}:${id}`;

@@ -11,7 +11,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ADMIN, type E2EFixtures } from './env';
+import { ADMIN, type E2EFixtures, type OneConnectionStack } from './env';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '../../..');
@@ -61,25 +61,23 @@ async function until<T>(what: string, fn: () => Promise<T | null | undefined | f
   }
 }
 
-export default async function globalSetup(_config: FullConfig) {
-  const webDist = path.join(repo, 'apps/web/dist');
-  if (!existsSync(path.join(webDist, 'index.html'))) throw new Error('apps/web/dist is missing: run `pnpm --filter @anycast/web build` first (pnpm e2e does)');
+interface Stack { base: string; mockUrl: string; tmp: string; stop: () => Promise<void> }
 
+/** A mock provider and an AnyCast server for it, in a temp dir. */
+async function startStack(name: string, webDist: string, env: { mock: Record<string, string>; server: Record<string, string> }): Promise<Stack> {
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'anycast-e2e-'));
   const [mockPort, serverPort] = await Promise.all([freePort(), freePort()]);
   const mockUrl = `http://127.0.0.1:${mockPort}`;
   const base = `http://127.0.0.1:${serverPort}`;
-
-  const mock = start('mock', path.join(repo, 'tools/mock-xtream'), {
-    PORT: String(mockPort), HOST: '127.0.0.1', SIZE: 'small', MAX_CONNECTIONS: '50',
-    MOCK_USERNAME: MOCK.username, MOCK_PASSWORD: MOCK.password,
+  const mock = start(`${name} mock`, path.join(repo, 'tools/mock-xtream'), {
+    PORT: String(mockPort), HOST: '127.0.0.1', SIZE: 'small', MOCK_USERNAME: MOCK.username, MOCK_PASSWORD: MOCK.password, ...env.mock,
   });
-  const server = start('server', path.join(repo, 'apps/server'), {
+  const server = start(`${name} server`, path.join(repo, 'apps/server'), {
     PORT: String(serverPort), HOST: '127.0.0.1',
     DATA_DIR: path.join(tmp, 'data'), BUFFER_DIR: path.join(tmp, 'buffer'), WEB_DIST: webDist,
     XTREAM_URL: mockUrl, XTREAM_USERNAME: MOCK.username, XTREAM_PASSWORD: MOCK.password,
     ANYCAST_SECRET: 'e2e-secret-0123456789abcdef', ANYCAST_ADMIN_USER: ADMIN.username, ANYCAST_ADMIN_PASSWORD: ADMIN.password,
-    LOG_LEVEL: 'warn', BUFFER_GRACE_MINUTES: '0.2',
+    LOG_LEVEL: 'warn', ...env.server,
   });
   const stop = async () => {
     for (const c of [server, mock]) if (c.exitCode === null) c.kill('SIGTERM');
@@ -88,39 +86,72 @@ export default async function globalSetup(_config: FullConfig) {
     );
     rmSync(tmp, { recursive: true, force: true });
   };
-
   try {
-    await until('the mock', async () => (await fetch(`${mockUrl}/__mock/state`)).ok);
-    await until('the server', async () => (await fetch(`${base}/api/health`)).ok);
+    await until(`the ${name} mock`, async () => (await fetch(`${mockUrl}/__mock/state`)).ok);
+    await until(`the ${name} server`, async () => (await fetch(`${base}/api/health`)).ok);
+  } catch (e) {
+    await stop();
+    throw e;
+  }
+  return { base, mockUrl, tmp, stop };
+}
 
-    const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ADMIN) });
-    if (!login.ok) throw new Error(`login failed: ${login.status}`);
-    const setCookie = login.headers.getSetCookie().find((c) => c.startsWith('anycast_session='))!;
-    const token = setCookie.split(';')[0]!.split('=')[1]!;
-    const me = (await login.json()) as { user: { id: string } };
-    const get = async <T>(url: string): Promise<T> => {
-      const res = await fetch(base + url, { headers: { cookie: `anycast_session=${token}` } });
-      if (!res.ok) throw new Error(`${url}: ${res.status}`);
-      return (await res.json()) as T;
-    };
+/** Signs in, waits for the first catalog + EPG sync and writes a storage state with the session. */
+async function signIn(stack: Stack, name: string) {
+  const { base } = stack;
+  const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ADMIN) });
+  if (!login.ok) throw new Error(`login failed: ${login.status}`);
+  const setCookie = login.headers.getSetCookie().find((c) => c.startsWith('anycast_session='))!;
+  const token = setCookie.split(';')[0]!.split('=')[1]!;
+  const me = (await login.json()) as { user: { id: string } };
+  const get = async <T>(url: string): Promise<T> => {
+    const res = await fetch(base + url, { headers: { cookie: `anycast_session=${token}` } });
+    if (!res.ok) throw new Error(`${url}: ${res.status}`);
+    return (await res.json()) as T;
+  };
+  // first catalog + EPG sync (the server starts it on boot)
+  await until(`the first ${name} sync`, async () => {
+    const s = await get<{ syncing: boolean; lastSync: { catalog: number | null; epg: number | null } }>('/api/source');
+    return !s.syncing && s.lastSync.catalog && s.lastSync.epg;
+  });
+  const state = path.join(stack.tmp, 'state.json');
+  writeFileSync(
+    state,
+    JSON.stringify({
+      cookies: [{ name: 'anycast_session', value: token, domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Lax' }],
+      origins: [],
+    }),
+  );
+  return { get, userId: me.user.id, state };
+}
 
-    // first catalog + EPG sync (the server starts it on boot)
-    await until('the first sync', async () => {
-      const s = await get<{ syncing: boolean; lastSync: { catalog: number | null; epg: number | null } }>('/api/source');
-      return !s.syncing && s.lastSync.catalog && s.lastSync.epg;
-    });
+export default async function globalSetup(_config: FullConfig) {
+  const webDist = path.join(repo, 'apps/web/dist');
+  if (!existsSync(path.join(webDist, 'index.html'))) throw new Error('apps/web/dist is missing: run `pnpm --filter @anycast/web build` first (pnpm e2e does)');
 
-    writeFileSync(
-      path.join(tmp, 'state.json'),
-      JSON.stringify({
-        cookies: [{ name: 'anycast_session', value: token, domain: '127.0.0.1', path: '/', expires: -1, httpOnly: true, secure: false, sameSite: 'Lax' }],
-        origins: [],
-      }),
-    );
+  // the main stack has plenty of connections; the second one has a single provider connection
+  // and the default 10 min buffer grace period (one-connection.spec.ts)
+  const stacks: Stack[] = [];
+  const stop = async () => {
+    await Promise.all(stacks.map((s) => s.stop()));
+  };
+  try {
+    const keep = (st: Stack) => (stacks.push(st), st);
+    const [main, one] = await Promise.all([
+      startStack('main', webDist, { mock: { MAX_CONNECTIONS: '50' }, server: { BUFFER_GRACE_MINUTES: '0.2' } }).then(keep),
+      startStack('one-connection', webDist, { mock: { MAX_CONNECTIONS: '1', MOCK_TIMEZONE: 'Europe/Amsterdam' }, server: {} }).then(keep),
+    ]);
+    const [m, o] = await Promise.all([signIn(main, 'main'), signIn(one, 'one-connection')]);
+    const base = main.base;
+    const mockUrl = main.mockUrl;
+    const get = m.get;
+    const me = { user: { id: m.userId } };
+
 
     process.env.E2E_BASE_URL = base;
-    process.env.E2E_STATE = path.join(tmp, 'state.json');
+    process.env.E2E_STATE = m.state;
     process.env.E2E_FIXTURES = JSON.stringify(await fixtures(get, mockUrl, me.user.id));
+    process.env.E2E_ONE = JSON.stringify({ base: one.base, mockUrl: one.mockUrl, state: o.state, userId: o.userId } satisfies OneConnectionStack);
     return stop;
   } catch (e) {
     await stop();

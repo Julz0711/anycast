@@ -285,6 +285,9 @@ const routes: [string, RegExp, Handler][] = [
     return { url: clipUrl, type: 'file', pipeline: 'passthrough', startsAt: at };
   }],
   ['GET', /^\/api\/timeline\/([^/]+)$/, (m) => timeline(findChannel(m[1]!), Date.now())],
+  // the demo has no provider connections to share
+  ['POST', /^\/api\/play\/takeover$/, () => ({ ok: true, stopped: false })],
+  ['POST', /^\/api\/play\/stop$/, () => ({ ok: true })],
   ['GET', /^\/api\/play\/movie\/([^/]+)$/, (m, _q, _b, st): PlaybackInfo => {
     const p = st.progress.get(`movie:${m[1]}`);
     return { url: clipUrl, type: 'file', pipeline: 'passthrough', resumeAt: p && !p.finished ? Math.min(p.position, CLIP_SECONDS - 20) : undefined };

@@ -115,6 +115,8 @@ The end-to-end suite starts the mock (small catalog) and the server on free port
 temporary data and buffer directory, and drives Chromium through the main scenarios: rewinding to
 a missed start, resuming a movie on another device, binge-watching with the next-episode countdown,
 filtering languages in the first-run setup, zapping with the keyboard, playing a past programme
-from the guide, and realtime sync of favorites and accent color. It needs Playwright's Chromium
+from the guide, and realtime sync of favorites and accent color. A second mock and server with a
+single provider connection cover zapping without ever holding two streams and taking playback
+over from another device. It needs Playwright's Chromium
 (`pnpm --filter @anycast/web exec playwright install chromium` once). Set `E2E_DEBUG=1` to see the
 mock and server logs. CI runs all of the above on every pull request.

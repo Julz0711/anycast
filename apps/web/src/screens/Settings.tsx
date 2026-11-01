@@ -583,18 +583,27 @@ function RewindBuffer() {
           <ProgressBar value={s.caps.maxBytes ? s.totalBytes / s.caps.maxBytes : 0} label="Rewind buffer space used" />
         </div>
       </Row>
-      <Row
-        label="Always buffered"
-        hint={
-          isAdmin
-            ? 'Pin a channel from its player with "Keep a rewind buffer". Each pinned channel uses one provider connection; one always stays free for watching.'
-            : 'Only an admin can choose which channels are always buffered.'
-        }
-      >
-        <span className="tabnum">
-          {pinned.length} of {s.caps.maxPins ?? '?'} channel{s.caps.maxPins === 1 ? '' : 's'}
-        </span>
-      </Row>
+      {s.caps.maxPins === 0 && !pinned.length ? (
+        <Row
+          label="Always buffered"
+          hint="Your subscription plays one stream at a time. That connection stays free for watching, so no channel can keep a buffer in the background. The channel you watch is still buffered while you watch it."
+        >
+          <span className="muted">Not available</span>
+        </Row>
+      ) : (
+        <Row
+          label="Always buffered"
+          hint={
+            isAdmin
+              ? 'Pin a channel from its player with "Keep a rewind buffer". Each pinned channel uses one provider connection; one always stays free for watching.'
+              : 'Only an admin can choose which channels are always buffered.'
+          }
+        >
+          <span className="tabnum">
+            {pinned.length} of {s.caps.maxPins ?? '?'} channel{s.caps.maxPins === 1 ? '' : 's'}
+          </span>
+        </Row>
+      )}
       {msg && (
         <p className="notice error" role="alert">
           {msg}

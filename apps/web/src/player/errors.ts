@@ -1,10 +1,10 @@
 /** Turn failures into honest, actionable messages. */
-import type { GapCause, Pipeline } from '@anycast/shared';
+import type { ConnectionBusyError, GapCause, Pipeline } from '@anycast/shared';
 import { ApiError } from '../api/client';
 import { gapText } from '../lib/time';
 import { PlaybackFailure } from './engine';
 
-export type ErrAction = 'retry' | 'live' | 'back' | 'zap';
+export type ErrAction = 'retry' | 'live' | 'back' | 'zap' | 'takeover';
 export interface PlayerErr {
   title: string;
   detail: string;
@@ -26,6 +26,16 @@ export function fromApiError(e: unknown, ctx: { live: boolean; timeshift: boolea
     if (ctx.timeshift && (e.status === 400 || e.status === 416 || e.status === 422)) {
       const cause = (e.body as { cause?: GapCause } | undefined)?.cause;
       return { title: "That time isn't available", detail: cause ? gapText({ reason: e.message, cause }) : e.message, tips: ['Pick a time inside the light part of the timeline.'], actions: ['live', 'back'] };
+    }
+    const body = e.body as Partial<ConnectionBusyError> | undefined;
+    if (e.status === 409 && body?.error === 'connection_busy' && body.holder) {
+      const h = body.holder;
+      return {
+        title: `${h.profileName} is watching ${h.channelName}`,
+        detail: `${h.device ? `On ${h.device}. ` : ''}Your subscription plays one stream at a time. Watch here instead?`,
+        tips: [],
+        actions: ['takeover', 'back'],
+      };
     }
     if (e.status === 429 || /connection/i.test(e.message))
       return {

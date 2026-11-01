@@ -5,6 +5,7 @@
  */
 import type { Api } from '@anycast/shared';
 import { isDemo } from '../demo/flag';
+import { clientId, deviceLabel } from '../lib/client-id';
 
 export type Route = keyof Api;
 type Def<R extends Route> = Api[R];
@@ -69,6 +70,8 @@ export function requestHeaders(json: boolean): Record<string, string> {
   if (p) h['x-anycast-profile'] = p;
   const c = hooks.caps();
   if (c) h['x-anycast-caps'] = c;
+  h['x-anycast-client'] = clientId();
+  h['x-anycast-device'] = deviceLabel();
   return h;
 }
 

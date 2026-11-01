@@ -18,3 +18,12 @@ export interface E2EFixtures {
     movie: { de: string; en: string };
   };
 }
+
+/** The second stack: a mock with max_connections = 1 and its own server (one-connection.spec.ts). */
+export interface OneConnectionStack {
+  base: string;
+  mockUrl: string;
+  /** storage state signed in as ADMIN on this server */
+  state: string;
+  userId: string;
+}

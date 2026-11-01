@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Episode, PlaybackInfo, TimelineInfo } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
-import { saveProgress, saveProgressOnUnload, setZapList, toggleFavorite } from '../store/actions';
+import { saveProgress, saveProgressOnUnload, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
 import { cachedGet, call } from '../api/client';
 import { lookup, resolveItems } from '../api/catalog';
 import { setBufferPin, useBufferPins } from '../api/buffer';
@@ -76,6 +76,14 @@ export default function PlayerScreen() {
   const [pinMsg, setPinMsg] = useState<{ text: string; error: boolean } | null>(null);
   const [pinBusy, setPinBusy] = useState(false);
   useEffect(() => setPinMsg(null), [id]);
+  /** another device took this tab's provider connection over */
+  const [moved, setMoved] = useState<{ profileName: string; device?: string } | null>(null);
+  const movedRef = useRef(false);
+  movedRef.current = !!moved;
+  const stopped = useApp((s) => s.playbackStopped);
+  const loadStarted = useRef(0);
+  const lastLoad = useRef<{ at: number | null; opts: { fromStart?: boolean } }>({ at: null, opts: {} });
+  const progressBodyRef = useRef<() => ProgressBody | null>(() => null);
 
   /* ---------------- metadata ---------------- */
   const channel = useAsync(
@@ -123,6 +131,7 @@ export default function PlayerScreen() {
 
   const onFatal = useCallback(
     (f: PlaybackFailure) => {
+      if (movedRef.current) return;
       setError(fromPlaybackFailure(f, streamRef.current?.info.pipeline, isLive));
       setWaiting(false);
     },
@@ -132,6 +141,10 @@ export default function PlayerScreen() {
   const load = useCallback(
     async (at: number | null, opts: { fromStart?: boolean } = {}) => {
       const seq = ++loadSeq.current;
+      lastLoad.current = { at, opts };
+      loadStarted.current = Date.now();
+      setMoved(null);
+      if (useApp.getState().playbackStopped) useApp.setState({ playbackStopped: null });
       setError(null);
       setWaiting(true);
       setCountdown(null);
@@ -186,6 +199,48 @@ export default function PlayerScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, id]);
+
+  /* ---------------- one connection: taken over, take over, release ---------------- */
+  useEffect(() => {
+    if (!stopped || stopped.at < loadStarted.current) return;
+    const b = progressBodyRef.current();
+    if (b && b.position > 1) void saveProgress(b);
+    loadSeq.current++;
+    engineRef.current?.destroy();
+    engineRef.current = null;
+    setMoved(stopped.by);
+    setError(null);
+    setWaiting(false);
+    setCountdown(null);
+  }, [stopped]);
+
+  const takeOver = useCallback(async () => {
+    setError(null);
+    setWaiting(true);
+    try {
+      await call('POST /api/play/takeover');
+    } catch {
+      /* the next load says what is wrong */
+    }
+    void load(lastLoad.current.at, lastLoad.current.opts);
+  }, [load]);
+
+  // Closing the player releases this tab's provider connection right away (with one connection,
+  // another device can start at once). Zapping needs no call: the next play request does it.
+  useEffect(() => {
+    const stop = () => {
+      try {
+        void call('POST /api/play/stop', { keepalive: true }).catch(() => undefined);
+      } catch {
+        /* unloading */
+      }
+    };
+    window.addEventListener('pagehide', stop);
+    return () => {
+      window.removeEventListener('pagehide', stop);
+      stop();
+    };
+  }, []);
 
   /* ---------------- position maths ---------------- */
   const video = videoRef.current;
@@ -436,6 +491,7 @@ export default function PlayerScreen() {
     if (!v || isLive || !Number.isFinite(v.duration) || v.duration <= 0) return null;
     return { kind: vodKind, id, position: v.ended ? v.duration : v.currentTime, duration: v.duration, ...(kind === 'episode' && seriesId ? { seriesId } : {}) } as const;
   }, [isLive, vodKind, id, kind, seriesId]);
+  progressBodyRef.current = progressBody;
 
   useEffect(() => {
     if (isLive) return;
@@ -603,7 +659,7 @@ export default function PlayerScreen() {
   const audio = engine?.audioTracks() ?? [];
   const texts = engine?.textTracks() ?? [];
   const hasTracks = audio.length > 1 || texts.length > 0;
-  const showPlayOverlay = !error && countdown === null && (needsTap || (paused && !waiting));
+  const showPlayOverlay = !error && !moved && countdown === null && (needsTap || (paused && !waiting));
 
   return (
     <div
@@ -678,7 +734,23 @@ export default function PlayerScreen() {
             </button>
           </div>
         )}
-        {error && (
+        {moved && (
+          <div className="pl-error" role="alert" data-nav-trap="" data-testid="playback-moved">
+            <h2>Playback moved to another device</h2>
+            <p className="pl-error-detail">
+              {moved.profileName} started watching{moved.device ? ` on ${moved.device}` : ''}. Your subscription plays one stream at a time.
+            </p>
+            <div className="actions">
+              <button type="button" className="btn btn-primary" autoFocus onClick={() => void load(isLive && streamRef.current && !streamRef.current.liveEdge ? position : null)}>
+                Resume
+              </button>
+              <button type="button" className="btn" onClick={back}>
+                Back
+              </button>
+            </div>
+          </div>
+        )}
+        {error && !moved && (
           <div className="pl-error" role="alert" data-nav-trap="">
             <h2>{error.title}</h2>
             <p className="pl-error-detail">{error.detail}</p>
@@ -690,6 +762,11 @@ export default function PlayerScreen() {
               </ul>
             )}
             <div className="actions">
+              {error.actions.includes('takeover') && (
+                <button type="button" className="btn btn-primary" autoFocus onClick={() => void takeOver()}>
+                  Take over
+                </button>
+              )}
               {error.actions.includes('retry') && (
                 <button type="button" className="btn btn-primary" autoFocus onClick={() => void load(isLive && streamRef.current && !streamRef.current.liveEdge ? position : null)}>
                   Try again
@@ -803,7 +880,12 @@ export default function PlayerScreen() {
               {atLive ? 'Live' : 'Go live'}
             </button>
           )}
-          {isLive && isAdmin && bufPins.pins && (
+          {isLive && isAdmin && bufPins.pins?.maxPins === 0 && !pinned && (
+            <span className="pl-note" data-testid="pin-unavailable" title="Background buffering needs a second provider connection">
+              Rewind works while you watch. Your subscription plays one stream at a time, so channels can't keep a buffer in the background.
+            </span>
+          )}
+          {isLive && isAdmin && bufPins.pins && (bufPins.pins.maxPins !== 0 || pinned) && (
             <button
               type="button"
               className={`btn${pinned ? ' on' : ''}`}

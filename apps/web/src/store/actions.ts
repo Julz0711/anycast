@@ -6,6 +6,7 @@ import { readJson, readLocal, writeLocal } from '../lib/storage';
 import type { DeviceOverride } from '../lib/device';
 import { EMPTY_RULES, progressKey, useApp } from './app';
 import { isDemo } from '../demo/flag';
+import { clientId } from '../lib/client-id';
 
 const get = useApp.getState;
 const set = useApp.setState;
@@ -166,7 +167,7 @@ export async function toggleFavorite(kind: Favorite['kind'], id: string) {
 }
 
 /* ---------------- progress ---------------- */
-type ProgressBody = Omit<Progress, 'updatedAt' | 'finished'>;
+export type ProgressBody = Omit<Progress, 'updatedAt' | 'finished'>;
 
 function localProgress(body: ProgressBody) {
   const finished = body.duration > 0 && body.position / body.duration > 0.95;
@@ -240,6 +241,10 @@ export function applyEvent(ev: SyncEvent) {
     case 'catalog-updated':
       clearApiCache();
       set((s) => ({ catalogVersion: s.catalogVersion + 1 }));
+      break;
+    case 'playback-stopped':
+      // the profile may be open on several devices; only the stopped one reacts
+      if (ev.clientId === clientId()) set({ playbackStopped: { by: ev.by, at: Date.now() } });
       break;
   }
 }
