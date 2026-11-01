@@ -9,11 +9,14 @@ import { remember, resolveItems, visibleCategories } from '../api/catalog';
 import { useAsync, useElementWidth, useFormFactor, useInView, usePagedList } from '../lib/hooks';
 import { readLocal, writeLocal } from '../lib/storage';
 import { PosterCard } from '../components/cards';
-import { Chips, Empty, Skeleton } from '../components/ui';
+import { Empty, Skeleton } from '../components/ui';
+import { CategoryChips } from '../components/CategoryChips';
 import { IconSearch } from '../components/Icons';
 import { catLabel } from './Live';
 
 type Kind = 'movie' | 'series';
+const HOME = { id: 'home', label: 'Home' };
+const LEAD = [HOME];
 const LIST = { movie: 'GET /api/movies', series: 'GET /api/series' } as const;
 
 export function VodBrowse(props: { kind: Kind; title: string; continueRow: ReactNode }) {
@@ -31,7 +34,8 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
     writeLocal(`anycast.cat.${kind}`, id);
     window.scrollTo({ top: 0 });
   };
-  const chips = useMemo(() => [{ id: 'home', label: 'Home' }, ...(cats.data ?? []).map((c) => ({ id: c.id, label: catLabel(c) }))], [cats.data]);
+  const catChips = useMemo(() => (cats.data ?? []).map((c) => ({ id: c.id, label: catLabel(c) })), [cats.data]);
+  const chips = useMemo(() => [HOME, ...catChips], [catChips]);
   useEffect(() => {
     if (cats.data && !chips.some((c) => c.id === cat)) setCat('home');
   }, [cats.data, chips, cat]);
@@ -65,7 +69,7 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
           ))}
         </div>
       ) : (
-        <Chips label="Categories" items={chips} value={cat} onChange={pick} />
+        <CategoryChips label="Categories" noun="categories" lead={LEAD} categories={catChips} value={cat} onChange={pick} />
       )}
 
       {cat === 'home' ? (

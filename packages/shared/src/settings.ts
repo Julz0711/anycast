@@ -35,6 +35,8 @@ export interface Preferences {
     showProgress: boolean;
     reopenLastChannel: boolean;
     guideHoursVisible: 2 | 3 | 4 | 6;
+    /** Live TV lists and the guide show only channels that have guide data */
+    guideOnlyWithEpg: boolean;
   };
   player: {
     skipBackSeconds: 5 | 10 | 15 | 30;
@@ -74,6 +76,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     showProgress: true,
     reopenLastChannel: false,
     guideHoursVisible: 3,
+    guideOnlyWithEpg: false,
   },
   player: {
     skipBackSeconds: 10,

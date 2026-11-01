@@ -161,7 +161,7 @@ export default async function globalSetup(_config: FullConfig) {
 
 /* ---------------- fixture ids, from the mock's ground truth ---------------- */
 
-interface Ch { id: string; name: string; number: number; archiveDays: number; epgChannelId: string | null; language: string | null }
+interface Ch { id: string; name: string; number: number; archiveDays: number; epgChannelId: string | null; language: string | null; hasEpg: boolean; categoryId: string }
 interface Item { id: string; name: string; language: string | null; duration?: number | null }
 interface Cat { id: string; name: string; language: string | null }
 interface Program { start: number; end: number }
@@ -207,6 +207,8 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
   await Promise.all([warm('movie', movie.id), warm('series', ep1!.id), warm('series', ep2!.id)]);
 
   const liveCats = await get<Cat[]>('/api/categories?kind=live&all=1');
+  const noGuide = live.find((c) => !c.hasEpg);
+  if (!noGuide) throw new Error('no channel without guide data in the mock catalog');
   const movieCats = await get<Cat[]>('/api/categories?kind=movie&all=1');
   const pick = <T extends { language: string | null }>(xs: T[], lang: string, what: string) => {
     const x = xs.find((c) => c.language === lang);
@@ -223,6 +225,7 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
     userId,
     archiveChannel: { id: archive.id, name: archive.name },
     zapChannels: live.slice(0, 3).map((c) => c.id),
+    noGuideChannel: { id: noGuide.id, name: noGuide.name, category: liveCats.find((c) => c.id === noGuide.categoryId)!.name },
     movie: { id: movie.id, name: movie.name },
     series: { id: String(binge.series_id), name: detail.name, ep1: ep1!.id, ep2: ep2!.id, ep2Title: ep2!.title },
     declutter: {

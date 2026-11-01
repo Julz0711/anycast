@@ -11,7 +11,8 @@ import { useAsync, useElementWidth, useFormFactor, useNow, usePagedList, type Pa
 import { writeLocal, readLocal } from '../lib/storage';
 import { fmtClock, fmtRange } from '../lib/time';
 import { ChannelRow } from '../components/cards';
-import { Chips, Empty, LogoTile, ProgressBar, Segmented, Skeleton } from '../components/ui';
+import { Empty, LogoTile, ProgressBar, Segmented, Skeleton } from '../components/ui';
+import { CategoryChips } from '../components/CategoryChips';
 import { GuideGrid, type ChannelSource } from '../components/GuideGrid';
 import { IconSearch, IconStar } from '../components/Icons';
 import type { FormFactor } from '../lib/device';
@@ -36,16 +37,13 @@ export function LiveScreen() {
     (signal) => (favIds ? resolveItems('live', favIds.split(','), { signal, fresh: true }) : Promise.resolve([])),
     [favIds, version],
   );
-  const favChannels = (favs.data ?? []) as LiveChannelWithNow[];
+  const favChannels = ((favs.data ?? []) as LiveChannelWithNow[]).filter((c) => !live.guideOnlyWithEpg || c.hasEpg);
 
-  const chips = useMemo(
-    () => [
-      { id: 'all', label: 'All' },
-      ...(favIds ? [{ id: 'fav', label: 'Favorites' }] : []),
-      ...(cats.data ?? []).map((c) => ({ id: c.id, label: catLabel(c) })),
-    ],
-    [cats.data, favIds],
-  );
+  const onlyEpg = live.guideOnlyWithEpg;
+  const lead = useMemo(() => [{ id: 'all', label: 'All' }, ...(favIds ? [{ id: 'fav', label: 'Favorites' }] : [])], [favIds]);
+  const catChips = useMemo(() => (cats.data ?? []).map((c) => ({ id: c.id, label: catLabel(c) })), [cats.data]);
+  const chips = useMemo(() => [...lead, ...catChips], [lead, catChips]);
+  const catNames = useMemo(() => new Map(catChips.map((c) => [c.id, c.label])), [catChips]);
   useEffect(() => {
     if (cats.data && !chips.some((c) => c.id === cat)) setCat('all');
   }, [chips, cat, cats.data]);
@@ -55,13 +53,14 @@ export function LiveScreen() {
   };
 
   const paged = usePagedList<LiveChannelWithNow>(
-    `${cat}|${version}|${cat === 'fav' ? favIds : ''}`,
+    `${cat}|${version}|${cat === 'fav' ? favIds : ''}|${onlyEpg ? 'epg' : ''}`,
     async (offset, limit, signal) => {
       if (cat === 'fav') {
-        const items = (await resolveItems('live', favIds ? favIds.split(',') : [], { signal, fresh: true })) as LiveChannelWithNow[];
+        const all = (await resolveItems('live', favIds ? favIds.split(',') : [], { signal, fresh: true })) as LiveChannelWithNow[];
+        const items = onlyEpg ? all.filter((c) => c.hasEpg) : all;
         return { items: items.slice(offset, offset + limit), total: items.length };
       }
-      const res = await call('GET /api/live', { query: { categoryId: cat === 'all' ? undefined : cat, offset, limit }, signal });
+      const res = await call('GET /api/live', { query: { categoryId: cat === 'all' ? undefined : cat, offset, limit, hasEpg: onlyEpg ? '1' : undefined }, signal });
       remember('live', res.items);
       return res;
     },
@@ -94,6 +93,16 @@ export function LiveScreen() {
               ]}
               onChange={(v) => setPref('live', { [LAYOUT_KEY[form]]: v })}
             />
+            <button
+              type="button"
+              className="chip epg-filter"
+              aria-pressed={onlyEpg}
+              aria-label="Only channels with a guide"
+              title="Only channels with a guide"
+              onClick={() => setPref('live', { guideOnlyWithEpg: !onlyEpg })}
+            >
+              {form === 'phone' ? 'With guide' : 'Only channels with a guide'}
+            </button>
             {form === 'phone' && hiddenSearch && (
               <Link to="/search" className="icon-btn" aria-label="Search">
                 <IconSearch />
@@ -109,7 +118,7 @@ export function LiveScreen() {
             ))}
           </div>
         ) : (
-          <Chips label="Channel groups" items={chips} value={cat} onChange={pick} />
+          <CategoryChips label="Channel groups" noun="groups" lead={lead} categories={catChips} value={cat} onChange={pick} />
         )}
       </div>
       {source.error ? (
@@ -118,12 +127,18 @@ export function LiveScreen() {
         </Empty>
       ) : source.total === 0 ? (
         <Empty title={cat === 'fav' ? 'No favorite channels yet' : 'No channels here'}>
-          <p>{cat === 'fav' ? 'Open a channel and tap the star to add it.' : 'Everything in this group is hidden by your filters, or the group is empty.'}</p>
+          <p>
+            {onlyEpg
+              ? 'No channel here has guide data. Turn off "Only channels with a guide" to see them all.'
+              : cat === 'fav'
+                ? 'Open a channel and tap the star to add it.'
+                : 'Everything in this group is hidden by your filters, or the group is empty.'}
+          </p>
         </Empty>
       ) : layout === 'extended' ? (
         <GuideGrid source={source as ChannelSource} form={form} onPlay={open} onSelect={heroSelect} />
       ) : (
-        <SimpleList source={source} favorites={cat === 'all' ? favChannels : []} form={form} onOpen={open} />
+        <SimpleList source={source} favorites={cat === 'all' ? favChannels : []} form={form} onOpen={open} catNames={catNames} />
       )}
     </div>
   );
@@ -206,7 +221,7 @@ function Hero(props: { source: ChannelSource & { total: number | null }; favChan
 }
 
 /* ---------- simple list ---------- */
-function SimpleList(props: { source: PagedList<LiveChannelWithNow>; favorites: LiveChannelWithNow[]; form: FormFactor; onOpen: (id: string) => void }) {
+function SimpleList(props: { source: PagedList<LiveChannelWithNow>; favorites: LiveChannelWithNow[]; form: FormFactor; onOpen: (id: string) => void; catNames: Map<string, string> }) {
   const { source, form } = props;
   const now = useNow(30_000);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -251,7 +266,7 @@ function SimpleList(props: { source: PagedList<LiveChannelWithNow>; favorites: L
                       {ch.name}
                     </span>
                     <span className="ellipsis ch-now" style={{ display: 'block' }}>
-                      {ch.now?.title ?? '—'}
+                      {ch.now?.title ?? (ch.hasEpg ? '—' : (props.catNames.get(ch.categoryId) ?? '—'))}
                     </span>
                     {ch.now && (
                       <span style={{ display: 'block', marginTop: '0.375rem' }}>
@@ -281,7 +296,7 @@ function SimpleList(props: { source: PagedList<LiveChannelWithNow>; favorites: L
                 const ch = source.get(i);
                 return ch ? (
                   <div role="listitem" key={c}>
-                    <ChannelRow ch={ch} now={now} onOpen={props.onOpen} showNext={form !== 'phone'} />
+                    <ChannelRow ch={ch} now={now} onOpen={props.onOpen} showNext={form !== 'phone'} category={props.catNames.get(ch.categoryId)} />
                   </div>
                 ) : (
                   <RowSkeleton key={c} />

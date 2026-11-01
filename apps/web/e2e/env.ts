@@ -5,6 +5,8 @@ export interface E2EFixtures {
   userId: string;
   /** H.264 channel with an archive and past programmes in the EPG */
   archiveChannel: { id: string; name: string };
+  /** a channel without guide data, and its category's name */
+  noGuideChannel: { id: string; name: string; category: string };
   /** the first channels of the unfiltered live list, in order */
   zapChannels: string[];
   /** MP4 movie (direct play), 3+ minutes */

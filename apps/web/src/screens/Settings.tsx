@@ -214,6 +214,9 @@ function LiveSettings({ prefs, form, all }: { prefs: P; form: FormFactor; all?: 
           <Row label="Guide shows" hint="Hours visible at once in the Extended layout.">
             <Segmented label="Guide hours" value={l.guideHoursVisible} options={opts<2 | 3 | 4 | 6>([2, '2 h'], [3, '3 h'], [4, '4 h'], [6, '6 h'])} onChange={(v) => setPref('live', { guideHoursVisible: v })} />
           </Row>
+          <Row label="Only channels with a guide" hint="Hide channels without guide data in Live TV lists and the guide. Many providers have guide data for few channels.">
+            <Toggle label="Only channels with a guide" checked={l.guideOnlyWithEpg} onChange={(v) => setPref('live', { guideOnlyWithEpg: v })} />
+          </Row>
           <Row label="Channel numbers">
             <Toggle label="Channel numbers" checked={l.showChannelNumbers} onChange={(v) => setPref('live', { showChannelNumbers: v })} />
           </Row>

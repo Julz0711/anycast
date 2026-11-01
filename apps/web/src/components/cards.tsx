@@ -60,7 +60,14 @@ export function ContinueCard(props: { to: string; id: string; title: string; sub
   );
 }
 
-export const ChannelRow = memo(function ChannelRow(props: { ch: LiveChannelWithNow; now: number; onOpen: (id: string) => void; showNext?: boolean }) {
+export const ChannelRow = memo(function ChannelRow(props: {
+  ch: LiveChannelWithNow;
+  now: number;
+  onOpen: (id: string) => void;
+  showNext?: boolean;
+  /** shown instead of now/next when the channel has no guide data */
+  category?: string;
+}) {
   const { ch, now } = props;
   const live = useApp((s) => s.prefs.live);
   const fav = useIsFavorite('live', ch.id);
@@ -73,7 +80,7 @@ export const ChannelRow = memo(function ChannelRow(props: { ch: LiveChannelWithN
       onClick={() => props.onOpen(ch.id)}
       onMouseEnter={prefetchPlayer}
       onFocus={prefetchPlayer}
-      aria-label={`${live.showChannelNumbers ? ch.number + ' ' : ''}${ch.name}${p ? ', now: ' + p.title : ''}`}
+      aria-label={`${live.showChannelNumbers ? ch.number + ' ' : ''}${ch.name}${p ? ', now: ' + p.title : !ch.hasEpg && props.category ? ', ' + props.category : ''}`}
     >
       {live.showLogos && <LogoTile name={ch.name} logo={ch.logo} />}
       <div className="ch-main">
@@ -83,7 +90,13 @@ export const ChannelRow = memo(function ChannelRow(props: { ch: LiveChannelWithN
           </span>
           {live.showChannelNumbers && <span className="ch-num tabnum">{ch.number}</span>}
         </div>
-        <div className="ch-now">{p ? p.title : 'No programme information'}</div>
+        {p ? (
+          <div className="ch-now">{p.title}</div>
+        ) : !ch.hasEpg && props.category ? (
+          <div className="ch-now ch-cat">{props.category}</div>
+        ) : (
+          <div className="ch-now">No programme information</div>
+        )}
         {live.showProgress && p && <ProgressBar value={pct} />}
         {props.showNext && ch.next && (
           <div className="ch-next">

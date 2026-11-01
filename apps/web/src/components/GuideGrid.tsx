@@ -20,6 +20,7 @@ export interface ChannelSource {
 }
 
 const MIN = 60_000;
+const NO_PROGRAMS: EpgProgram[] = [];
 const HOUR = 3_600_000;
 
 /* ---------- EPG cache for the grid window ---------- */
@@ -146,7 +147,11 @@ export function GuideGrid(props: {
 
   const visFrom = win && pxPerMin ? win.from + ((scrollLeft - 0) / pxPerMin) * MIN - HOUR : 0;
   const visTo = win && pxPerMin ? win.from + ((scrollLeft + width) / pxPerMin) * MIN + HOUR : 0;
-  const ids = vItems.map((v) => source.get(v.index)?.id).filter((id): id is string => !!id);
+  // only visible rows, and only channels that have guide data, are asked for (many have none)
+  const ids = vItems
+    .map((v) => source.get(v.index))
+    .filter((c): c is LiveChannelWithNow => !!c && c.hasEpg)
+    .map((c) => c.id);
   const epg = useEpg(win ? ids : [], win?.from ?? 0, win?.to ?? 0);
 
   const ticks: number[] = [];
@@ -198,13 +203,14 @@ export function GuideGrid(props: {
                     {win && pxPerMin > 0 && (
                       <Programs
                         ch={ch}
-                        programs={epg(ch.id)}
+                        programs={ch.hasEpg ? epg(ch.id) : NO_PROGRAMS}
                         now={now}
                         visFrom={visFrom}
                         visTo={visTo}
                         x={x}
                         chW={chW}
                         clipX={scrollLeft + chW}
+                        viewW={Math.max(0, width - chW)}
                         onPlay={props.onPlay}
                         onSelect={props.onSelect}
                       />
@@ -239,6 +245,8 @@ const Programs = memo(function Programs(props: {
   chW: number;
   /** content x of the channel column's right edge; titles of programmes that start under it are shifted into view */
   clipX: number;
+  /** width of the visible time area */
+  viewW: number;
   onPlay: (ch: LiveChannelWithNow, at?: number) => void;
   onSelect?: (ch: LiveChannelWithNow, p: EpgProgram | null) => void;
 }) {
@@ -247,10 +255,21 @@ const Programs = memo(function Programs(props: {
     return <div className="prog skel" style={{ left: x(props.visFrom + 3_600_000), width: Math.max(0, x(props.visTo - 3_600_000) - x(props.visFrom + 3_600_000)) }} />;
   }
   if (!programs.length) {
+    // one calm block across the visible time area, so the row reads as a channel, not a hole
     return (
-      <div className="prog prog-empty" style={{ left: Math.max(props.chW, x(props.visFrom)), width: x(props.visTo) - x(props.visFrom) }}>
-        <span className="prog-t">No guide data</span>
-      </div>
+      <button
+        type="button"
+        className="prog prog-empty"
+        style={{ left: props.clipX + 2, width: Math.max(2, props.viewW - 4) }}
+        onClick={() => props.onPlay(ch)}
+        aria-label={`${ch.name}, no guide data, watch live`}
+        role="gridcell"
+      >
+        <span className="prog-inner">
+          <span className="prog-t">{ch.name}</span>
+          <span className="prog-s">No guide data</span>
+        </span>
+      </button>
     );
   }
   const archiveFrom = ch.archiveDays > 0 ? now - ch.archiveDays * 86_400_000 : Infinity;

@@ -2,6 +2,9 @@ import { clockIn, expect, expectPlaying, fx, test, timelinePosition } from './fi
 
 const MIN = 60_000;
 
+/** How the app labels category chips ("DE | Sport" -> "DE · Sport"). */
+const chip = (name: string) => name.replace(/\s*\|\s*/, ' · ');
+
 test.describe('live TV', () => {
   test('missed the start: type-a-time 25 min back on an archive channel, then go live', async ({ profile }) => {
     const page = await profile.device();
@@ -66,5 +69,42 @@ test.describe('live TV', () => {
       expect([await clockIn(page, at), await clockIn(page, at + MIN)]).toContain(await page.locator('.rb-cur').textContent());
       await expect(page.locator('.pl-badge')).toHaveText(/behind live$/);
     });
+  });
+});
+
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+test.describe('channels without guide data', () => {
+  test.use({ profileOptions: { setupDone: true, prefs: { live: { layoutLarge: 'extended' } } } });
+
+  test('a calm row in the guide, the group name in the list, and a filter to hide them', async ({ profile }) => {
+    const ch = fx.noGuideChannel;
+    const page = await profile.device();
+    const asked: string[] = [];
+    page.on('request', (r) => {
+      const u = new URL(r.url());
+      if (u.pathname === '/api/epg') asked.push(...(u.searchParams.get('channelIds') ?? '').split(','));
+    });
+    await page.goto('/live');
+    await page.getByRole('toolbar', { name: 'Channel groups' }).getByRole('button', { name: chip(ch.category), exact: true }).click();
+
+    // Extended: one block with the channel name, and its guide is never asked for
+    const guide = page.getByRole('grid', { name: 'TV guide' });
+    const block = guide.getByRole('gridcell', { name: `${ch.name}, no guide data, watch live` });
+    await expect(block).toBeVisible();
+    await expect(block).toContainText('No guide data');
+    await expect.poll(() => asked.length).toBeGreaterThan(0);
+    expect(asked).not.toContain(ch.id);
+
+    // Simple: the group name instead of now/next
+    await page.getByRole('radiogroup', { name: 'Live TV layout' }).getByRole('radio', { name: 'Simple' }).click();
+    const row = page.getByRole('list', { name: 'Channels' }).getByRole('button', { name: new RegExp(`${esc(ch.name)}, ${esc(chip(ch.category))}$`) });
+    await expect(row).toBeVisible();
+
+    // the quick filter hides channels without a guide (and is a synced preference)
+    await page.getByRole('button', { name: 'Only channels with a guide' }).click();
+    await expect(page.getByRole('button', { name: 'Only channels with a guide' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(row).toHaveCount(0);
+    await expect.poll(async () => ((await (await profile.api.get('/api/preferences')).json()) as { live: { guideOnlyWithEpg?: boolean } }).live.guideOnlyWithEpg).toBe(true);
   });
 });
