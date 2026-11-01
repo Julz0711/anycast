@@ -43,6 +43,8 @@ reverse proxy, log level) are listed in [apps/server/README.md](apps/server/READ
 
 To update: `git pull && docker compose up -d --build`.
 
+Running on CasaOS: see [docs/casaos.md](docs/casaos.md) for a step-by-step guide, including HTTPS via Tailscale.
+
 ## Check your provider: `pnpm run doctor`
 
 The doctor talks to your provider and reports what AnyCast will find there: account status and
