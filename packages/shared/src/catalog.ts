@@ -10,6 +10,8 @@ export interface Category {
   country: string | null;
   /** ISO 639-1, lower-case (e.g. "de", "en"); null if unknown */
   language: string | null;
+  /** XXX / adult / 18+ categories (PIN lock later) */
+  adult: boolean;
 }
 
 export interface Channel {

@@ -4,7 +4,8 @@
  * Every route except /api/auth/login and /api/health requires the session cookie.
  * Profile: requests carry header "x-anycast-profile: <profileId>" (defaults to the user's first profile).
  *
- * Realtime: GET /api/events is a Server-Sent Events stream. Events are SyncEvent JSON in `data:`.
+ * Artwork: logo/poster fields are /api/art/{kind}/{id} paths (provider hosts never reach the client).
+ * Realtime: GET /api/events?profile=<id> is a Server-Sent Events stream (EventSource cannot send headers). Events are SyncEvent JSON in `data:`.
  */
 import type {
   Category, Channel, EpgProgram, Episode, Favorite, HideRules, ItemRef, Movie, PlaybackInfo,
@@ -72,7 +73,8 @@ export interface Api {
   'GET /api/source': { res: SourceStatus };
   'POST /api/source/sync': { res: { ok: true } };
 
-  'GET /api/categories': { query: { kind: 'live' | 'movie' | 'series' }; res: Category[] };
+  /** all=1 includes categories hidden by the profile's rules (for Settings) */
+  'GET /api/categories': { query: { kind: 'live' | 'movie' | 'series'; all?: '1' }; res: Category[] };
   'GET /api/tags': { res: { countries: TagSummary[]; languages: TagSummary[] } };
 
   /** hidden items already filtered out for the current profile */
