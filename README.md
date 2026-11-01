@@ -80,13 +80,12 @@ XTREAM_USERNAME=test
 XTREAM_PASSWORD=test
 ```
 
-Then `pnpm dev` starts everything in watch mode:
+Then start the mock in one terminal and the app in another:
 
-- the mock provider on `:8899` (synthetic channels, movies and series generated with FFmpeg),
-- the server on `:8787`,
-- the web app on `http://localhost:5173` (Vite, proxying `/api` to the server).
+- `pnpm mock`: the mock provider on `:8899` (synthetic channels, movies and series generated with FFmpeg; needs FFmpeg),
+- `pnpm dev`: the server on `:8787` and the web app on `http://localhost:5173` (Vite, proxying `/api` to the server).
 
-Each part also runs alone: `pnpm mock`, `pnpm --filter @anycast/server dev`,
+With your real provider in `.env`, skip the mock and just run `pnpm dev`. Each part also runs alone: `pnpm --filter @anycast/server dev`,
 `pnpm --filter @anycast/web dev`. The web app also has a demo mode with fixture data and no
 server: open `http://localhost:5173/?demo=1` (if asked to sign in: any name, password `demo`).
 
