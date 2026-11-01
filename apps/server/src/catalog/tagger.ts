@@ -77,6 +77,17 @@ const NAMES: [RegExp, Tag][] = [
   [/\b(pakistan|urdu)\b/i, t('pk', 'ur')],
   [/\b(iran|persian|farsi)\b/i, t('ir', 'fa')],
   [/\b(kurdish|kurdistan)\b/i, t(null, 'ku')],
+  [/\b(canada|canadian)\b/i, t('ca', 'en')],
+  [/\b(australia|australian)\b/i, t('au', 'en')],
+  [/\b(new zealand)\b/i, t('nz', 'en')],
+  [/\b(ireland|irish)\b/i, t('ie', 'en')],
+  [/\b(belgium|belgian|belgique)\b/i, t('be', null)],
+  [/\b(luxembourg)\b/i, t('lu', null)],
+  [/\b(mexico|méxico|mexican)\b/i, t('mx', 'es')],
+  [/\b(japan|japanese)\b/i, t('jp', 'ja')],
+  [/\b(korea|korean)\b/i, t('kr', 'ko')],
+  [/\b(china|chinese)\b/i, t('cn', 'zh')],
+  [/\b(philippines|filipino)\b/i, t('ph', null)],
 ];
 
 /**
@@ -106,8 +117,19 @@ function fromFlag(flag: string): Tag | null {
   return known?.country ? known : t(letters.toLowerCase(), null);
 }
 
+/** Decorative provider separators ("UEFA▌ CHAMPIONS LEAGUE", "SPORTS ● REPLAY") read as a middle dot. */
+const DECOR_SEP_RE = /\s*[▎▍▌▏│┃●•★✪]+\s*/gu;
+export function tidyName(name: string): string {
+  return name.replace(DECOR_SEP_RE, ' · ').replace(/^ · | · $/g, '').trim() || name;
+}
+
 /** Tag from the name's own prefix/suffix; `matched` is false when the name carries no tag. */
 export function parseName(raw: string): TagResult {
+  const r = parseTag(raw);
+  return { ...r, name: tidyName(r.name) };
+}
+
+function parseTag(raw: string): TagResult {
   const name = raw.trim();
   for (const [re, tag] of TAG_OVERRIDES) {
     if (re.test(name)) return { ...tag, name, matched: true };
@@ -142,7 +164,7 @@ export function tagCategory(raw: string): TagResult & { adult: boolean } {
   // categories are tag-heavy: a bare leading code counts too ("UK ENTERTAINMENT")
   const bare = /^\s*([A-Z]{2,6}(?:-[A-Z]{2})?)\s+(\S.*)$/.exec(raw);
   const bareTag = bare ? lookup(bare[1]!) : null;
-  if (bare && bareTag) return { ...bareTag, name: bare[2]!.trim(), matched: true, adult };
+  if (bare && bareTag) return { ...bareTag, name: tidyName(bare[2]!.trim()), matched: true, adult };
   for (const [re, tag] of NAMES) {
     if (re.test(raw)) return { ...tag, name: own.name, matched: true, adult };
   }

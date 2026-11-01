@@ -77,7 +77,7 @@ export function GuideGrid(props: {
   const [width, setWidth] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
   const rem = useMemo(remPx, [form]); // eslint-disable-line react-hooks/exhaustive-deps
-  const chW = Math.round((form === 'phone' ? 5.25 : 11) * rem);
+  const chW = Math.round((form === 'phone' ? 6.5 : form === 'tv' ? 16 : 14.5) * rem);
   const rowH = Math.round((density === 'compact' ? 2.875 : 3.625) * rem);
   const headH = Math.round(2.25 * rem);
 

@@ -91,3 +91,10 @@ test('>= 95% accuracy against the mock ground truth', () => {
   for (const it of [...c.live, ...c.movies, ...c.series]) check(tagItem(it.name, cats.get(it.categoryId) ?? null), it.tags);
   expect(ok / total).toBeGreaterThanOrEqual(0.95);
 });
+
+test('decorative separators read as a middle dot in display names', () => {
+  expect(parseName('UEFA▌ CHAMPIONS LEAGUE').name).toBe('UEFA · CHAMPIONS LEAGUE');
+  expect(parseName('SPORTS ● REPLAY').name).toBe('SPORTS · REPLAY');
+  expect(parseName('PL ● TVP 1')).toMatchObject({ country: 'pl', name: 'TVP 1' });
+  expect(tagCategory('ASIA▌ NEW ZEALAND')).toMatchObject({ country: 'nz', language: 'en', name: 'ASIA · NEW ZEALAND' });
+});
