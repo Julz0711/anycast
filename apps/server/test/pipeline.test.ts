@@ -71,6 +71,14 @@ test('hls args: vod seek keeps timestamps, transcode forces keyframes from the s
   expect(live.join(' ')).toContain('-c:v copy');
   expect(live.join(' ')).toContain('-c:a copy');
   expect(live).not.toContain('-copyts');
+  expect(live).not.toContain('aac_adtstoasc');
+});
+
+test('hls args: remuxed AAC gets ADTS -> ASC so it fits fMP4; other copied audio does not', () => {
+  const base = { input: 'pipe:0', pipeline: 'remux', dir: '/d', run: 0, segmentSeconds: 4, mode: 'live' } as const;
+  expect(buildHlsArgs({ ...base, audioCodec: 'aac' }).join(' ')).toContain('-c:a copy -bsf:a aac_adtstoasc');
+  expect(buildHlsArgs({ ...base, audioCodec: 'ac3' })).not.toContain('aac_adtstoasc');
+  expect(buildHlsArgs({ ...base, pipeline: 'transcode-audio', audioCodec: 'aac' })).not.toContain('aac_adtstoasc');
 });
 
 test('completedSegments reads only the given run', () => {

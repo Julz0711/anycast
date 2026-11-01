@@ -89,11 +89,12 @@ export class StreamHlsSession extends Session {
     mode: 'live' | 'event',
     private readonly lease: Lease | null,
     onError: (msg: string) => void,
+    audioCodec: string | null = null,
   ) {
     super(dir);
     const args = buildHlsArgs({
       input: 'stream' in input ? 'pipe:0' : input.url, pipeline, dir, run: 0,
-      segmentSeconds: LIVE_SEGMENT_SECONDS, mode,
+      segmentSeconds: LIVE_SEGMENT_SECONDS, mode, audioCodec,
     });
     this.proc = spawnFfmpeg(args, onError, 'stream' in input ? input.stream : undefined);
     this.proc.on('close', () => {
@@ -144,6 +145,7 @@ export class VodHlsSession extends Session {
     readonly duration: number,
     private readonly acquire: () => Lease,
     private readonly onError: (msg: string) => void,
+    private readonly audioCodec: string | null = null,
   ) {
     super(dir);
     this.count = Math.max(1, Math.ceil(duration / SEGMENT_SECONDS));
@@ -170,7 +172,7 @@ export class VodHlsSession extends Session {
     const id = ++this.runCounter;
     const args = buildHlsArgs({
       input: this.url(), pipeline: this.pipeline, dir: this.dir, run: id, segmentSeconds: SEGMENT_SECONDS,
-      mode: 'vod', seek: start * SEGMENT_SECONDS, startNumber: start,
+      mode: 'vod', seek: start * SEGMENT_SECONDS, startNumber: start, audioCodec: this.audioCodec,
     });
     const proc = spawnFfmpeg(args, this.onError);
     const run: Run = { id, proc, start, exited: false, exitCode: null, paused: false, completed: new Map(), lease };

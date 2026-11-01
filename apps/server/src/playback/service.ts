@@ -189,7 +189,7 @@ export class PlaybackService {
     const buffer = this.requireBuffer();
     if (!buffer.playlist(id, run, from)) throw new NotFoundError('This part of the buffer is no longer available');
     const session = await this.sessions.getOrCreate(`buf:${id}:${run}:${from}:${pipeline}`, (dir) => {
-      return new StreamHlsSession(dir, { stream: buffer.reader(id, run, from) }, pipeline, 'event', null, this.ffmpegError);
+      return new StreamHlsSession(dir, { stream: buffer.reader(id, run, from) }, pipeline, 'event', null, this.ffmpegError, this.liveAudio(id));
     });
     return file === 'index.m3u8' ? { text: await session.playlist() } : { files: await session.file(file) };
   }
@@ -224,7 +224,7 @@ export class PlaybackService {
     const key = `live:${id}:${pipeline}`;
     const session = await this.sessions.getOrCreate(key, async (dir) => {
       const stream = await this.fanouts.subscribe(`live:${id}`, () => this.client().liveUrl(id));
-      return new StreamHlsSession(dir, { stream }, pipeline, 'live', null, this.ffmpegError);
+      return new StreamHlsSession(dir, { stream }, pipeline, 'live', null, this.ffmpegError, this.liveAudio(id));
     });
     return file === 'index.m3u8' ? { text: await session.playlist() } : { files: await session.file(file) };
   }
@@ -253,9 +253,14 @@ export class PlaybackService {
     const sessionKey = `${key}:${durMin}:${pipeline}`;
     const session = await this.sessions.getOrCreate(sessionKey, (dir) => {
       const lease = this.pool.acquire(key);
-      return new StreamHlsSession(dir, { url: this.timeshiftUrl(id, startMin, durMin) }, pipeline, 'event', lease, this.ffmpegError);
+      return new StreamHlsSession(dir, { url: this.timeshiftUrl(id, startMin, durMin) }, pipeline, 'event', lease, this.ffmpegError, this.liveAudio(id));
     });
     return file === 'index.m3u8' ? { text: await session.playlist() } : { files: await session.file(file) };
+  }
+
+  /** The live channel's audio codec, from its probe (or the assumed live defaults). */
+  private liveAudio(id: string): string | null {
+    return (this.probes.cached(`live:${id}`) ?? ASSUMED_LIVE).audio[0]?.codec ?? null;
   }
 
   /** Progressive passthrough with Range support. */
@@ -284,9 +289,10 @@ export class PlaybackService {
     const sessionKey = `${key}:${pipeline}`;
     const session = await this.sessions.getOrCreate(sessionKey, (dir) => {
       this.pool.check(key);
-      const duration = this.probes.cached(key)?.duration ?? item.duration;
+      const probe = this.probes.cached(key);
+      const duration = probe?.duration ?? item.duration;
       if (!duration) throw new HlsError(422, 'The video length is unknown, so it cannot be prepared for this device');
-      return new VodHlsSession(dir, item.url, pipeline, duration, () => this.pool.acquire(key), this.ffmpegError);
+      return new VodHlsSession(dir, item.url, pipeline, duration, () => this.pool.acquire(key), this.ffmpegError, probe?.audio[0]?.codec ?? null);
     });
     if (file === 'index.m3u8') return { text: session.playlist() };
     if (file === 'init.mp4') return { files: await session.init() };

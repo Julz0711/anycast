@@ -15,6 +15,8 @@ export interface HlsArgs {
   mode: 'vod' | 'live' | 'event';
   seek?: number;
   startNumber?: number;
+  /** source audio codec (ffprobe name), if known; remuxed AAC from MPEG-TS needs ADTS -> ASC for MP4 */
+  audioCodec?: string | null;
 }
 
 export const runPlaylist = (run: number) => `r${run}.m3u8`;
@@ -39,7 +41,11 @@ export function buildHlsArgs(o: HlsArgs): string[] {
   } else {
     args.push('-c:v', 'copy');
   }
-  if (o.pipeline === 'remux') args.push('-c:a', 'copy');
+  if (o.pipeline === 'remux') {
+    args.push('-c:a', 'copy');
+    // ADTS AAC (MPEG-TS) cannot go into fMP4 as is; the filter passes AAC that is already in ASC form
+    if (o.audioCodec === 'aac') args.push('-bsf:a', 'aac_adtstoasc');
+  }
   else args.push('-c:a', 'aac', '-ac', '2', '-b:a', '192k');
 
   // keep source timestamps so segments from a restarted (seeked) run line up on the same timeline;
