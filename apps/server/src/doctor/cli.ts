@@ -1,4 +1,5 @@
 /** `pnpm run doctor -- [--samples N] [--json] [--no-streams]` */
+import { spawnSync } from 'node:child_process';
 import { loadEnvFiles, xtreamFromEnv } from '../config';
 import { createRedactor } from '../redact';
 import { DoctorAuthError, formatReport, parseArgs, runDoctor } from './report';
@@ -12,6 +13,13 @@ async function main(): Promise<number> {
   }
   const redact = createRedactor(creds);
   const args = parseArgs(process.argv.slice(2));
+  if (args.streams && spawnSync('ffprobe', ['-version'], { stdio: 'ignore' }).error) {
+    console.error(
+      'ffprobe (part of FFmpeg) was not found, so stream formats are skipped.\n' +
+        'Install FFmpeg to include them (Windows: winget install Gyan.FFmpeg, macOS: brew install ffmpeg), then open a new terminal.',
+    );
+    args.streams = false;
+  }
   try {
     if (!args.json) console.error('Checking your provider... (this can take a minute)');
     const report = await runDoctor(creds, args);

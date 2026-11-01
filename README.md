@@ -54,7 +54,8 @@ pnpm install
 pnpm run doctor          # or: pnpm run doctor -- --json  (also --samples 4, --no-streams)
 ```
 
-Use `pnpm run doctor`, not `pnpm doctor`: the short form runs pnpm's own built-in `doctor` command, which
+You need Node 22+ and pnpm. FFmpeg (for `ffprobe`) is optional: without it the stream-format
+section is skipped. Use `pnpm run doctor`, not `pnpm doctor`: the short form runs pnpm's own built-in `doctor` command, which
 prints nothing.
 
 **Run it on your own machine**, with your login in your own `.env`. The report contains no
