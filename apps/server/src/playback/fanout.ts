@@ -76,6 +76,11 @@ class Fanout {
     return sub;
   }
 
+  /** Ends every viewer (not the recorder taps). */
+  dropViewers(): void {
+    for (const sub of this.subscribers) if (!this.taps.has(sub)) sub.end();
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -95,6 +100,8 @@ export interface SubscribeOptions {
 
 export class LiveFanouts {
   private readonly active = new Map<string, Promise<Fanout>>();
+  /** the fan-out behind each entry of `active`, also while it is still connecting */
+  private readonly objects = new Map<string, Fanout>();
   private readonly listeners = new Set<(key: string, viewers: number) => void>();
 
   constructor(private readonly pool: UpstreamPool) {}
@@ -119,12 +126,17 @@ export class LiveFanouts {
         lease,
         () => {
           if (this.active.get(key) === pending) this.active.delete(key);
+          if (this.objects.get(key) === fanout) this.objects.delete(key);
         },
         (n) => this.emitViewers(key, n),
       );
       pending = fanout.start(url()).then(() => fanout);
       this.active.set(key, pending);
-      pending.catch(() => this.active.delete(key));
+      this.objects.set(key, fanout);
+      pending.catch(() => {
+        if (this.objects.get(key) === fanout) this.objects.delete(key);
+        this.active.delete(key);
+      });
     }
     const fanout = await pending;
     if (fanout.closed) {
@@ -145,5 +157,21 @@ export class LiveFanouts {
 
   isOpen(key: string): boolean {
     return this.active.has(key);
+  }
+
+  /** Viewers of a channel right now (0 while it is still connecting). */
+  viewersNow(key: string): number {
+    const f = this.objects.get(key);
+    return f && !f.closed ? f.viewers : 0;
+  }
+
+  /** Closes the channel's upstream now: viewers and recorders end, the provider connection is released. */
+  close(key: string): void {
+    this.objects.get(key)?.close();
+  }
+
+  /** Ends the channel's viewers; recorder taps keep the upstream open. */
+  dropViewers(key: string): void {
+    this.objects.get(key)?.dropViewers();
   }
 }

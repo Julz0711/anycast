@@ -470,6 +470,23 @@ export class BufferManager {
     }
   }
 
+  /** Channels recorded only for the grace period: nobody watches them and they are not pinned. */
+  idleRecordings(): string[] {
+    return [...this.recorders.keys()].filter((id) => !this.isPinned(id) && this.deps.fanouts.viewersNow(`live:${id}`) === 0);
+  }
+
+  /**
+   * Stops a channel's recording now instead of after the grace period, because its provider
+   * connection is needed elsewhere. Pinned channels keep recording. Returns whether it stopped.
+   */
+  stopNow(id: string, reason: GapCode = REASON_IDLE): boolean {
+    const rec = this.recorders.get(id);
+    if (!rec || this.isPinned(id)) return false;
+    this.clearGrace(id);
+    rec.stop(reason);
+    return true;
+  }
+
   private clearGrace(id: string): void {
     const t = this.graceTimers.get(id);
     if (t) clearTimeout(t);

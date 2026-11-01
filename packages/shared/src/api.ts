@@ -6,6 +6,10 @@
  *
  * Artwork: logo/poster fields are /api/art/{kind}/{id} paths (provider hosts never reach the client).
  * Realtime: GET /api/events?profile=<id> is a Server-Sent Events stream (EventSource cannot send headers). Events are SyncEvent JSON in `data:`.
+ *
+ * Playback clients: requests to /api/play/* carry "x-anycast-client: <id>" (one id per app instance, e.g. per tab) and
+ * "x-anycast-device: <label>" (e.g. "Chrome on Mac"). The server uses them to release a client's previous stream as soon as
+ * it asks for the next one (zapping never holds two provider connections) and to say who holds a busy connection.
  */
 import type {
   Category, Channel, EpgProgram, Episode, Favorite, HideRules, ItemRef, Movie, PlaybackInfo,
@@ -66,12 +70,37 @@ export interface SearchResults {
 
 export interface TagSummary { country: string | null; language: string | null; count: number; }
 
+/** Who is using the provider connection another client wants (409 on /api/play/*). */
+export interface ConnectionHolder {
+  profileName: string;
+  /** channel, movie or episode name */
+  channelName: string;
+  /** the holder's x-anycast-device label, if it sent one */
+  device?: string;
+}
+
+/**
+ * 409 body when every provider connection is used by other clients watching something else.
+ * POST /api/play/takeover stops that playback; then ask for the stream again.
+ */
+export interface ConnectionBusyError {
+  error: 'connection_busy';
+  message: string;
+  holder: ConnectionHolder;
+  canTakeOver: true;
+}
+
 export type SyncEvent =
   | { type: 'favorites'; profileId: string; favorites: Favorite[] }
   | { type: 'progress'; profileId: string; progress: Progress }
   | { type: 'preferences'; profileId: string; preferences: Preferences }
   | { type: 'hide-rules'; profileId: string; rules: HideRules }
-  | { type: 'catalog-updated' };
+  | { type: 'catalog-updated' }
+  /**
+   * Sent to the profile whose playback was stopped by another client taking over the connection.
+   * `clientId` is the stopped client's x-anycast-client id; other clients of the profile ignore it.
+   */
+  | { type: 'playback-stopped'; profileId: string; clientId: string; reason: 'taken-over'; by: { profileName: string; device?: string } };
 
 /** Route table (method + path -> request/response). Documentation as code. */
 export interface Api {
@@ -104,6 +133,11 @@ export interface Api {
   'GET /api/items': { query: { live?: string; movie?: string; series?: string }; res: ItemsById };
   'GET /api/search': { query: { q: string }; res: SearchResults };
 
+  /**
+   * Every /api/play/* route: 409 ConnectionBusyError when other clients hold every provider connection
+   * (same channel or title = shared, no conflict); 429 {error:'connection_limit', message} when the
+   * connections are in use and nobody can be named.
+   */
   'GET /api/play/live/:id': { res: PlaybackInfo };
   /**
    * at = epoch ms; returns a stream starting at that time (archive or buffer).
@@ -113,6 +147,14 @@ export interface Api {
   'GET /api/timeline/:channelId': { res: TimelineInfo };
   'GET /api/play/movie/:id': { res: PlaybackInfo };
   'GET /api/play/episode/:id': { res: PlaybackInfo };
+  /**
+   * Stops the playback that holds the connection this client was refused (the holder named in the
+   * 409). The stopped client gets a 'playback-stopped' event. Streams of the stopped playback then
+   * answer 409 {error:'taken_over'} until someone asks for them again through /api/play/*.
+   */
+  'POST /api/play/takeover': { res: { ok: true; stopped: boolean } };
+  /** This client stopped watching (player closed): its provider connection is released now. */
+  'POST /api/play/stop': { res: { ok: true } };
 
   /** Rolling buffer: pinned channels record continuously (TL-4) */
   'GET /api/buffer/pins': { res: BufferPins };

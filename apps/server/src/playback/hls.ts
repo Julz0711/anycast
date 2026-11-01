@@ -327,6 +327,15 @@ export class HlsSessions {
     return pending;
   }
 
+  /** Closes every session whose key matches (e.g. all sessions of one provider connection). */
+  closeWhere(match: (key: string) => boolean): void {
+    for (const [key, s] of this.sessions) {
+      if (!match(key)) continue;
+      s.close();
+      this.sessions.delete(key);
+    }
+  }
+
   private reap(): void {
     const now = Date.now();
     for (const [key, s] of this.sessions) {

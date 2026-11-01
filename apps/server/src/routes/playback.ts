@@ -3,7 +3,21 @@ import { createReadStream } from 'node:fs';
 import { PassThrough } from 'node:stream';
 import { auth, type Services } from '../context';
 import { parseCaps } from '../playback/caps';
+import type { Viewer } from '../playback/claims';
 import { isHlsPipeline, type StreamBody, type VodKind } from '../playback/service';
+
+const CLIENT_ID = /^[\w-]{8,64}$/;
+
+/** The playback client behind a request (x-anycast-client / x-anycast-device), or null for clients that send none. */
+function viewerOf(req: FastifyRequest, s: Services): Viewer | null {
+  const clientId = req.headers['x-anycast-client'];
+  if (typeof clientId !== 'string' || !CLIENT_ID.test(clientId)) return null;
+  const { user, profileId } = auth(req);
+  const rawDevice = req.headers['x-anycast-device'];
+  const device = typeof rawDevice === 'string' ? rawDevice.replace(/[\p{C}]/gu, '').trim().slice(0, 60) : '';
+  const profileName = s.users.profiles(user.id).find((p) => p.id === profileId)?.name ?? user.username;
+  return { clientId, profileId, profileName, device: device || null };
+}
 
 const caps = (req: FastifyRequest) => parseCaps((req.headers['x-anycast-caps'] as string | undefined) ?? (req.query as Record<string, string>).caps);
 
@@ -47,12 +61,12 @@ function abortOnClose(req: FastifyRequest): AbortSignal {
 export function playbackRoutes(app: FastifyInstance, s: Services): void {
   const p = s.playback;
 
-  app.get<{ Params: { id: string } }>('/api/play/live/:id', async (req) => p.liveInfo(req.params.id, caps(req)));
+  app.get<{ Params: { id: string } }>('/api/play/live/:id', async (req) => p.liveInfo(req.params.id, caps(req), viewerOf(req, s)));
 
   app.get<{ Params: { id: string }; Querystring: { at?: string } }>('/api/play/live/:id/at', async (req, reply) => {
     const at = Number(req.query.at);
     if (!Number.isFinite(at)) return reply.code(400).send({ error: 'bad_request', message: 'at (epoch ms) is required' });
-    return p.atInfo(req.params.id, at, caps(req));
+    return p.atInfo(req.params.id, at, caps(req), viewerOf(req, s));
   });
 
   app.get<{ Params: { channelId: string } }>('/api/timeline/:channelId', async (req) => p.timeline(req.params.channelId));
@@ -61,9 +75,21 @@ export function playbackRoutes(app: FastifyInstance, s: Services): void {
     app.get<{ Params: { id: string } }>(`/api/play/${kind}/:id`, async (req) => {
       const saved = s.userData.progressFor(auth(req).profileId, kind, req.params.id);
       const resumeAt = saved && !saved.finished && saved.position > 0 ? saved.position : null;
-      return p.vodInfo(kind, req.params.id, caps(req), resumeAt);
+      return p.vodInfo(kind, req.params.id, caps(req), resumeAt, viewerOf(req, s));
     });
   }
+
+  app.post('/api/play/takeover', async (req, reply) => {
+    const viewer = viewerOf(req, s);
+    if (!viewer) return reply.code(400).send({ error: 'bad_request', message: 'x-anycast-client is required' });
+    return { ok: true as const, stopped: p.takeover(viewer) };
+  });
+
+  app.post('/api/play/stop', async (req) => {
+    const viewer = viewerOf(req, s);
+    if (viewer) p.stopClient(viewer.clientId);
+    return { ok: true as const };
+  });
 
   // ----- streams (cookie-authenticated like every /api route) -----
 

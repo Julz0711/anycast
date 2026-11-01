@@ -131,9 +131,23 @@ src/
   - **raw TS** for live H.264/AAC when the client has MSE
   - **HLS** (fMP4) with stream copy otherwise, with AAC audio when the client can't decode the
     audio, and with libx264 when it can't decode the video
-- **Connections:** viewers of the same live channel share one upstream connection. When the
-  provider's `max_connections` are all in use, the API answers
-  `429 {error: "connection_limit", message}`.
+- **Connections:** viewers of the same live channel (or the same movie or episode) share one
+  upstream connection. Each app instance sends `x-anycast-client` (and a `x-anycast-device` label)
+  with its `/api/play/*` requests, and the server keeps one claim per client
+  (`playback/claims.ts`). When a client asks for something new, its previous stream is released
+  first: HLS sessions, raw TS viewers and direct VOD/timeshift streams are closed, and when
+  connections are scarce (all in use) the old channel's buffer recording stops at once instead of
+  holding the connection for the grace period. So zapping with `max_connections = 1` never holds
+  two provider connections, and late requests of the old player get `409 {error: "taken_over"}`
+  instead of reopening it. Streams are not prefetched.
+- **Busy connection:** when other clients hold every connection, `/api/play/*` answers
+  `409 {error: "connection_busy", message, holder: {profileName, channelName, device?}, canTakeOver: true}`.
+  `POST /api/play/takeover` stops that playback and sends its client a `playback-stopped` event
+  (`{reason: "taken-over", by}`); the client then asks for its stream again. `POST /api/play/stop`
+  (the player closing) releases the client's connection right away. Without a holder to name (for
+  example a client that sends no id), it is still `429 {error: "connection_limit", message}`.
+  Panels keep counting a dropped connection for a moment, so "limit reached" from the panel right
+  after a release is retried for up to about 3 s.
 - **VOD seeking:** the playlist covers the whole duration from the start, in fixed 6 s slots.
   Asking for a slot the current FFmpeg run won't reach soon restarts FFmpeg at that slot (`-ss`).
   `-copyts` with `movflags=+frag_discont` keeps each segment's real media time. Runs that get far
@@ -148,9 +162,11 @@ src/
   channel's fan-out (no second provider connection) and runs `ffmpeg -c copy -copyts -f segment`
   into `BUFFER_DIR/<channel>/<run>/<seq>.ts`. Each finished segment is indexed in SQLite
   (`buffer_segments`) with its wall-clock span (PTS anchored to the clock as segments complete).
-  Recording continues for the grace period after the last viewer leaves. Pinned channels
+  Recording continues for the grace period after the last viewer leaves, unless the connection is
+  needed for something else (then it stops right away). Pinned channels
   (`PUT /api/buffer/pins`, admins only) record all the time; at most `max_connections - 1` can be
-  pinned (`409 pin_limit` otherwise, with a message meant to be shown as is).
+  pinned (`409 pin_limit` otherwise, with a message meant to be shown as is), so with one
+  connection nothing can be pinned and the web app says why instead of showing the toggle.
   `GET /api/play/live/:id/at` serves buffered times as a growing EVENT playlist of the recorded
   TS segments (or through FFmpeg when the client needs other codecs). On start the index is checked
   against the disk: unmatched rows and files are removed. `GET /api/buffer/status` reports it all.
