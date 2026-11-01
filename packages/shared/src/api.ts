@@ -51,6 +51,13 @@ export interface LiveChannelWithNow extends Channel {
   next: EpgProgram | null;
 }
 
+/** Items by id, in the order asked for; unknown and hidden ids are left out. */
+export interface ItemsById {
+  live: LiveChannelWithNow[];
+  movies: Movie[];
+  series: Series[];
+}
+
 export interface SearchResults {
   live: Channel[];
   movies: Movie[];
@@ -93,10 +100,15 @@ export interface Api {
   'GET /api/movies': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Movie> };
   'GET /api/series': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Series> };
   'GET /api/series/:id': { res: SeriesDetail };
+  /** Hydrate items by id (favorites, deep links): comma-separated ids per kind, at most 500 each. Hidden items are left out. */
+  'GET /api/items': { query: { live?: string; movie?: string; series?: string }; res: ItemsById };
   'GET /api/search': { query: { q: string }; res: SearchResults };
 
   'GET /api/play/live/:id': { res: PlaybackInfo };
-  /** at = epoch ms; returns a stream starting at that time (archive or buffer) */
+  /**
+   * at = epoch ms; returns a stream starting at that time (archive or buffer).
+   * When nothing covers `at`: 422 {error:'gap', message, cause: GapCause}.
+   */
   'GET /api/play/live/:id/at': { query: { at: number }; res: PlaybackInfo };
   'GET /api/timeline/:channelId': { res: TimelineInfo };
   'GET /api/play/movie/:id': { res: PlaybackInfo };
@@ -104,6 +116,10 @@ export interface Api {
 
   /** Rolling buffer: pinned channels record continuously (TL-4) */
   'GET /api/buffer/pins': { res: BufferPins };
+  /**
+   * Admin only (403 {error:'forbidden'} otherwise). 409 {error:'pin_limit', message} when every
+   * pinnable provider connection is taken; show the message as is.
+   */
   'PUT /api/buffer/pins': { body: { channelId: string; pinned: boolean }; res: BufferPins };
   'GET /api/buffer/status': { res: BufferStatus };
 
@@ -112,6 +128,7 @@ export interface Api {
   'GET /api/progress': { res: Progress[] };
   'PUT /api/progress': { body: Omit<Progress, 'updatedAt' | 'finished'>; res: Progress };
   'GET /api/continue': { res: { movies: (Movie & { progress: Progress })[]; episodes: (Episode & { progress: Progress; series: Series })[] } };
+  /** includes `setupDone`, the per-profile first-run flag */
   'GET /api/preferences': { res: Preferences };
   'PUT /api/preferences': { body: Partial<Preferences>; res: Preferences };
   'GET /api/hide-rules': { res: HideRules };

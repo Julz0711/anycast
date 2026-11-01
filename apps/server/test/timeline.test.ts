@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
+import type { GapCode } from '@anycast/shared';
 import type { ChannelRow } from '../src/catalog/store';
-import { archiveSource, buildTimeline, gapReasonAt, LIVE_EDGE_MS, mergeRanges, sourceAt, type TimelineSource } from '../src/playback/timeline';
+import { archiveSource, buildTimeline, gapAt, LIVE_EDGE_MS, mergeRanges, sourceAt, type TimelineSource } from '../src/playback/timeline';
 
 const NOW = Date.UTC(2026, 10, 1, 12);
 const channel = (archive_days: number): ChannelRow => ({
@@ -21,10 +22,10 @@ test('archive channel: archive range then live edge, no gaps', () => {
 test('no archive: a gap with a reason up to the live edge', () => {
   const t = buildTimeline(channel(0), [archiveSource], NOW);
   expect(t.ranges).toEqual([{ start: NOW, end: NOW, source: 'live' }]);
-  expect(t.gaps).toEqual([{ start: NOW - 6 * 3600_000, end: NOW, reason: 'This channel has no archive' }]);
+  expect(t.gaps).toEqual([{ start: NOW - 6 * 3600_000, end: NOW, reason: 'This channel has no archive', cause: { code: 'no_archive' } }]);
 });
 
-const buf = (...ranges: [number, number, string?][]): TimelineSource => ({
+const buf = (...ranges: [number, number, GapCode?][]): TimelineSource => ({
   kind: 'buffer',
   ranges: () => ranges.map(([start, end, endReason]) => ({ start, end, source: 'buffer' as const, ...(endReason ? { endReason } : {}) })),
 });
@@ -33,7 +34,7 @@ const hhmm = (ms: number) => new Intl.DateTimeFormat('en-GB', { hour: '2-digit',
 test('a buffer source fills in where there is no archive; the gap before it says since when', () => {
   const t = buildTimeline(channel(0), [archiveSource, buf([NOW - 3600_000, NOW - LIVE_EDGE_MS])], NOW, { timeZone: 'UTC' });
   expect(t.ranges.map((r) => r.source)).toEqual(['buffer', 'live']);
-  expect(t.gaps).toEqual([{ start: NOW - 6 * 3600_000, end: NOW - 3600_000, reason: `This channel has no archive before ${hhmm(NOW - 3600_000)}` }]);
+  expect(t.gaps).toEqual([{ start: NOW - 6 * 3600_000, end: NOW - 3600_000, reason: `This channel has no archive before ${hhmm(NOW - 3600_000)}`, cause: { code: 'no_archive', at: NOW - 3600_000 } }]);
   expect(hhmm(NOW - 3600_000)).toBe('11:00');
 });
 
@@ -48,7 +49,7 @@ test('a recording buffer reaches the live edge: live starts where the buffer end
 });
 
 test('the buffer wins over the archive where both cover; ranges stay sorted and non-overlapping', () => {
-  const t = buildTimeline(channel(1), [archiveSource, buf([NOW - 3 * 3600_000, NOW - 2 * 3600_000, 'Stream dropped'], [NOW - 600_000, NOW - 1000])], NOW);
+  const t = buildTimeline(channel(1), [archiveSource, buf([NOW - 3 * 3600_000, NOW - 2 * 3600_000, 'dropped'], [NOW - 600_000, NOW - 1000])], NOW);
   expect(t.ranges).toEqual([
     { start: NOW - 86400_000, end: NOW - 3 * 3600_000, source: 'archive' },
     { start: NOW - 3 * 3600_000, end: NOW - 2 * 3600_000, source: 'buffer' },
@@ -61,16 +62,22 @@ test('the buffer wins over the archive where both cover; ranges stay sorted and 
 });
 
 test('a drop between two buffered runs is a gap with its reason, not stitched', () => {
-  const t = buildTimeline(channel(0), [archiveSource, buf([NOW - 100_000, NOW - 60_000, 'Stream dropped'], [NOW - 50_000, NOW - 1000])], NOW);
+  const t = buildTimeline(channel(0), [archiveSource, buf([NOW - 100_000, NOW - 60_000, 'dropped'], [NOW - 50_000, NOW - 1000])], NOW);
   expect(t.ranges.map((r) => r.source)).toEqual(['buffer', 'buffer', 'live']);
-  expect(t.gaps).toContainEqual({ start: NOW - 60_000, end: NOW - 50_000, reason: 'Stream dropped' });
-  expect(gapReasonAt(t, NOW - 55_000)).toBe('Stream dropped');
+  expect(t.gaps).toContainEqual({ start: NOW - 60_000, end: NOW - 50_000, reason: 'Stream dropped', cause: { code: 'dropped' } });
+  expect(gapAt(t, NOW - 55_000)).toEqual({ reason: 'Stream dropped', cause: { code: 'dropped' } });
 });
 
 test('an old buffer with nothing since: the gap after it carries the stop reason and only now is live', () => {
-  const t = buildTimeline(channel(0), [archiveSource, buf([NOW - 3600_000, NOW - 3000_000, 'Not recorded: nobody was watching'])], NOW);
+  const t = buildTimeline(channel(0), [archiveSource, buf([NOW - 3600_000, NOW - 3000_000, 'idle'])], NOW);
   expect(t.ranges[t.ranges.length - 1]).toEqual({ start: NOW, end: NOW, source: 'live' });
-  expect(t.gaps[t.gaps.length - 1]).toEqual({ start: NOW - 3000_000, end: NOW, reason: 'Not recorded: nobody was watching' });
+  expect(t.gaps[t.gaps.length - 1]).toEqual({ start: NOW - 3000_000, end: NOW, reason: 'Not recorded: nobody was watching', cause: { code: 'idle' } });
+});
+
+test('describeGap formats the time with the caller\'s clock', async () => {
+  const { describeGap } = await import('@anycast/shared');
+  expect(describeGap({ code: 'no_archive', at: NOW }, () => '9:00 PM')).toBe('This channel has no archive before 9:00 PM');
+  expect(describeGap({ code: 'unpinned' }, hhmm)).toBe('Not recorded: the channel was unpinned');
 });
 
 test('mergeRanges joins touching ranges of one source and trims overlaps', () => {

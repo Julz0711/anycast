@@ -1,9 +1,9 @@
-import type { LiveChannelWithNow, MediaKind, SeriesDetail, SourceStatus, TagSummary } from '@anycast/shared';
+import type { ItemsById, LiveChannelWithNow, MediaKind, SeriesDetail, SourceStatus, TagSummary } from '@anycast/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
-  countsByKind, EMPTY_RULES, epgFor, getSeries, listCategories, listEpisodes, nowNext, pageChannels, pageMovies, pageSeries,
-  toEpisode, toSeries, visibleChannels,
+  countsByKind, EMPTY_RULES, epgFor, getSeries, itemsByIds, listCategories, listEpisodes, nowNext, pageChannels, pageMovies, pageSeries,
+  toChannel, toEpisode, toMovie, toSeries, visibleChannels,
 } from '../catalog/store';
 import { auth, type Services } from '../context';
 import { search } from '../search';
@@ -13,6 +13,13 @@ const PageQuery = z.object({
   offset: z.coerce.number().int().min(0).catch(0),
   limit: z.coerce.number().int().min(1).max(500).catch(100),
 });
+const MAX_IDS = 500;
+const IdList = z
+  .string()
+  .max(64 * MAX_IDS)
+  .optional()
+  .transform((v) => [...new Set((v ?? '').split(',').map((x) => x.trim()).filter(Boolean))].slice(0, MAX_IDS));
+const ItemsQuery = z.object({ live: IdList, movie: IdList, series: IdList });
 const Kind = z.enum(['live', 'movie', 'series']);
 const MAX_EPG_SPAN_MS = 3 * 86400_000;
 
@@ -75,6 +82,18 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
     const now = Date.now();
     const items: LiveChannelWithNow[] = page.items.map((c) => ({ ...c, ...nowNext(s.db, { id: c.id, epg_channel_id: c.epgChannelId }, now) }));
     return { items, total: page.total };
+  });
+
+  app.get('/api/items', async (req, reply): Promise<ItemsById | undefined> => {
+    const q = ItemsQuery.safeParse(req.query);
+    if (!q.success) return reply.code(400).send({ error: 'bad_request', message: 'live, movie and series are comma-separated id lists' });
+    const r = rules(req);
+    const now = Date.now();
+    return {
+      live: itemsByIds(s.db, 'live', q.data.live, r).map((c) => ({ ...toChannel(c), ...nowNext(s.db, c, now) })),
+      movies: itemsByIds(s.db, 'movie', q.data.movie, r).map(toMovie),
+      series: itemsByIds(s.db, 'series', q.data.series, r).map(toSeries),
+    };
   });
 
   app.get('/api/epg', async (req, reply) => {

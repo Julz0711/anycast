@@ -42,7 +42,6 @@ export default function PlayerScreen() {
   const zapList = useApp((s) => s.zapList);
   const isLive = kind === 'live';
   const vodKind = kind === 'episode' ? 'episode' : 'movie';
-  const seriesId = sp.get('series') ?? undefined;
 
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -51,6 +50,8 @@ export default function PlayerScreen() {
   const loadSeq = useRef(0);
   const endedAt = useRef<number[]>([]);
   const [info, setInfo] = useState<PlaybackInfo | null>(null);
+  // episodes: the link may carry ?series=, otherwise the server says (PlaybackInfo.seriesId)
+  const seriesId = sp.get('series') ?? info?.seriesId ?? undefined;
   const [error, setError] = useState<PlayerErr | null>(null);
   const [waiting, setWaiting] = useState(true);
   const [slow, setSlow] = useState(false);

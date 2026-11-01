@@ -121,7 +121,7 @@ function timeline(ch: Channel, now: number): TimelineInfo {
         { start: gapEnd, end: now - 120_000, source: 'archive' },
         { start: now - 120_000, end: now, source: 'live' },
       ],
-      gaps: [{ start: gapStart, end: gapEnd, reason: 'The provider has no recording for this time' }],
+      gaps: [{ start: gapStart, end: gapEnd, reason: 'Not recorded', cause: { code: 'not_recorded' } }],
       programs,
     };
   }
@@ -133,7 +133,7 @@ function timeline(ch: Channel, now: number): TimelineInfo {
       { start: bufStart, end: now - 60_000, source: 'buffer' },
       { start: now - 60_000, end: now, source: 'live' },
     ],
-    gaps: [{ start: now - 6 * 3600_000, end: bufStart, reason: 'No archive on this channel. The server buffers from when someone tunes in.' }],
+    gaps: [{ start: now - 6 * 3600_000, end: bufStart, reason: 'This channel has no archive', cause: { code: 'no_archive', at: bufStart } }],
     programs,
   };
 }
@@ -225,6 +225,35 @@ const routes: [string, RegExp, Handler][] = [
     const cat = q.get('categoryId');
     return page(fx.series.filter((x) => !hidden(st.rules, x) && (!cat || x.categoryId === cat)), q);
   }],
+  ['GET', /^\/api\/items$/, (_m, q, _b, st) => {
+    const ids = (k: string) => (q.get(k) ?? '').split(',').filter(Boolean);
+    const pick = <T extends { id: string }>(list: T[], k: string) =>
+      ids(k).flatMap((id) => list.filter((x) => x.id === id && !hidden(st.rules, x as unknown as Parameters<typeof hidden>[1])));
+    const now = Date.now();
+    return { live: pick(fx.channels, 'live').map((c) => withNow(c, now)), movies: pick(fx.movies, 'movie'), series: pick(fx.series, 'series') };
+  }],
+  ['GET', /^\/api\/buffer\/pins$/, () => ({ channelIds: [...pins], maxPins: 1 })],
+  ['PUT', /^\/api\/buffer\/pins$/, (_m, _q, body) => {
+    const b = body as { channelId: string; pinned: boolean };
+    if (b.pinned && !pins.has(b.channelId) && pins.size >= 1) {
+      throw new ApiError(409, 'You can pin at most 1 channel: your subscription allows 2 provider connections and one stays free for watching. Unpin a channel first.', { error: 'pin_limit' });
+    }
+    if (b.pinned) pins.add(b.channelId);
+    else pins.delete(b.channelId);
+    return { channelIds: [...pins], maxPins: 1 };
+  }],
+  ['GET', /^\/api\/buffer\/status$/, () => {
+    const now = Date.now();
+    return {
+      enabled: true,
+      totalBytes: pins.size * 420e6,
+      caps: { maxHoursPerChannel: 2, maxBytes: 20 * 1024 ** 3, maxPins: 1 },
+      channels: [...pins].map((id) => ({
+        channelId: id, name: fx.channels.find((c) => c.id === id)?.name ?? null, pinned: true, recording: true,
+        ranges: [{ start: now - 5400_000, end: now }], durationMs: 5400_000, bytes: 420e6,
+      })),
+    };
+  }],
   ['GET', /^\/api\/series\/([^/]+)$/, (m) => {
     const d = fx.seriesDetail(m[1]!);
     if (!d) throw new ApiError(404, 'Series not found');
@@ -249,7 +278,8 @@ const routes: [string, RegExp, Handler][] = [
     const tl = timeline(ch, Date.now());
     if (!tl.ranges.some((r) => at >= r.start && at <= r.end)) {
       const gap = tl.gaps.find((g) => at >= g.start && at < g.end);
-      throw new ApiError(416, gap?.reason ?? 'Nothing recorded at that time.');
+      const cause = gap?.cause ?? { code: 'not_recorded' as const };
+      throw new ApiError(422, gap?.reason ?? 'Not recorded', { error: 'gap', message: gap?.reason, cause });
     }
     return { url: clipUrl, type: 'file', pipeline: 'passthrough', startsAt: at };
   }],
@@ -260,7 +290,10 @@ const routes: [string, RegExp, Handler][] = [
   }],
   ['GET', /^\/api\/play\/episode\/([^/]+)$/, (m, _q, _b, st): PlaybackInfo => {
     const p = st.progress.get(`episode:${m[1]}`);
-    return { url: clipUrl, type: 'file', pipeline: 'remux', resumeAt: p && !p.finished ? Math.min(p.position, CLIP_SECONDS - 20) : undefined };
+    return {
+      url: clipUrl, type: 'file', pipeline: 'remux', resumeAt: p && !p.finished ? Math.min(p.position, CLIP_SECONDS - 20) : undefined,
+      seriesId: /^(s\d+)e/.exec(m[1]!)?.[1],
+    };
   }],
   ['GET', /^\/api\/favorites$/, (_m, _q, _b, st) => st.favorites],
   ['PUT', /^\/api\/favorites$/, (_m, _q, body, st) => {
@@ -309,6 +342,7 @@ const routes: [string, RegExp, Handler][] = [
 ];
 
 let syncingUntil = 0;
+const pins = new Set<string>();
 let currentPid = 'p1';
 
 export async function fakeFetch(method: string, url: string, body: unknown, signal: AbortSignal | undefined, profileId: string | null) {

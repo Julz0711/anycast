@@ -622,7 +622,7 @@ function About() {
       <Row label="Reset settings" hint="Puts every setting for this profile back to its default. Filters and favorites stay.">
         {confirmReset ? (
           <span className="row-actions">
-            <button type="button" className="btn btn-danger" onClick={() => (patchPrefs(structuredClone(DEFAULT_PREFERENCES)), setConfirmReset(false))}>
+            <button type="button" className="btn btn-danger" onClick={() => (patchPrefs({ ...structuredClone(DEFAULT_PREFERENCES), setupDone: true }), setConfirmReset(false))}>
               Reset everything
             </button>
             <button type="button" className="btn" onClick={() => setConfirmReset(false)}>

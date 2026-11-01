@@ -82,6 +82,7 @@ describe('rolling buffer', () => {
     expect(tl.ranges[1]!.end).toBe(tl.now);
     expect(tl.gaps).toHaveLength(1);
     expect(tl.gaps[0]!.reason).toMatch(/^This channel has no archive before \d\d:\d\d$/);
+    expect(tl.gaps[0]!.cause).toEqual({ code: 'no_archive', at: range.start });
 
     const at = range.start + 500;
     const pi = (await json<PlaybackInfo>(`/api/play/live/${id}/at?at=${at}`)).body;
@@ -114,7 +115,7 @@ describe('rolling buffer', () => {
     // buffered data is kept and still playable
     const after = (await json<TimelineInfo>(`/api/timeline/${id}`)).body;
     expect(after.ranges[0]!.source).toBe('buffer');
-    expect(after.gaps[after.gaps.length - 1]!.reason).toBe('Not recorded: nobody was watching');
+    expect(after.gaps[after.gaps.length - 1]!).toMatchObject({ reason: 'Not recorded: nobody was watching', cause: { code: 'idle' } });
     const pl2 = await (await get(pi.url)).res.text();
     expect(pl2).toContain('#EXT-X-ENDLIST');
   });
@@ -133,11 +134,11 @@ describe('rolling buffer', () => {
     const buffers = tl.ranges.filter((r) => r.source === 'buffer');
     expect(buffers.length).toBe(2);
     const gap = tl.gaps.find((g) => g.start === buffers[0]!.end);
-    expect(gap).toMatchObject({ end: buffers[1]!.start, reason: 'Stream dropped' });
+    expect(gap).toMatchObject({ end: buffers[1]!.start, reason: 'Stream dropped', cause: { code: 'dropped' } });
     // asking for a time inside the gap explains why
     const refused = await get(`/api/play/live/${id}/at?at=${Math.round((gap!.start + gap!.end) / 2)}`);
     expect(refused.res.status).toBe(422);
-    expect((await refused.res.json()).message).toBe('Stream dropped');
+    expect(await refused.res.json()).toMatchObject({ error: 'gap', message: 'Stream dropped', cause: { code: 'dropped' } });
   });
 
   test('pins: continuous recording without viewers, persisted, guarded by the connection limit', async () => {
@@ -158,6 +159,13 @@ describe('rolling buffer', () => {
     expect(refused.body.message).toContain('one stays free for watching');
     expect((await json<unknown>('/api/buffer/pins', { method: 'PUT', body: JSON.stringify({ channelId: 'nope', pinned: true }) })).status).toBe(404);
     expect((await json<unknown>('/api/buffer/pins', { method: 'PUT', body: JSON.stringify({ channelId: a }) })).status).toBe(400);
+
+    // only admins pin
+    await built.services.users.create('viewer', 'viewer-password-1', false);
+    const viewerCookie = await login(built.app, { username: 'viewer', password: 'viewer-password-1' });
+    const forbidden = await json<{ error: string }>('/api/buffer/pins', { method: 'PUT', body: JSON.stringify({ channelId: a, pinned: false }), headers: { cookie: viewerCookie } });
+    expect(forbidden).toMatchObject({ status: 403, body: { error: 'forbidden' } });
+    expect((await json<unknown>('/api/buffer/pins', { headers: { cookie: viewerCookie } })).status).toBe(200);
 
     // watching the pinned channel shares its connection
     await watch(a!);

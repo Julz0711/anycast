@@ -1,4 +1,5 @@
 /** Small, dependency-free time formatting helpers. */
+import { describeGap, type GapCause } from '@anycast/shared';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -6,6 +7,11 @@ const pad = (n: number) => String(n).padStart(2, '0');
 export function fmtClock(ms: number): string {
   const d = new Date(ms);
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** A timeline gap's reason in the viewer's time zone (the server's `reason` text uses the server's). */
+export function gapText(g: { reason: string; cause?: GapCause }): string {
+  return g.cause ? describeGap(g.cause, fmtClock) : g.reason;
 }
 
 /** "20:30 – 22:30" */

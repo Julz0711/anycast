@@ -13,7 +13,7 @@ import { HlsError } from './playback/hls';
 import { ProbeCache } from './playback/probe';
 import { NotFoundError, PlaybackService } from './playback/service';
 import { archiveSource } from './playback/timeline';
-import { ConnectionLimitError, UpstreamError } from './playback/upstream';
+import { ConnectionLimitError, GapError, UpstreamError } from './playback/upstream';
 import { createRedactor, redactDeep, type Redactor } from './redact';
 import { artRoutes } from './routes/art';
 import { authRoutes, registerAuthHook } from './routes/auth';
@@ -86,6 +86,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
     if (err instanceof ConnectionLimitError) return reply.code(429).send({ error: err.code, message: err.message });
     if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.code, message: err.message });
     if (err instanceof NotFoundError) return reply.code(404).send({ error: 'not_found', message: err.message });
+    if (err instanceof GapError) return reply.code(err.statusCode).send({ error: 'gap', message: err.message, cause: err.gap });
     if (err instanceof UpstreamError || err instanceof HlsError) {
       return reply.code(err.statusCode).send({ error: err instanceof HlsError ? 'stream' : 'upstream', message: err.message });
     }

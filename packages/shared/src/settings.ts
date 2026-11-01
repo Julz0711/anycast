@@ -52,6 +52,8 @@ export interface Preferences {
     hiddenTabs: TabId[];
   };
   settingsMode: 'basic' | 'all';
+  /** First-run setup (language filter) finished or skipped for this profile */
+  setupDone: boolean;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -89,6 +91,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     hiddenTabs: [],
   },
   settingsMode: 'basic',
+  setupDone: false,
 };
 
 /** Deep-merge a partial preferences object over defaults (unknown keys dropped). */

@@ -4,7 +4,7 @@
  * wins where both cover a moment (local, faster, saves a provider connection). Whatever no source
  * covers inside the window becomes a gap with a human reason.
  */
-import type { TimelineInfo, TimelineRange } from '@anycast/shared';
+import { describeGap, type GapCause, type GapCode, type TimelineInfo, type TimelineRange } from '@anycast/shared';
 import type { ChannelRow } from '../catalog/store';
 
 /** The provider archive lags the live stream by about this much. */
@@ -12,12 +12,9 @@ export const LIVE_EDGE_MS = 2 * 60_000;
 const NO_ARCHIVE_WINDOW_MS = 6 * 3600_000;
 const AHEAD_MS = 6 * 3600_000;
 
-export const NO_ARCHIVE = 'This channel has no archive';
-export const NOT_RECORDED = 'Not recorded';
-
 /** A source range; `endReason` explains why coverage stops at `end` (shown if nothing else covers what follows). */
 export interface SourceRange extends TimelineRange {
-  endReason?: string;
+  endReason?: GapCode;
 }
 
 export interface TimelineSource {
@@ -70,11 +67,11 @@ export function mergeRanges(ranges: SourceRange[]): SourceRange[] {
   return out;
 }
 
-const clock = (ms: number, timeZone?: string) =>
+const clockIn = (timeZone?: string) => (ms: number) =>
   new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, ...(timeZone ? { timeZone } : {}) }).format(ms);
 
 export interface TimelineOptions {
-  /** time zone for clock times in gap reasons (default: the server's) */
+  /** time zone for clock times in the gap `reason` text (default: the server's); `cause` stays structured */
   timeZone?: string;
 }
 
@@ -99,11 +96,11 @@ export function buildTimeline(channel: ChannelRow, sources: TimelineSource[], no
   let prev: SourceRange | null = null;
   for (const r of ranges) {
     if (r.start > cursor) {
-      let reason: string;
-      if (prev) reason = prev.endReason ?? NOT_RECORDED;
-      else if (firstBuffer && !hasArchive) reason = `${NO_ARCHIVE} before ${clock(firstBuffer.start, opts.timeZone)}`;
-      else reason = hasArchive ? NOT_RECORDED : NO_ARCHIVE;
-      gaps.push({ start: cursor, end: r.start, reason });
+      let cause: GapCause;
+      if (prev) cause = { code: prev.endReason ?? 'not_recorded' };
+      else if (firstBuffer && !hasArchive) cause = { code: 'no_archive', at: firstBuffer.start };
+      else cause = { code: hasArchive ? 'not_recorded' : 'no_archive' };
+      gaps.push({ start: cursor, end: r.start, reason: describeGap(cause, clockIn(opts.timeZone)), cause });
     }
     cursor = Math.max(cursor, r.end);
     prev = r;
@@ -122,7 +119,8 @@ export function sourceAt(timeline: Pick<TimelineInfo, 'ranges'>, at: number): Ti
   return timeline.ranges.find((r) => at >= r.start && at <= r.end) ?? null;
 }
 
-/** The reason `at` cannot be played (the gap that contains it). */
-export function gapReasonAt(timeline: Pick<TimelineInfo, 'gaps'>, at: number): string {
-  return timeline.gaps.find((g) => at >= g.start && at < g.end)?.reason ?? NO_ARCHIVE;
+/** Why `at` cannot be played (the gap that contains it). */
+export function gapAt(timeline: Pick<TimelineInfo, 'gaps'>, at: number): { reason: string; cause: GapCause } {
+  const g = timeline.gaps.find((x) => at >= x.start && at < x.end);
+  return g ? { reason: g.reason, cause: g.cause } : { reason: describeGap({ code: 'no_archive' }, clockIn()), cause: { code: 'no_archive' } };
 }

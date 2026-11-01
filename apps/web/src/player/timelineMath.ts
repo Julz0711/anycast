@@ -1,5 +1,6 @@
 /** Pure maths for the live timeline ribbon: time <-> position, windows, gaps, program blocks. */
 import type { EpgProgram, TimelineInfo, TimelineRange } from '@anycast/shared';
+import { gapText } from '../lib/time';
 
 export interface Win {
   start: number;
@@ -55,7 +56,7 @@ export function resolveSeek(
   if (t >= now - 5_000) return { at: now, live: true, reason: null };
   if (rangeAt(t, info.ranges)) return { at: t, live: false, reason: null };
   const gap = gapAt(t, info.gaps);
-  let reason = (gap?.reason ?? 'Not available at that time').replace(/\.\s*$/, '');
+  let reason = (gap ? gapText(gap) : 'Not available at that time').replace(/\.\s*$/, '');
   // nearest playable edge, nudged inside the range
   let best: readonly [number, number] | null = null;
   for (const r of info.ranges) {

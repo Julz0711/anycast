@@ -1,6 +1,6 @@
 /**
  * Catalog helpers on top of the contract: category lists filtered by hide rules,
- * an id -> item cache filled by every list we load, and favorites resolution.
+ * an id -> item cache filled by every list we load, and resolving ids to items.
  */
 import type { Category, Channel, HideRules, LiveChannelWithNow, MediaKind, Movie, Series } from '@anycast/shared';
 import { cachedGet, call } from './client';
@@ -29,24 +29,30 @@ export async function visibleCategories(kind: MediaKind, rules: HideRules): Prom
   return all.filter((c) => !isHidden(rules, c, true));
 }
 
-const LIST_ROUTE = { live: 'GET /api/live', movie: 'GET /api/movies', series: 'GET /api/series' } as const;
+const ITEMS_KEY = { live: 'live', movie: 'movies', series: 'series' } as const;
+const MAX_IDS = 500;
 
 /**
- * Resolve favorite ids to items. The contract has no "get by ids" route, so we use the cache and walk
- * pages of the full list (1000 at a time) until every id is found. (Proposed: `ids` query param.)
+ * Resolve ids to items (favorites, deep links) with GET /api/items. Cached items are reused unless
+ * `fresh` (e.g. live rows, whose now/next goes stale). Hidden and unknown ids are left out.
  */
 export async function resolveItems<K extends MediaKind>(
   kind: K,
   ids: string[],
   opts: { signal?: AbortSignal; fresh?: boolean } = {},
 ): Promise<NonNullable<ReturnType<typeof lookup<K>>>[]> {
-  const found = new Set<string>(opts.fresh ? [] : ids.filter((id) => lookup(kind, id)));
-  const PAGE = 1000;
-  for (let offset = 0; found.size < ids.length && offset < 20 * PAGE; offset += PAGE) {
-    const res = await call(LIST_ROUTE[kind], { query: { offset, limit: PAGE } as never, signal: opts.signal });
-    remember(kind, res.items as AnyItem[]);
-    for (const x of res.items) if (ids.includes(x.id)) found.add(x.id);
-    if (offset + PAGE >= res.total) break;
+  const missing = [...new Set(opts.fresh ? ids : ids.filter((id) => !lookup(kind, id)))];
+  const got = new Set<string>();
+  for (let i = 0; i < missing.length; i += MAX_IDS) {
+    const chunk = missing.slice(i, i + MAX_IDS);
+    const res = await call('GET /api/items', { query: { [kind]: chunk.join(',') }, signal: opts.signal });
+    const list = res[ITEMS_KEY[kind]] as AnyItem[];
+    remember(kind, list);
+    for (const x of list) got.add(x.id);
   }
-  return ids.map((id) => lookup(kind, id)).filter((x): x is NonNullable<typeof x> => !!x);
+  // with `fresh`, ids the server left out (now hidden or gone) are not served from the cache
+  return ids
+    .filter((id) => !opts.fresh || got.has(id))
+    .map((id) => lookup(kind, id))
+    .filter((x): x is NonNullable<typeof x> => !!x);
 }

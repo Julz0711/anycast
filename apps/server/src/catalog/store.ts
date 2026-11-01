@@ -136,6 +136,21 @@ export function nowNext(db: Db, channel: Pick<ChannelRow, 'id' | 'epg_channel_id
   return { now: null, next: map(first) };
 }
 
+/** Rows of `kind` with the given ids that are visible under the rules, in the order of `ids`. */
+export function itemsByIds(db: Db, kind: 'live', ids: string[], rules: HideRules): ChannelRow[];
+export function itemsByIds(db: Db, kind: 'movie', ids: string[], rules: HideRules): MovieRow[];
+export function itemsByIds(db: Db, kind: 'series', ids: string[], rules: HideRules): SeriesRow[];
+export function itemsByIds(db: Db, kind: MediaKind, ids: string[], rules: HideRules): (ChannelRow | MovieRow | SeriesRow)[] {
+  if (!ids.length) return [];
+  const hide = hideClause(rules, 't');
+  const list = ids.map(() => '?').join(',');
+  const rows = db
+    .prepare(`SELECT t.* FROM ${KIND_TABLE[kind]} t WHERE t.id IN (${list}) AND ${hide.sql}`)
+    .all(...ids, ...hide.params) as { id: string }[];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])) as (ChannelRow | MovieRow | SeriesRow)[];
+}
+
 /** Channels visible under the rules, among the given ids. */
 export function visibleChannels(db: Db, ids: string[], rules: HideRules): ChannelRow[] {
   if (!ids.length) return [];

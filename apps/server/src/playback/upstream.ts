@@ -1,3 +1,4 @@
+import type { GapCause } from '@anycast/shared';
 /** Counts provider connections. Leases with the same key share one connection slot. */
 
 export class ConnectionLimitError extends Error {
@@ -70,5 +71,15 @@ export class UpstreamError extends Error {
     message: string,
   ) {
     super(message);
+  }
+}
+
+/** The asked-for time is in a timeline gap (422); `gap` lets clients format the reason themselves. */
+export class GapError extends UpstreamError {
+  constructor(
+    message: string,
+    readonly gap: GapCause,
+  ) {
+    super(422, message);
   }
 }

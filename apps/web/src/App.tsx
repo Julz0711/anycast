@@ -12,7 +12,8 @@ import { SeriesDetailScreen } from './screens/SeriesDetail';
 import { SearchScreen } from './screens/Search';
 import { LoginScreen } from './screens/Login';
 import { ProfilePicker } from './screens/Profiles';
-import { markSetupDone, SetupScreen, setupDismissed } from './screens/Setup';
+import { SetupScreen } from './screens/Setup';
+import { markSetupDone } from './store/actions';
 import { call } from './api/client';
 import { readLocal } from './lib/storage';
 import { Skeleton } from './components/ui';
@@ -87,16 +88,20 @@ function AuthedRoutes() {
   const profileId = useApp((s) => s.profileId);
   const rules = useApp((s) => s.hideRules);
   const rulesLoaded = useApp((s) => s.hideRulesLoaded);
+  const prefsLoaded = useApp((s) => s.prefsLoaded);
+  const setupDone = useApp((s) => s.prefs.setupDone);
   const version = useApp((s) => s.catalogVersion);
   const source = useAsync(() => call('GET /api/source'), [profileId, version]);
-
-  if (!profileId) return <ProfilePicker />;
-  if (!rulesLoaded || (source.loading && !source.data)) return <Splash />;
-  const noCatalog = source.data && (!source.data.configured || source.data.counts.live + source.data.counts.movie + source.data.counts.series === 0);
   const hasRules = rules.countries.length + rules.languages.length + rules.categoryIds.length > 0;
   // A profile that has ever had filters is set up; clearing them later must not bring the setup back.
-  if (hasRules && !setupDismissed(profileId)) markSetupDone(profileId);
-  const noFilters = !hasRules && !setupDismissed(profileId);
+  useEffect(() => {
+    if (profileId && rulesLoaded && prefsLoaded && hasRules && !setupDone) markSetupDone();
+  }, [profileId, rulesLoaded, prefsLoaded, hasRules, setupDone]);
+
+  if (!profileId) return <ProfilePicker />;
+  if (!rulesLoaded || !prefsLoaded || (source.loading && !source.data)) return <Splash />;
+  const noCatalog = source.data && (!source.data.configured || source.data.counts.live + source.data.counts.movie + source.data.counts.series === 0);
+  const noFilters = !hasRules && !setupDone;
   if (noCatalog || noFilters) return <SetupScreen status={source.data ?? null} onRefresh={source.reload} />;
 
   return (

@@ -5,20 +5,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { SourceStatus } from '@anycast/shared';
 import { useApp } from '../store/app';
-import { saveHideRules } from '../store/actions';
+import { markSetupDone, saveHideRules } from '../store/actions';
 import { call, errorMessage } from '../api/client';
 import { useAsync } from '../lib/hooks';
 import { languageName } from '../lib/lang';
-import { readLocal, writeLocal } from '../lib/storage';
 import { BrandMark } from '../components/Icons';
 import { Skeleton } from '../components/ui';
 
-export const setupDismissed = (profileId: string) => readLocal(`anycast.setup.${profileId}`) === '1';
-export const markSetupDone = (profileId: string) => writeLocal(`anycast.setup.${profileId}`, '1');
-const dismiss = markSetupDone;
-
 export function SetupScreen(props: { status: SourceStatus | null; onRefresh: () => void }) {
-  const profileId = useApp((s) => s.profileId)!;
   const rules = useApp((s) => s.hideRules);
   const noCatalog = !props.status || !props.status.configured || props.status.counts.live + props.status.counts.movie + props.status.counts.series === 0;
 
@@ -41,7 +35,7 @@ export function SetupScreen(props: { status: SourceStatus | null; onRefresh: () 
     setBusy(true);
     const hide = langs.map((l) => l.language!).filter((l) => !keep.has(l));
     await saveHideRules({ ...rules, languages: hide });
-    dismiss(profileId);
+    markSetupDone();
     setBusy(false);
   };
 
@@ -98,7 +92,7 @@ export function SetupScreen(props: { status: SourceStatus | null; onRefresh: () 
                 type="button"
                 className="btn btn-lg"
                 onClick={() => {
-                  dismiss(profileId);
+                  markSetupDone();
                   useApp.setState((s) => ({ catalogVersion: s.catalogVersion + 1 }));
                 }}
               >

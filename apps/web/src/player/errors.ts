@@ -1,6 +1,7 @@
 /** Turn failures into honest, actionable messages. */
-import type { Pipeline } from '@anycast/shared';
+import type { GapCause, Pipeline } from '@anycast/shared';
 import { ApiError } from '../api/client';
+import { gapText } from '../lib/time';
 import { PlaybackFailure } from './engine';
 
 export type ErrAction = 'retry' | 'live' | 'back' | 'zap';
@@ -22,8 +23,10 @@ export function fromApiError(e: unknown, ctx: { live: boolean; timeshift: boolea
         tips: ['Run Sync now in Settings › Source & account.'],
         actions: ctx.live ? ['zap', 'back'] : ['back'],
       };
-    if (ctx.timeshift && (e.status === 400 || e.status === 416 || e.status === 422))
-      return { title: "That time isn't available", detail: e.message, tips: ['Pick a time inside the light part of the timeline.'], actions: ['live', 'back'] };
+    if (ctx.timeshift && (e.status === 400 || e.status === 416 || e.status === 422)) {
+      const cause = (e.body as { cause?: GapCause } | undefined)?.cause;
+      return { title: "That time isn't available", detail: cause ? gapText({ reason: e.message, cause }) : e.message, tips: ['Pick a time inside the light part of the timeline.'], actions: ['live', 'back'] };
+    }
     if (e.status === 429 || /connection/i.test(e.message))
       return {
         title: 'Too many streams at once',

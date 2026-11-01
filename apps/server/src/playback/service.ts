@@ -14,9 +14,9 @@ import { HlsError, HlsSessions, StreamHlsSession, VodHlsSession } from './hls';
 import { choosePipeline } from './pipeline';
 import { ProbeCache, type ProbeResult } from './probe';
 import { BufferManager } from './buffer';
-import { buildTimeline, gapReasonAt, sourceAt, type TimelineSource } from './timeline';
+import { buildTimeline, gapAt, sourceAt, type TimelineSource } from './timeline';
 import type { BufferConfig } from '../config';
-import { openUpstream, UpstreamError, UpstreamPool } from './upstream';
+import { GapError, openUpstream, UpstreamError, UpstreamPool } from './upstream';
 
 export type VodKind = 'movie' | 'episode';
 const HLS_PIPELINES: readonly HlsPipeline[] = ['remux', 'transcode-audio', 'transcode'];
@@ -81,11 +81,11 @@ export class PlaybackService {
     return c;
   }
 
-  private vodItem(kind: VodKind, id: string): { url: () => string; container: string | null; duration: number | null } {
+  private vodItem(kind: VodKind, id: string): { url: () => string; container: string | null; duration: number | null; seriesId: string | null } {
     const row = kind === 'movie' ? getMovie(this.db, id) : getEpisode(this.db, id);
     if (!row) throw new NotFoundError(kind === 'movie' ? 'Movie not found' : 'Episode not found');
     const url = () => (kind === 'movie' ? this.client().movieUrl(id, row.container) : this.client().episodeUrl(id, row.container));
-    return { url, container: row.container, duration: row.duration };
+    return { url, container: row.container, duration: row.duration, seriesId: 'series_id' in row ? row.series_id : null };
   }
 
   private async probe(key: string, url: () => string, fallback: ProbeResult): Promise<ProbeResult> {
@@ -131,12 +131,16 @@ export class PlaybackService {
     if (at >= now) return this.liveInfo(id, caps);
     const timeline = buildTimeline(channel, this.timelineSources, now);
     const range = sourceAt(timeline, at);
-    if (!range) throw new UpstreamError(422, gapReasonAt(timeline, at));
+    const gap = () => {
+      const g = gapAt(timeline, at);
+      return new GapError(g.reason, g.cause);
+    };
+    if (!range) throw gap();
     if (range.source === 'live') return this.liveInfo(id, caps);
     if (range.source === 'buffer') {
       const seg = this.buffer?.segmentAt(id, at);
       if (seg) return this.bufferInfo(id, seg.run_id, seg.seq, seg.start_ms, caps);
-      throw new UpstreamError(422, gapReasonAt(timeline, at));
+      throw gap();
     }
     const startMin = Math.floor(at / 60_000);
     const durMin = Math.min(MAX_TIMESHIFT_MIN, Math.ceil((now - startMin * 60_000) / 60_000));
@@ -203,6 +207,7 @@ export class PlaybackService {
       type: choice.type,
       pipeline: choice.pipeline,
       ...(resumeAt ? { resumeAt } : {}),
+      ...(item.seriesId ? { seriesId: item.seriesId } : {}),
     };
   }
 

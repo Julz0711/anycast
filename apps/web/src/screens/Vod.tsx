@@ -36,7 +36,7 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
     if (cats.data && !chips.some((c) => c.id === cat)) setCat('home');
   }, [cats.data, chips, cat]);
 
-  const favs = useAsync((signal) => (favIds ? resolveItems(kind, favIds.split(','), { signal }) : Promise.resolve([])), [favIds, kind, version]);
+  const favs = useAsync((signal) => (favIds ? resolveItems(kind, favIds.split(','), { signal, fresh: true }) : Promise.resolve([])), [favIds, kind, version]);
 
   return (
     <div>

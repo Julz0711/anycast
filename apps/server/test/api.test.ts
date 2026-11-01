@@ -1,4 +1,4 @@
-import type { Favorite, HideRules, Me, Page, Profile, SyncEvent } from '@anycast/shared';
+import type { Favorite, HideRules, ItemsById, Me, Page, Profile, SyncEvent } from '@anycast/shared';
 import type { InjectOptions } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createMockXtream, login, makeApp, ADMIN } from './helpers';
@@ -149,6 +149,26 @@ describe('catalog', () => {
     expect(detail.seasons[0]!.episodes.length).toBe(expected.seasons[0]!.length);
   });
 
+  test('items by id: hydrated, in request order, hidden and unknown ids left out', async () => {
+    const live = (await json<Page<{ id: string; country: string | null }>>({ url: '/api/live?limit=500' })).items;
+    const movies = (await json<Page<{ id: string }>>({ url: '/api/movies?limit=3' })).items;
+    const series = (await json<Page<{ id: string }>>({ url: '/api/series?limit=2' })).items;
+    const de = live.find((c) => c.country === 'de')!;
+    const other = live.find((c) => c.country !== 'de')!;
+    const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
+    const q = `live=${other.id},nope,${de.id}&movie=${ids(movies).reverse().join(',')}&series=${series[1]!.id}`;
+    const r = await json<ItemsById>({ url: `/api/items?${q}` });
+    expect(ids(r.live)).toEqual([other.id, de.id]);
+    expect(r.live[0]).toHaveProperty('now');
+    expect(ids(r.movies)).toEqual(ids(movies).reverse());
+    expect(ids(r.series)).toEqual([series[1]!.id]);
+    expect(await json<ItemsById>({ url: '/api/items' })).toEqual({ live: [], movies: [], series: [] });
+
+    await call({ method: 'PUT', url: '/api/hide-rules', payload: { countries: ['de'], languages: [], categoryIds: [] } });
+    expect(ids((await json<ItemsById>({ url: `/api/items?${q}` })).live)).toEqual([other.id]);
+    await call({ method: 'PUT', url: '/api/hide-rules', payload: { countries: [], languages: [], categoryIds: [] } });
+  });
+
   test('tags summary', async () => {
     const t = await json<{ countries: { country: string; count: number }[]; languages: { language: string }[] }>({ url: '/api/tags' });
     expect(t.countries[0]!.country).toBe('de');
@@ -168,8 +188,11 @@ describe('user data', () => {
     const cont = await json<{ movies: { id: string; progress: { position: number } }[]; episodes: { id: string; series: { id: string } }[] }>({ url: '/api/continue' });
     expect(cont.movies[0]).toMatchObject({ id: movie.id, progress: { position: 30 } });
     expect(cont.episodes[0]).toMatchObject({ id: e2!.id, series: { id: series.id } });
-    const info = await json<{ resumeAt?: number }>({ url: `/api/play/movie/${movie.id}` });
+    const info = await json<{ resumeAt?: number; seriesId?: string }>({ url: `/api/play/movie/${movie.id}` });
     expect(info.resumeAt).toBe(30);
+    expect(info.seriesId).toBeUndefined();
+    const epInfo = await json<{ seriesId?: string }>({ url: `/api/play/episode/${e2!.id}` });
+    expect(epInfo.seriesId).toBe(series.id);
   });
 
   test('preferences merge partial updates and drop unknown keys', async () => {
@@ -178,6 +201,10 @@ describe('user data', () => {
     const p2 = await json<Record<string, Record<string, unknown>>>({ method: 'PUT', url: '/api/preferences', payload: { appearance: { theme: 'black' } } });
     expect(p2.appearance).toMatchObject({ accent: 'rose', theme: 'black' });
     expect(p2).not.toHaveProperty('bogus');
+    expect(p2.setupDone).toBe(false);
+    const p3 = await json<{ setupDone: boolean }>({ method: 'PUT', url: '/api/preferences', payload: { setupDone: true } });
+    expect(p3.setupDone).toBe(true);
+    expect((await json<{ setupDone: boolean }>({ url: '/api/preferences' })).setupDone).toBe(true);
   });
 
   test('SSE delivers profile events only to that profile, with catalog updates to all', async () => {

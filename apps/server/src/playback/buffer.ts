@@ -14,7 +14,7 @@
  * stored and becomes the gap reason after the run's last segment. Caps (per channel duration,
  * total bytes) are enforced before a segment is indexed, evicting the oldest segments first.
  */
-import type { TimelineRange } from '@anycast/shared';
+import type { GapCode, TimelineRange } from '@anycast/shared';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
@@ -28,12 +28,26 @@ import type { Db } from '../db';
 import type { LiveFanouts } from './fanout';
 import type { SourceRange, TimelineSource } from './timeline';
 
-export const REASON_DROPPED = 'Stream dropped';
-export const REASON_IDLE = 'Not recorded: nobody was watching';
-export const REASON_UNPINNED = 'Not recorded: the channel was unpinned';
-export const REASON_STOPPED = 'Not recorded: the server was stopped';
-export const REASON_RESTARTED = 'Not recorded: the server restarted';
-export const REASON_INTERRUPTED = 'Stream interrupted';
+/** Why a run ended; stored in buffer_runs.end_reason as the GapCode. */
+export const REASON_DROPPED = 'dropped' satisfies GapCode;
+export const REASON_IDLE = 'idle' satisfies GapCode;
+export const REASON_UNPINNED = 'unpinned' satisfies GapCode;
+export const REASON_STOPPED = 'stopped' satisfies GapCode;
+export const REASON_RESTARTED = 'restarted' satisfies GapCode;
+export const REASON_INTERRUPTED = 'interrupted' satisfies GapCode;
+
+const STORED_CODES = new Set<string>([REASON_DROPPED, REASON_IDLE, REASON_UNPINNED, REASON_STOPPED, REASON_RESTARTED, REASON_INTERRUPTED]);
+/** Older databases stored the English text; map it back to a code. */
+const LEGACY_TEXT: Record<string, GapCode> = {
+  'Stream dropped': 'dropped',
+  'Not recorded: nobody was watching': 'idle',
+  'Not recorded: the channel was unpinned': 'unpinned',
+  'Not recorded: the server was stopped': 'stopped',
+  'Not recorded: the server restarted': 'restarted',
+  'Stream interrupted': 'interrupted',
+};
+const toCode = (stored: string | null): GapCode =>
+  stored && STORED_CODES.has(stored) ? (stored as GapCode) : ((stored ? LEGACY_TEXT[stored] : undefined) ?? REASON_DROPPED);
 
 /** segments of one run closer than this are one range */
 const JOIN_TOLERANCE_MS = 1000;
@@ -107,7 +121,7 @@ class Recorder {
   private offset: number | null = null;
   private queue: Promise<void> = Promise.resolve();
   private killTimer: NodeJS.Timeout | null = null;
-  stopReason: string | null = null;
+  stopReason: GapCode | null = null;
   readonly done: Promise<void>;
 
   constructor(
@@ -195,7 +209,7 @@ class Recorder {
     }
   }
 
-  stop(reason: string): void {
+  stop(reason: GapCode): void {
     this.stopReason ??= reason;
     this.input.destroy();
     this.proc.stdin?.end();
@@ -357,7 +371,7 @@ export class BufferManager {
       if (prev) prev.endReason = prev.run === r.run_id ? REASON_INTERRUPTED : prev.endReason;
       out.push({
         start: r.start_ms, end: r.end_ms, source: 'buffer', run: r.run_id,
-        endReason: r.ended_at !== null ? (r.end_reason ?? REASON_DROPPED) : undefined,
+        endReason: r.ended_at !== null ? toCode(r.end_reason) : undefined,
       });
     }
     return out.map(({ run: _run, ...r }) => r);

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Services } from '../context';
+import { auth, type Services } from '../context';
 import type { BufferManager } from '../playback/buffer';
 
 const PinBody = z.object({ channelId: z.string().min(1).max(64), pinned: z.boolean() });
@@ -16,6 +16,9 @@ export function bufferRoutes(app: FastifyInstance, s: Services): void {
   });
 
   app.put('/api/buffer/pins', async (req, reply) => {
+    if (auth(req).user.is_admin !== 1) {
+      return reply.code(403).send({ error: 'forbidden', message: 'Only an admin can choose which channels keep a rewind buffer' });
+    }
     const b = s.playback.buffer;
     if (!b) return reply.code(404).send(off);
     const body = PinBody.safeParse(req.body);

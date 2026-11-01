@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TimelineInfo } from '@anycast/shared';
 import { absolutePosition, computeWindow, fracToTime, layoutBlocks, mediaTimeFor, resolveSeek, timeToFrac } from './timelineMath';
+import { fmtClock } from '../lib/time';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -36,7 +37,7 @@ describe('resolveSeek', () => {
       { start: now - 6 * HOUR, end: now - 5 * HOUR, source: 'archive' },
       { start: now - 4 * HOUR, end: now, source: 'archive' },
     ],
-    gaps: [{ start: now - 5 * HOUR, end: now - 4 * HOUR, reason: 'Provider has no recording' }],
+    gaps: [{ start: now - 5 * HOUR, end: now - 4 * HOUR, reason: 'Stream dropped', cause: { code: 'dropped' } }],
   };
   it('plays inside a range', () => {
     expect(resolveSeek(now - HOUR, tl, now)).toEqual({ at: now - HOUR, live: false, reason: null });
@@ -47,12 +48,17 @@ describe('resolveSeek', () => {
   it('snaps out of a gap to the nearest edge and says why', () => {
     const r = resolveSeek(now - 4 * HOUR - 10 * MIN, tl, now);
     expect(r.at).toBe(now - 4 * HOUR + 30_000);
-    expect(r.reason).toBe('Provider has no recording');
+    expect(r.reason).toBe('Stream dropped');
   });
   it('snaps to the start of the archive when seeking before it', () => {
     const r = resolveSeek(now - 9 * HOUR, tl, now);
     expect(r.at).toBe(now - 6 * HOUR + 30_000);
     expect(r.reason).toMatch(/before/);
+  });
+  it('formats the gap time in the viewer\'s time zone, not the server text', () => {
+    const at = now - 5 * HOUR;
+    const r = resolveSeek(now - 4.5 * HOUR, { ...tl, gaps: [{ start: now - 5 * HOUR, end: now - 4 * HOUR, reason: 'server text 03:00', cause: { code: 'no_archive', at } }] }, now);
+    expect(r.reason).toBe(`This channel has no archive before ${fmtClock(at)}`);
   });
   it('without any archive, returns live with a reason', () => {
     const r = resolveSeek(now - HOUR, { ranges: [], gaps: [] }, now);

@@ -95,6 +95,8 @@ export async function loadProfileData() {
   ]);
   if (get().profileId !== pid) return;
   if (prefs.status === 'fulfilled' && !pendingPrefs) setPrefsFromServer(prefs.value);
+  // offline or a local edit pending: keep the cached copy rather than blocking the app
+  else set({ prefsLoaded: true });
   if (favs.status === 'fulfilled') set({ favorites: favs.value });
   if (progress.status === 'fulfilled') set({ progress: Object.fromEntries(progress.value.map((p) => [progressKey(p.kind, p.id), p])) });
   if (rules.status === 'fulfilled') set({ hideRules: rules.value, hideRulesLoaded: true });
@@ -108,7 +110,7 @@ function setPrefsFromServer(p: Preferences) {
 }
 
 /* ---------------- preferences ---------------- */
-type Section = Exclude<keyof Preferences, 'settingsMode'>;
+type Section = Exclude<keyof Preferences, 'settingsMode' | 'setupDone'>;
 let pendingPrefs: Partial<Preferences> | null = null;
 let prefsTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -136,6 +138,11 @@ async function flushPrefs() {
   } catch (e) {
     toast(`Couldn't save settings: ${errorMessage(e)}`, 'error');
   }
+}
+
+/** First-run setup is per profile and stored on the server (Preferences.setupDone), so it syncs. */
+export function markSetupDone() {
+  if (!get().prefs.setupDone) patchPrefs({ setupDone: true });
 }
 
 /* ---------------- device override (per device, not synced) ---------------- */

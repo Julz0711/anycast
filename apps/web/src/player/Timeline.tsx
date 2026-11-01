@@ -5,7 +5,7 @@
 import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { TimelineInfo } from '@anycast/shared';
 import { clampFrac, fracToTime, layoutBlocks, programAt, timeToFrac, type Win } from './timelineMath';
-import { fmtClock, fmtDuration } from '../lib/time';
+import { fmtClock, fmtDuration, gapText } from '../lib/time';
 
 interface RibbonProps {
   win: Win;
@@ -17,6 +17,11 @@ interface RibbonProps {
   onSkip: (dir: -1 | 1) => void;
   onDragChange?: (dragging: boolean) => void;
   onBlockUnavailable: (reason: string) => void;
+}
+
+function blockGapText(gaps: TimelineInfo['gaps'], at: number): string {
+  const g = gaps.find((x) => at >= x.start && at < x.end);
+  return g ? gapText(g) : 'This programme is not available to play.';
 }
 
 const pct = (f: number) => `${(clampFrac(f) * 100).toFixed(3)}%`;
@@ -91,7 +96,7 @@ export function Ribbon(props: RibbonProps) {
                   ? props.onBlockUnavailable(`${b.program.title} starts at ${fmtClock(b.program.start)}.`)
                   : b.playable || b.state === 'now'
                     ? props.onSeek(Math.max(b.program.start, earliest))
-                    : props.onBlockUnavailable(gaps.find((g) => b.program.start >= g.start && b.program.start < g.end)?.reason ?? 'This programme is not available to play.')
+                    : props.onBlockUnavailable(blockGapText(gaps, b.program.start))
               }
               title={`${fmtClock(b.program.start)}–${fmtClock(b.program.end)} ${b.program.title}`}
               aria-label={`${b.program.title}, ${fmtClock(b.program.start)} to ${fmtClock(b.program.end)}${b.program.start < now ? ', play from start' : ''}`}
@@ -124,7 +129,7 @@ export function Ribbon(props: RibbonProps) {
             <i key={r.start} className="rb-range" data-source={r.source} style={{ left: pct(timeToFrac(r.start, win)), width: pct(timeToFrac(Math.min(r.end, now), win) - timeToFrac(r.start, win)) }} />
           ))}
           {gaps.map((g) => (
-            <i key={g.start} className="rb-gap" title={g.reason} style={{ left: pct(timeToFrac(g.start, win)), width: pct(timeToFrac(g.end, win) - timeToFrac(g.start, win)) }} />
+            <i key={g.start} className="rb-gap" title={gapText(g)} style={{ left: pct(timeToFrac(g.start, win)), width: pct(timeToFrac(g.end, win) - timeToFrac(g.start, win)) }} />
           ))}
           <i className="rb-fill" style={{ left: pct(timeToFrac(fillFrom, win)), width: pct(timeToFrac(shown, win) - timeToFrac(fillFrom, win)) }} />
           <i className="rb-future" style={{ left: pct(timeToFrac(now, win)), right: 0 }} />
@@ -149,7 +154,7 @@ export function Ribbon(props: RibbonProps) {
       {gapInView && (
         <p className="rb-gap-note">
           <i className="rb-gap-swatch" aria-hidden="true" />
-          {fmtClock(gapInView.start)}–{fmtClock(Math.min(gapInView.end, now))} unavailable: {gapInView.reason}
+          {fmtClock(gapInView.start)}–{fmtClock(Math.min(gapInView.end, now))} unavailable: {gapText(gapInView)}
         </p>
       )}
     </div>
