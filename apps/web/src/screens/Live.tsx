@@ -81,7 +81,7 @@ export function LiveScreen() {
   return (
     <div className="live-screen">
       <div className="live-top">
-        <div className="page-head">
+        <div className="page-head page-head--tools">
           <h1 className="h1">Live TV</h1>
           <div className="head-tools">
             <Segmented
