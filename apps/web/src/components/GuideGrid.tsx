@@ -194,9 +194,10 @@ export function GuideGrid(props: {
                 {ch ? (
                   <>
                     <button type="button" className="guide-ch" style={{ width: chW }} onClick={() => props.onPlay(ch)} aria-label={`${ch.number} ${ch.name}, watch live`}>
+                      {showNumbers && form !== 'phone' && <span className="guide-ch-num tabnum">{ch.number}</span>}
                       {showLogos && <LogoTile name={ch.name} logo={ch.logo} small />}
                       <span className="guide-ch-text">
-                        {showNumbers && <span className="ch-num tabnum">{ch.number}</span>}
+                        {showNumbers && form === 'phone' && <span className="ch-num tabnum">{ch.number}</span>}
                         {form !== 'phone' && <span className="guide-ch-name">{ch.name}</span>}
                       </span>
                     </button>
