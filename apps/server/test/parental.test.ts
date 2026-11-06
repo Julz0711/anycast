@@ -100,11 +100,19 @@ describe('hidden (the default)', () => {
   });
 
   test('stream URLs built from ids are gated too', async () => {
-    for (const url of [`/api/stream/live/${adultChannel}.ts`, `/api/stream/live/${adultChannel}/remux/index.m3u8`, `/api/stream/movie/${adultMovie}/video.mp4`, `/api/thumbs/movie/${adultMovie}`]) {
+    for (const url of [
+      `/api/stream/live/${adultChannel}.ts`, `/api/stream/live/${adultChannel}/remux/index.m3u8`, `/api/stream/movie/${adultMovie}/video.mp4`, `/api/thumbs/movie/${adultMovie}`,
+      // other audio tracks and subtitle renditions (PB-3)
+      `/api/stream/live/${adultChannel}/remux/a1/index.m3u8`, `/api/stream/movie/${adultMovie}/remux/a1/master.m3u8`,
+      `/api/stream/movie/${adultMovie}/remux/subs/0.m3u8`, `/api/stream/movie/${adultMovie}/transcode-audio/a1/subs/1/0.vtt`,
+      `/api/stream/movie/${adultMovie}/remux/subs/0/3.vtt`,
+    ]) {
       const res = await call({ url });
       expect(res.statusCode, url).toBe(403);
       expect(res.json()).toMatchObject({ error: 'adult_locked' });
     }
+    const save = await call({ method: 'PUT', url: `/api/tracks/movie/${adultMovie}`, payload: { audio: 1 } });
+    expect(save.statusCode).toBe(403);
   });
 
   test('an adult channel put in a list stays out of it while hidden', async () => {

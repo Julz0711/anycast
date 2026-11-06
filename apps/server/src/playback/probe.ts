@@ -7,13 +7,17 @@ export interface ProbeResult {
   container: string | null;
   duration: number | null;
   video: { codec: string; width: number | null; height: number | null } | null;
-  audio: { codec: string; language: string | null; channels: number | null }[];
-  subtitles: { codec: string; language: string | null }[];
+  audio: ProbeAudio[];
+  subtitles: ProbeSubtitle[];
 }
+
+/** title/default/forced were added later: results cached before that lack them */
+export interface ProbeAudio { codec: string; language: string | null; channels: number | null; title?: string | null; default?: boolean }
+export interface ProbeSubtitle { codec: string; language: string | null; title?: string | null; default?: boolean; forced?: boolean }
 
 interface FfprobeStream {
   codec_type?: string; codec_name?: string; width?: number; height?: number; channels?: number;
-  tags?: Record<string, string>; disposition?: { attached_pic?: number };
+  tags?: Record<string, string>; disposition?: { attached_pic?: number; default?: number; forced?: number };
 }
 interface FfprobeOutput { format?: { format_name?: string; duration?: string }; streams?: FfprobeStream[] }
 
@@ -25,6 +29,12 @@ function normalizeContainer(formatName: string | undefined): string | null {
   return formatName.split(',')[0] ?? null;
 }
 
+/** A stream tag, case-insensitively (MP4 and MKV differ), trimmed; null when empty. */
+function tag(s: FfprobeStream, name: string): string | null {
+  for (const [k, v] of Object.entries(s.tags ?? {})) if (k.toLowerCase() === name && v.trim()) return v.trim();
+  return null;
+}
+
 export function parseFfprobe(json: FfprobeOutput): ProbeResult {
   const streams = json.streams ?? [];
   const v = streams.find((s) => s.codec_type === 'video' && !s.disposition?.attached_pic);
@@ -33,12 +43,19 @@ export function parseFfprobe(json: FfprobeOutput): ProbeResult {
     container: normalizeContainer(json.format?.format_name),
     duration: Number.isFinite(duration) && duration > 0 ? duration : null,
     video: v?.codec_name ? { codec: v.codec_name, width: v.width ?? null, height: v.height ?? null } : null,
+    // every stream of a type is listed, in order, so list position = ffmpeg's 0:a:N / 0:s:N
     audio: streams
-      .filter((s) => s.codec_type === 'audio' && s.codec_name)
-      .map((s) => ({ codec: s.codec_name!, language: s.tags?.language ?? null, channels: s.channels ?? null })),
+      .filter((s) => s.codec_type === 'audio')
+      .map((s) => ({
+        codec: s.codec_name ?? 'unknown', language: tag(s, 'language'), channels: s.channels ?? null,
+        title: tag(s, 'title'), default: s.disposition?.default === 1,
+      })),
     subtitles: streams
-      .filter((s) => s.codec_type === 'subtitle' && s.codec_name)
-      .map((s) => ({ codec: s.codec_name!, language: s.tags?.language ?? null })),
+      .filter((s) => s.codec_type === 'subtitle')
+      .map((s) => ({
+        codec: s.codec_name ?? 'unknown', language: tag(s, 'language'), title: tag(s, 'title'),
+        default: s.disposition?.default === 1, forced: s.disposition?.forced === 1,
+      })),
   };
 }
 
