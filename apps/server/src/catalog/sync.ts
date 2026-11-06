@@ -5,16 +5,25 @@
  */
 import type { MediaKind } from '@anycast/shared';
 import type { FastifyBaseLogger } from 'fastify';
+import type { Statement } from 'better-sqlite3';
 import { kvGet, kvSet, type Db } from '../db';
 import type { EventBus } from '../events';
 import type { SourceService } from '../source';
 import type { XtreamClient } from '../xtream/client';
 import type { XCategory, XLiveStream, XSeries, XVodStream } from '../xtream/schemas';
 import { parseXmltv } from '../xtream/xmltv';
-import { KIND_INDEX, refreshHasEpg } from './store';
+import { KIND_INDEX, KIND_TABLE, refreshHasEpg } from './store';
 import { tagCategory, tagItem, type Tag } from './tagger';
 
 const BATCH = 2000;
+/**
+ * Longest stretch a sync keeps the event loop (parsing plus writing one transaction) before it
+ * lets requests run. Parsing a chunk of rows takes about as long as writing it, so this is about
+ * half the longest pause a request sees while a big catalog syncs.
+ */
+const SLICE_MS = 25;
+/** search rows per FTS transaction (see FtsWriter) */
+const FTS_BATCH = 4000;
 const CATALOG_INTERVAL_MS = 12 * 3600_000;
 const EPG_INTERVAL_MS = 3600_000;
 const EPISODES_TTL_MS = 12 * 3600_000;
@@ -36,18 +45,68 @@ function splitYear(name: string): { name: string; year: number | null } {
 
 const rating = (r: number | null) => (r && r > 0 ? Math.round(r * 10) / 10 : null);
 
-async function inBatches<T>(db: Db, rows: Iterable<T> | AsyncIterable<T>, write: (row: T) => void): Promise<void> {
+/**
+ * Keeps search_fts in step with one table, in transactions of its own. FTS5 writes a new index
+ * segment at every commit, so search rows are queued and written FTS_BATCH at a time instead of
+ * with every short catalog transaction (which made merging segments most of a sync). And a
+ * re-sync leaves most names as they were, while replacing an FTS row means tokenizing the old
+ * one to delete it, so rows whose name did not change are skipped: `before(id)` is read ahead of
+ * the upsert, `write` runs after it.
+ */
+class FtsWriter {
+  private pending: [number, string, MediaKind, string][] = [];
+  private readonly prev: Statement;
+  private readonly tx: (rows: [number, string, MediaKind, string][]) => void;
+
+  constructor(
+    db: Db,
+    private readonly kind: MediaKind,
+  ) {
+    this.prev = db.prepare(`SELECT name FROM ${KIND_TABLE[kind]} WHERE id = ?`).pluck();
+    const stmt = db.prepare('INSERT OR REPLACE INTO search_fts (rowid, name, kind, item_id) VALUES (?, ?, ?, ?)');
+    this.tx = db.transaction((rows: [number, string, MediaKind, string][]) => {
+      for (const r of rows) stmt.run(...r);
+    });
+  }
+
+  before(id: string): string | undefined {
+    return this.prev.get(id) as string | undefined;
+  }
+
+  write(rowid: number, name: string, id: string, before: string | undefined): void {
+    if (before !== name) this.pending.push([rowid * 4 + KIND_INDEX[this.kind], name, this.kind, id]);
+  }
+
+  /** Writes the queued rows once there are FTS_BATCH of them, or all of them with `all`. Returns whether it wrote. */
+  flush(all = false): boolean {
+    if (this.pending.length < (all ? 1 : FTS_BATCH)) return false;
+    this.tx(this.pending);
+    this.pending = [];
+    return true;
+  }
+}
+
+/**
+ * Writes rows in short transactions: a transaction ends after BATCH rows or SLICE_MS of parsing,
+ * then the event loop gets a turn. (A for-await over an already buffered stream only runs
+ * microtasks, so without the explicit yield requests would wait for the whole list.)
+ */
+async function inBatches<T>(db: Db, rows: Iterable<T> | AsyncIterable<T>, write: (row: T) => void, fts?: FtsWriter): Promise<void> {
   const tx = db.transaction((chunk: T[]) => chunk.forEach(write));
   let chunk: T[] = [];
+  let since = performance.now();
   for await (const row of rows) {
     chunk.push(row);
-    if (chunk.length >= BATCH) {
+    if (chunk.length >= BATCH || performance.now() - since >= SLICE_MS) {
       tx(chunk);
       chunk = [];
       await yieldLoop();
+      if (fts?.flush()) await yieldLoop();
+      since = performance.now();
     }
   }
   if (chunk.length) tx(chunk);
+  fts?.flush(true);
 }
 
 export class CatalogSync {
@@ -170,11 +229,6 @@ export class CatalogSync {
     });
   }
 
-  private ftsWriter(kind: MediaKind) {
-    const stmt = this.db.prepare('INSERT OR REPLACE INTO search_fts (rowid, name, kind, item_id) VALUES (?, ?, ?, ?)');
-    return (rowid: number, name: string, id: string) => stmt.run(rowid * 4 + KIND_INDEX[kind], name, kind, id);
-  }
-
   private async writeLive(streams: AsyncIterable<XLiveStream>, gen: number, catTags: Map<string, Tag>) {
     const stmt = this.db.prepare(
       `INSERT INTO channels (id, name, raw_name, number, category_id, logo, country, language, archive_days, epg_channel_id, gen)
@@ -183,19 +237,20 @@ export class CatalogSync {
          country = @country, language = @language, archive_days = @archive, epg_channel_id = @epg, gen = @gen
        RETURNING rowid`,
     );
-    const fts = this.ftsWriter('live');
+    const fts = new FtsWriter(this.db, 'live');
     let i = 0;
     await inBatches(this.db, streams, (s) => {
       i++;
       const cat = categoryId('live', s.category_id);
       const tag = tagItem(s.name, catTags.get(cat) ?? null);
       const archive = s.tv_archive ? Math.max(0, Math.round(s.tv_archive_duration ?? 0)) : 0;
+      const before = fts.before(s.stream_id);
       const row = stmt.get({
         id: s.stream_id, name: tag.name, raw: s.name.trim(), number: s.num ?? i, cat, logo: s.stream_icon || null,
         country: tag.country, language: tag.language, archive, epg: s.epg_channel_id?.trim() || null, gen,
       }) as { rowid: number };
-      fts(row.rowid, tag.name, s.stream_id);
-    });
+      fts.write(row.rowid, tag.name, s.stream_id, before);
+    }, fts);
   }
 
   private async writeMovies(streams: AsyncIterable<XVodStream>, gen: number, catTags: Map<string, Tag>) {
@@ -207,19 +262,20 @@ export class CatalogSync {
          country = @country, language = @language, added = @added, gen = @gen
        RETURNING rowid`,
     );
-    const fts = this.ftsWriter('movie');
+    const fts = new FtsWriter(this.db, 'movie');
     await inBatches(this.db, streams, (s) => {
       const cat = categoryId('movie', s.category_id);
       const tag = tagItem(s.name, catTags.get(cat) ?? null);
       const split = splitYear(tag.name);
+      const before = fts.before(s.stream_id);
       const row = stmt.get({
         id: s.stream_id, name: split.name, raw: s.name.trim(), cat, poster: s.stream_icon || null,
         year: s.year ?? split.year, rating: rating(s.rating), plot: s.plot, duration: s.duration_secs,
         container: s.container_extension?.toLowerCase() ?? null, country: tag.country, language: tag.language,
         added: s.added ?? 0, gen,
       }) as { rowid: number };
-      fts(row.rowid, split.name, s.stream_id);
-    });
+      fts.write(row.rowid, split.name, s.stream_id, before);
+    }, fts);
   }
 
   private async writeSeries(list: AsyncIterable<XSeries>, gen: number, catTags: Map<string, Tag>) {
@@ -231,19 +287,20 @@ export class CatalogSync {
          episodes_synced_at = CASE WHEN added = @added THEN episodes_synced_at ELSE NULL END, added = @added, gen = @gen
        RETURNING rowid`,
     );
-    const fts = this.ftsWriter('series');
+    const fts = new FtsWriter(this.db, 'series');
     await inBatches(this.db, list, (s) => {
       const cat = categoryId('series', s.category_id);
       const tag = tagItem(s.name, catTags.get(cat) ?? null);
       const split = splitYear(tag.name);
       const release = s.releaseDate ?? s.release_date;
       const year = s.year ?? split.year ?? (release && /^\d{4}/.test(release) ? Number(release.slice(0, 4)) : null);
+      const before = fts.before(s.series_id);
       const row = stmt.get({
         id: s.series_id, name: split.name, raw: s.name.trim(), cat, poster: s.cover || null, year,
         rating: rating(s.rating), plot: s.plot, country: tag.country, language: tag.language, added: s.last_modified ?? 0, gen,
       }) as { rowid: number };
-      fts(row.rowid, split.name, s.series_id);
-    });
+      fts.write(row.rowid, split.name, s.series_id, before);
+    }, fts);
   }
 
   private prune(gen: number) {
@@ -280,14 +337,15 @@ export class CatalogSync {
         });
         let batch: [string, number, number, string, string | null][] = [];
         let count = 0;
+        let since = performance.now();
         for await (const p of parseXmltv(await client.xmltv(), this.source.timezone())) {
-          if (!known.has(p.channel) || p.stop < minStart || p.start > maxStart) continue;
-          batch.push([p.channel, p.start, p.stop, p.title, p.description]);
-          if (batch.length >= BATCH) {
+          if (known.has(p.channel) && p.stop >= minStart && p.start <= maxStart) batch.push([p.channel, p.start, p.stop, p.title, p.description]);
+          if (batch.length >= BATCH || performance.now() - since >= SLICE_MS) {
             flush(batch);
             count += batch.length;
             batch = [];
             await yieldLoop();
+            since = performance.now();
           }
         }
         flush(batch);
