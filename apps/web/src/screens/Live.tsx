@@ -18,6 +18,7 @@ import { IconListAdd, IconSearch, IconStar } from '../components/Icons';
 import { openAddToList } from '../store/lists';
 import type { FormFactor } from '../lib/device';
 import { prefetchPlayer } from '../player/prefetch';
+import { whenUnlocked } from '../store/parental';
 
 const ListEditorSheet = lazy(() => import('../components/ListEditor').then((m) => ({ default: m.ListEditorSheet })));
 const LIST_PREFIX = 'list:';
@@ -63,7 +64,7 @@ export function LiveScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [favIds, listChips],
   );
-  const catChips = useMemo(() => (cats.data ?? []).map((c) => ({ id: c.id, label: catLabel(c) })), [cats.data]);
+  const catChips = useMemo(() => (cats.data ?? []).map((c) => ({ id: c.id, label: catLabel(c), locked: c.locked })), [cats.data]);
   const chips = useMemo(() => [...lead, ...catChips], [lead, catChips]);
   const catNames = useMemo(() => new Map(catChips.map((c) => [c.id, c.label])), [catChips]);
   useEffect(() => {
@@ -102,6 +103,7 @@ export function LiveScreen() {
   const open = useCallback(
     (ch: LiveChannelWithNow | string, at?: number) => {
       const id = typeof ch === 'string' ? ch : ch.id;
+      if (typeof ch !== 'string' && ch.locked) return whenUnlocked(true, () => open(id, at));
       // zapping follows what the channel was opened from: the open list in its order, or the loaded group
       setZapList((cat.startsWith(LIST_PREFIX) ? listChannels.current : source.loaded()).map((c) => c.id));
       writeLocal('anycast.lastChannel', id);
@@ -228,7 +230,7 @@ function Hero(props: { source: ChannelSource & { total: number | null }; favChan
   return (
     <section className="hero" aria-label="Selected programme">
       <div className="hero-preview">
-        <LogoTile name={ch.name} logo={ch.logo} />
+        <LogoTile name={ch.name} logo={ch.logo} locked={ch.locked} />
         {isNow && <span className="tag">LIVE</span>}
       </div>
       <div className="hero-info">
@@ -312,7 +314,7 @@ function SimpleList(props: { source: PagedList<LiveChannelWithNow>; favorites: L
             <div className="fav-row" data-nav-row="favs" style={form === 'phone' ? undefined : { padding: '0.25rem 0.75rem 0.75rem' }}>
               {props.favorites.map((ch) => (
                 <button key={ch.id} type="button" className="fav-tile" onClick={() => props.onOpen(ch.id)} onMouseEnter={prefetchPlayer}>
-                  <LogoTile name={ch.name} logo={ch.logo} />
+                  <LogoTile name={ch.name} logo={ch.logo} locked={ch.locked} />
                   <span style={{ minWidth: 0, flex: 1 }}>
                     <span className="ellipsis" style={{ display: 'block', fontWeight: 600 }}>
                       {ch.name}

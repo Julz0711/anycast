@@ -203,7 +203,7 @@ export function GuideGrid(props: {
                       onContextMenu={props.onMenu ? (e) => (e.preventDefault(), props.onMenu!(ch)) : undefined}
                       aria-label={`${ch.number} ${ch.name}, watch live`}>
                       {showNumbers && form !== 'phone' && <span className="guide-ch-num tabnum">{ch.number}</span>}
-                      {showLogos && <LogoTile name={ch.name} logo={ch.logo} small />}
+                      {showLogos && <LogoTile name={ch.name} logo={ch.logo} small locked={ch.locked} />}
                       <span className="guide-ch-text">
                         {showNumbers && form === 'phone' && <span className="ch-num tabnum">{ch.number}</span>}
                         {form !== 'phone' && <span className="guide-ch-name">{ch.name}</span>}

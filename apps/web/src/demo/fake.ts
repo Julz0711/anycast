@@ -3,7 +3,8 @@
  * Routes mirror `Api` in @anycast/shared. Writes emit SyncEvents to subscribers like the real SSE stream.
  */
 import {
-  DEFAULT_PREFERENCES, FINISHED_THRESHOLD, mergePreferences,
+  ADULT_MODE_RANK, DEFAULT_PREFERENCES, FINISHED_THRESHOLD, LOCKED_NAME, mergePreferences, PIN_MAX_ATTEMPTS, PIN_WINDOW_MS,
+  type AdultMode, type AdultStatus, type Category, type UnlockMinutes,
   type Channel, type ChannelList, type Favorite, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
   type Preferences, type Profile, type Progress, type Series, type SourceStatus, type SyncEvent, type TagSummary, type TimelineInfo,
 } from '@anycast/shared';
@@ -20,6 +21,59 @@ interface ProfileState {
   prefs: Preferences;
   rules: HideRules;
   lists: ChannelList[];
+  adult: { mode: AdultMode; pin: string | null; unlockMinutes: UnlockMinutes; unlockedUntil: number | null; failures: number[] };
+}
+
+/* ---------- parental lock: one adult group, locked with the demo PIN 1234 ---------- */
+const ADULT_CAT: Category = { id: 'lcx', kind: 'live', name: 'XXX | Late Night', country: null, language: null, adult: true };
+fx.liveCategories.push(ADULT_CAT);
+['Velvet Room', 'Late Lounge', 'After Dark'].forEach((name, i) =>
+  fx.channels.push({
+    id: `ch${901 + i}`, name, rawName: `XXX | ${name}`, number: 901 + i, categoryId: ADULT_CAT.id, logo: null,
+    country: null, language: null, archiveDays: 0, epgChannelId: null, hasEpg: false,
+  }),
+);
+const isAdult = (categoryId: string) => categoryId === ADULT_CAT.id;
+const unlocked = (st: ProfileState) => st.adult.mode === 'locked' && (st.adult.unlockedUntil ?? 0) > Date.now();
+const lockedCat = (st: ProfileState, categoryId: string) => isAdult(categoryId) && st.adult.mode === 'locked' && !unlocked(st);
+/** hide rules plus the hidden adult group (and locked ones for search) */
+const rulesOf = (st: ProfileState, search = false): HideRules =>
+  st.adult.mode === 'hidden' || (search && lockedCat(st, ADULT_CAT.id)) ? { ...st.rules, categoryIds: [...st.rules.categoryIds, ADULT_CAT.id] } : st.rules;
+function mask<T extends { categoryId: string; name: string }>(st: ProfileState, x: T): T {
+  if (!lockedCat(st, x.categoryId)) return x;
+  const out = { ...x, name: LOCKED_NAME, rawName: LOCKED_NAME, locked: true } as Record<string, unknown>;
+  if ('now' in out) out.now = out.now ? { ...(out.now as object), title: LOCKED_NAME, description: null } : null;
+  if ('next' in out) out.next = out.next ? { ...(out.next as object), title: LOCKED_NAME, description: null } : null;
+  return out as T;
+}
+function gate(st: ProfileState, categoryId: string) {
+  if (!isAdult(categoryId) || st.adult.mode === 'shown' || unlocked(st)) return;
+  const msg = st.adult.mode === 'locked' ? 'This is locked. Enter the PIN to open it.' : 'This is not available on this profile.';
+  throw new ApiError(403, msg, { error: 'adult_locked', mode: st.adult.mode, message: msg });
+}
+function adultStatus(st: ProfileState): AdultStatus {
+  const recent = st.adult.failures.filter((t) => t > Date.now() - PIN_WINDOW_MS);
+  const attemptsLeft = Math.max(0, PIN_MAX_ATTEMPTS - recent.length);
+  return {
+    mode: st.adult.mode, hasPin: st.adult.pin !== null, unlockMinutes: st.adult.unlockMinutes, unlocked: unlocked(st),
+    unlockedUntil: unlocked(st) ? st.adult.unlockedUntil : null, attemptsLeft,
+    lockedOutUntil: attemptsLeft === 0 ? recent[recent.length - PIN_MAX_ATTEMPTS]! + PIN_WINDOW_MS : null,
+  };
+}
+function pinErr(st: ProfileState, status: number, error: string, message: string): ApiError {
+  const s = adultStatus(st);
+  return new ApiError(status, message, { error, message, attemptsLeft: s.attemptsLeft, lockedOutUntil: s.lockedOutUntil });
+}
+function checkPin(st: ProfileState, pin: unknown) {
+  if (!st.adult.pin) throw pinErr(st, 409, 'no_pin', 'Set a PIN first.');
+  if (!pin) throw pinErr(st, 409, 'pin_required', 'Enter the PIN to change this.');
+  if (adultStatus(st).lockedOutUntil) throw pinErr(st, 429, 'pin_locked_out', 'Too many wrong attempts.');
+  if (pin !== st.adult.pin) {
+    st.adult.failures.push(Date.now());
+    const s = adultStatus(st);
+    throw s.lockedOutUntil ? pinErr(st, 429, 'pin_locked_out', 'Too many wrong attempts.') : pinErr(st, 403, 'wrong_pin', `Wrong PIN. ${s.attemptsLeft} attempts left.`);
+  }
+  st.adult.failures = [];
 }
 
 let signedIn = true;
@@ -50,6 +104,7 @@ function state(pid: string | null): ProfileState {
         { id: 'l2', name: 'Sport', channelIds: [ch(111), ch(113), ch(112), ch(115)] },
         { id: 'l3', name: 'Kids', channelIds: [ch(141), ch(143)] },
       ].filter(() => id === 'p1'),
+      adult: { mode: 'locked', pin: '1234', unlockMinutes: 30, unlockedUntil: null, failures: [] },
     };
     const seed: Progress[] = [
       { kind: 'movie', id: 'm1', position: 4360, duration: 7080, finished: false, updatedAt: now - 3600_000 },
@@ -192,9 +247,10 @@ const routes: [string, RegExp, Handler][] = [
     setTimeout(() => emit({ type: 'catalog-updated' }), 4000);
     return { ok: true };
   }],
-  ['GET', /^\/api\/categories$/, (_m, q) => {
+  ['GET', /^\/api\/categories$/, (_m, q, _b, st) => {
     const k = q.get('kind');
-    return k === 'movie' ? fx.movieCategories : k === 'series' ? fx.seriesCategories : fx.liveCategories;
+    const list = k === 'movie' ? fx.movieCategories : k === 'series' ? fx.seriesCategories : fx.liveCategories;
+    return list.filter((c) => !(c.adult && st.adult.mode === 'hidden')).map((c) => (lockedCat(st, c.id) ? { ...c, locked: true } : c));
   }],
   ['GET', /^\/api\/tags$/, () => {
     const all = [...fx.channels, ...fx.movies, ...fx.series];
@@ -209,9 +265,9 @@ const routes: [string, RegExp, Handler][] = [
     const now = Date.now();
     const cat = q.get('categoryId');
     const withEpg = q.get('hasEpg') === '1';
-    const items = fx.channels.filter((c) => !hidden(st.rules, c) && (!cat || c.categoryId === cat) && (!withEpg || c.hasEpg));
+    const items = fx.channels.filter((c) => !hidden(rulesOf(st), c) && (!cat || c.categoryId === cat) && (!withEpg || c.hasEpg));
     const p = page(items, q);
-    return { total: p.total, items: p.items.map((c) => withNow(c, now)) };
+    return { total: p.total, items: p.items.map((c) => mask(st, withNow(c, now))) };
   }],
   ['GET', /^\/api\/epg$/, (_m, q) => {
     const ids = (q.get('channelIds') ?? '').split(',').filter(Boolean);
@@ -226,18 +282,19 @@ const routes: [string, RegExp, Handler][] = [
   }],
   ['GET', /^\/api\/movies$/, (_m, q, _b, st) => {
     const cat = q.get('categoryId');
-    return page(fx.movies.filter((x) => !hidden(st.rules, x) && (!cat || x.categoryId === cat)), q);
+    const res = page(fx.movies.filter((x) => !hidden(rulesOf(st), x) && (!cat || x.categoryId === cat)), q);
+    return { ...res, items: res.items.map((x) => mask(st, x)) };
   }],
   ['GET', /^\/api\/series$/, (_m, q, _b, st) => {
     const cat = q.get('categoryId');
-    return page(fx.series.filter((x) => !hidden(st.rules, x) && (!cat || x.categoryId === cat)), q);
+    return page(fx.series.filter((x) => !hidden(rulesOf(st), x) && (!cat || x.categoryId === cat)), q);
   }],
   ['GET', /^\/api\/items$/, (_m, q, _b, st) => {
     const ids = (k: string) => (q.get(k) ?? '').split(',').filter(Boolean);
     const pick = <T extends { id: string }>(list: T[], k: string) =>
-      ids(k).flatMap((id) => list.filter((x) => x.id === id && !hidden(st.rules, x as unknown as Parameters<typeof hidden>[1])));
+      ids(k).flatMap((id) => list.filter((x) => x.id === id && !hidden(rulesOf(st), x as unknown as Parameters<typeof hidden>[1])));
     const now = Date.now();
-    return { live: pick(fx.channels, 'live').map((c) => withNow(c, now)), movies: pick(fx.movies, 'movie'), series: pick(fx.series, 'series') };
+    return { live: pick(fx.channels, 'live').map((c) => mask(st, withNow(c, now))), movies: pick(fx.movies, 'movie').map((x) => mask(st, x)), series: pick(fx.series, 'series') };
   }],
   ['GET', /^\/api\/buffer\/pins$/, () => ({ channelIds: [...pins], maxPins: 1 })],
   ['PUT', /^\/api\/buffer\/pins$/, (_m, _q, body) => {
@@ -270,13 +327,13 @@ const routes: [string, RegExp, Handler][] = [
     const s = (q.get('q') ?? '').trim();
     if (!s) return { live: [], movies: [], series: [] };
     return {
-      live: fx.channels.filter((c) => !hidden(st.rules, c) && contains(c.name, s)).slice(0, 20),
-      movies: fx.movies.filter((c) => !hidden(st.rules, c) && contains(c.name, s)).slice(0, 30),
-      series: fx.series.filter((c) => !hidden(st.rules, c) && contains(c.name, s)).slice(0, 30),
+      live: fx.channels.filter((c) => !hidden(rulesOf(st, true), c) && contains(c.name, s)).slice(0, 20),
+      movies: fx.movies.filter((c) => !hidden(rulesOf(st, true), c) && contains(c.name, s)).slice(0, 30),
+      series: fx.series.filter((c) => !hidden(rulesOf(st, true), c) && contains(c.name, s)).slice(0, 30),
     };
   }],
-  ['GET', /^\/api\/play\/live\/([^/]+)$/, (m): PlaybackInfo => {
-    findChannel(m[1]!);
+  ['GET', /^\/api\/play\/live\/([^/]+)$/, (m, _q, _b, st): PlaybackInfo => {
+    gate(st, findChannel(m[1]!).categoryId);
     return { url: clipUrl, type: 'file', pipeline: 'passthrough', startsAt: Date.now() };
   }],
   ['GET', /^\/api\/play\/live\/([^/]+)\/at$/, (m, q): PlaybackInfo => {
@@ -290,7 +347,49 @@ const routes: [string, RegExp, Handler][] = [
     }
     return { url: clipUrl, type: 'file', pipeline: 'passthrough', startsAt: at };
   }],
-  ['GET', /^\/api\/timeline\/([^/]+)$/, (m) => timeline(findChannel(m[1]!), Date.now())],
+  ['GET', /^\/api\/timeline\/([^/]+)$/, (m, _q, _b, st) => {
+    const ch = findChannel(m[1]!);
+    gate(st, ch.categoryId);
+    return timeline(ch, Date.now());
+  }],
+  ['GET', /^\/api\/adult$/, (_m, _q, _b, st) => adultStatus(st)],
+  ['POST', /^\/api\/adult\/unlock$/, (_m, _q, body, st) => {
+    if (st.adult.mode !== 'locked') throw pinErr(st, 409, 'not_locked', 'Adult content is not locked on this profile.');
+    checkPin(st, (body as { pin?: string }).pin);
+    st.adult.unlockedUntil = Date.now() + st.adult.unlockMinutes * 60_000;
+    return adultStatus(st);
+  }],
+  ['POST', /^\/api\/adult\/lock$/, (_m, _q, _b, st) => {
+    st.adult.unlockedUntil = null;
+    return adultStatus(st);
+  }],
+  ['PUT', /^\/api\/adult\/settings$/, (_m, _q, body, st) => {
+    const b = body as { mode?: AdultMode; unlockMinutes?: UnlockMinutes; pin?: string };
+    const mode = b.mode ?? st.adult.mode;
+    const minutes = b.unlockMinutes ?? st.adult.unlockMinutes;
+    const longer = minutes !== st.adult.unlockMinutes && st.adult.pin !== null && st.adult.mode !== 'shown';
+    if (ADULT_MODE_RANK[mode] > ADULT_MODE_RANK[st.adult.mode] || longer || b.pin !== undefined) checkPin(st, b.pin);
+    if (mode !== 'locked') st.adult.unlockedUntil = null;
+    st.adult = { ...st.adult, mode, unlockMinutes: minutes };
+    emit({ type: 'parental', profileId: currentPid });
+    return adultStatus(st);
+  }],
+  ['PUT', /^\/api\/adult\/pin$/, (_m, _q, body, st) => {
+    const b = body as { pin: string; currentPin?: string; password?: string };
+    if (!/^\d{4,6}$/.test(b.pin)) throw pinErr(st, 400, 'bad_pin', 'The PIN is 4 to 6 digits.');
+    if (b.password) {
+      if (b.password !== 'demo') throw pinErr(st, 403, 'wrong_password', 'Wrong password. (Demo: "demo".)');
+    } else if (st.adult.pin) checkPin(st, b.currentPin);
+    else throw pinErr(st, 409, 'pin_required', 'Enter your account password to set the first PIN.');
+    st.adult = { ...st.adult, pin: b.pin, unlockedUntil: null };
+    emit({ type: 'parental', profileId: currentPid });
+    return adultStatus(st);
+  }],
+  ['POST', /^\/api\/adult\/reset$/, (_m, _q, body) => {
+    const t = state((body as { profileId: string }).profileId);
+    t.adult = { ...t.adult, mode: 'hidden', pin: null, unlockedUntil: null, failures: [] };
+    return { ok: true };
+  }],
   // the demo has no provider connections to share
   ['POST', /^\/api\/play\/takeover$/, () => ({ ok: true, stopped: false })],
   ['POST', /^\/api\/play\/stop$/, () => ({ ok: true })],

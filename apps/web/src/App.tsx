@@ -19,6 +19,7 @@ import { call } from './api/client';
 import { readLocal } from './lib/storage';
 import { Skeleton } from './components/ui';
 import { AddToListHost } from './components/lists';
+import { PinHost } from './components/Locks';
 
 const SettingsScreen = lazy(() => import('./screens/Settings'));
 const PlayerScreen = lazy(() => import('./player/PlayerScreen'));
@@ -135,6 +136,7 @@ export function App() {
       <SpatialNav />
       {auth === 'unknown' ? <Splash /> : auth === 'anon' ? <LoginScreen /> : <AuthedRoutes />}
       {auth === 'authed' && <AddToListHost />}
+      <PinHost />
       <Toasts />
     </BrowserRouter>
   );

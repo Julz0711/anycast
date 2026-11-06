@@ -122,6 +122,29 @@ src/
   doctor/                 provider diagnostics
 ```
 
+## Parental lock
+
+Categories the tagger flags as adult (XXX / ADULT / 18+) follow each profile's mode
+(`src/parental.ts`, routes in `routes/parental.ts`, contract in `packages/shared/src/parental.ts`):
+
+- **Hidden** (default for every profile): the adult categories join the profile's hide rules, so
+  every list, count, search, guide and items-by-id answer leaves them out. Play, timeline, series
+  detail and artwork answer `403 {error: 'adult_locked', mode: 'hidden'}`.
+- **Locked**: categories are listed with `locked: true`; their items come back as placeholders
+  (`name: 'Locked'`, no artwork, plot or guide titles, `locked: true`) and never match a search.
+  Play and detail routes answer `403 adult_locked` until the device unlocks.
+- **Shown**: no restriction.
+
+The PIN (4–6 digits) is an argon2 hash in the `parental` table and never leaves the server. The
+first PIN needs the account password; changing it needs the current PIN or the password; admins can
+reset a profile (`POST /api/adult/reset`: no PIN, mode Hidden). Loosening the mode or lengthening
+the unlock needs the PIN. `POST /api/adult/unlock` sets an httpOnly session cookie
+(`anycast_unlock_<profile>`, no Max-Age, so it ends with the browser) whose token the server maps
+to the sign-in session and profile until the profile's unlock duration (default 30 min) runs out;
+`POST /api/adult/lock`, a PIN change or a restart end it sooner. Wrong PINs and passwords count
+per profile: 5 per 10 minutes, then `429 pin_locked_out` with `lockedOutUntil`. Unlocked adult
+artwork URLs carry `?profile=` because `<img>` requests send no profile header.
+
 ## Playback notes
 
 - **Stream URLs** are AnyCast paths under `/api/stream/...` and need the session cookie. Provider

@@ -11,6 +11,8 @@ installable PWA) to every device in the house: phone, laptop, tablet and TV brow
 - **Channel lists:** your own ordered lists ("News", "Sport") as chips in Live TV; zapping follows the list.
 - **Profiles** with their own favorites, channel lists, progress, settings and language filters, synced live
   across devices.
+- **Parental lock** per profile: adult categories hidden (the default), locked behind a 4–6 digit
+  PIN, or shown. The server enforces it, not just the app.
 - **Plays anywhere:** the server remuxes or transcodes with FFmpeg only what a device can't play.
 - **Your login stays on your server.** The provider URL, username and password are stored
   encrypted and never reach a browser, a log line or a diagnostic report.

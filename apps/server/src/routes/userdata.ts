@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { getEpisode, getMovie, getSeries, listEpisodes, toEpisode, toMovie, toSeries } from '../catalog/store';
 import { auth, type Services } from '../context';
+import { parentalCtx } from '../parental';
 import { continueWatching } from '../progress';
 
 const FavoriteBody = z.object({ kind: z.enum(['live', 'movie', 'series']), id: z.string().min(1), favorite: z.boolean() });
@@ -40,16 +41,21 @@ export function userDataRoutes(app: FastifyInstance, s: Services): void {
 
   app.get('/api/continue', async (req) => {
     const all = s.userData.allProgress(auth(req).profileId);
+    // hidden adult titles are left out; locked ones are shown as placeholders
+    const adult = s.parental.view(parentalCtx(req));
+    const hidden = new Set(adult.hiddenIds);
     const result = continueWatching(all, (seriesId) => listEpisodes(s.db, seriesId).map(toEpisode));
     const movies: (Movie & { progress: Progress })[] = [];
     for (const p of result.movies) {
       const m = getMovie(s.db, p.id);
-      if (m) movies.push({ ...toMovie(m), progress: p });
+      if (m && !hidden.has(m.category_id)) movies.push({ ...adult.item(toMovie(m)), progress: p });
     }
     const episodes: (Episode & { progress: Progress; series: Series })[] = [];
     for (const e of result.episodes) {
       const series = getSeries(s.db, e.episode.seriesId);
-      if (series) episodes.push({ ...e.episode, progress: e.progress, series: toSeries(series) });
+      if (series && !hidden.has(series.category_id)) {
+        episodes.push({ ...adult.episode(e.episode, series.category_id), progress: e.progress, series: adult.item(toSeries(series)) });
+      }
     }
     return { movies, episodes };
   });

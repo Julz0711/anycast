@@ -10,8 +10,10 @@ export interface Category {
   country: string | null;
   /** ISO 639-1, lower-case (e.g. "de", "en"); null if unknown */
   language: string | null;
-  /** XXX / adult / 18+ categories (PIN lock later) */
+  /** XXX / adult / 18+ categories (parental lock, see parental.ts) */
   adult: boolean;
+  /** adult category of a profile in 'locked' mode that this device has not unlocked */
+  locked?: boolean;
 }
 
 export interface Channel {
@@ -29,6 +31,8 @@ export interface Channel {
   epgChannelId: string | null;
   /** The guide has programmes for this channel (many panels have guide data for few channels) */
   hasEpg: boolean;
+  /** in a locked adult category: name is LOCKED_NAME and artwork, plot and guide are withheld */
+  locked?: boolean;
 }
 
 export interface EpgProgram {
@@ -55,6 +59,8 @@ export interface Movie {
   container: string | null;
   country: string | null;
   language: string | null;
+  /** in a locked adult category: name is LOCKED_NAME and artwork, plot and guide are withheld */
+  locked?: boolean;
 }
 
 export interface Series {
@@ -68,6 +74,8 @@ export interface Series {
   plot: string | null;
   country: string | null;
   language: string | null;
+  /** in a locked adult category: name is LOCKED_NAME and artwork, plot and guide are withheld */
+  locked?: boolean;
 }
 
 export interface Episode {
@@ -79,6 +87,8 @@ export interface Episode {
   plot: string | null;
   duration: number | null;
   container: string | null;
+  /** in a locked adult category: name is LOCKED_NAME and artwork, plot and guide are withheld */
+  locked?: boolean;
 }
 
 export interface SeriesDetail extends Series {

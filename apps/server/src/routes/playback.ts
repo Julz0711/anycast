@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createReadStream } from 'node:fs';
 import { PassThrough } from 'node:stream';
 import { auth, type Services } from '../context';
+import { parentalCtx } from '../parental';
 import { parseCaps } from '../playback/caps';
 import type { Viewer } from '../playback/claims';
 import { isHlsPipeline, type StreamBody, type VodKind } from '../playback/service';
@@ -60,19 +61,48 @@ function abortOnClose(req: FastifyRequest): AbortSignal {
 
 export function playbackRoutes(app: FastifyInstance, s: Services): void {
   const p = s.playback;
+  /** 403 adult_locked for adult items this profile cannot open (hidden, or locked and not unlocked here). */
+  const gate = (req: FastifyRequest, kind: 'live' | 'movie' | 'episode', id: string) => {
+    const adult = s.parental.view(parentalCtx(req));
+    if (adult.adultIds.size) adult.assertOpen(s.parental.categoryOf(kind, id));
+  };
 
-  app.get<{ Params: { id: string } }>('/api/play/live/:id', async (req) => p.liveInfo(req.params.id, caps(req), viewerOf(req, s)));
+  /**
+   * Stream URLs are fetched by <video>/hls.js without the profile header, so they can't tell which
+   * profile is watching. They are guessable from ids, so gate them too: allowed when any of the
+   * signed-in user's profiles may open the item (all profiles share one login anyway).
+   */
+  app.addHook('onRequest', async (req) => {
+    const m = /^\/api\/stream\/(live|timeshift|buffer|movie|episode)\/([^/?]+?)(?:\.ts)?(?:[/?]|$)/.exec(req.url);
+    if (!m || !req.auth) return;
+    const kind = m[1] === 'movie' || m[1] === 'episode' ? m[1] : 'live';
+    const category = s.parental.categoryOf(kind, decodeURIComponent(m[2]!));
+    const a = req.auth;
+    const views = s.users.profiles(a.user.id).map((pr) => s.parental.view({ profileId: pr.id, token: a.token, cookies: req.cookies }));
+    if (views.some((v) => v.canOpen(category))) return;
+    views[0]?.assertOpen(category);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/play/live/:id', async (req) => {
+    gate(req, 'live', req.params.id);
+    return p.liveInfo(req.params.id, caps(req), viewerOf(req, s));
+  });
 
   app.get<{ Params: { id: string }; Querystring: { at?: string } }>('/api/play/live/:id/at', async (req, reply) => {
     const at = Number(req.query.at);
     if (!Number.isFinite(at)) return reply.code(400).send({ error: 'bad_request', message: 'at (epoch ms) is required' });
+    gate(req, 'live', req.params.id);
     return p.atInfo(req.params.id, at, caps(req), viewerOf(req, s));
   });
 
-  app.get<{ Params: { channelId: string } }>('/api/timeline/:channelId', async (req) => p.timeline(req.params.channelId));
+  app.get<{ Params: { channelId: string } }>('/api/timeline/:channelId', async (req) => {
+    gate(req, 'live', req.params.channelId);
+    return p.timeline(req.params.channelId);
+  });
 
   for (const kind of ['movie', 'episode'] as const) {
     app.get<{ Params: { id: string } }>(`/api/play/${kind}/:id`, async (req) => {
+      gate(req, kind, req.params.id);
       const saved = s.userData.progressFor(auth(req).profileId, kind, req.params.id);
       const resumeAt = saved && !saved.finished && saved.position > 0 ? saved.position : null;
       return p.vodInfo(kind, req.params.id, caps(req), resumeAt, viewerOf(req, s));

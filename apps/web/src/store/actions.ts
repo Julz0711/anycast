@@ -8,6 +8,7 @@ import { EMPTY_RULES, progressKey, useApp } from './app';
 import { isDemo } from '../demo/flag';
 import { clientId } from '../lib/client-id';
 import { applyListsEvent } from './lists';
+import { loadAdult } from './parental';
 
 const get = useApp.getState;
 const set = useApp.setState;
@@ -81,6 +82,7 @@ export function selectProfile(id: string) {
     catalogVersion: get().catalogVersion + 1,
   });
   void loadProfileData();
+  void loadAdult();
   disconnect?.();
   disconnect = connectEvents(id, applyEvent, () => void loadProfileData());
 }
@@ -246,6 +248,10 @@ export function applyEvent(ev: SyncEvent) {
       break;
     case 'lists':
       applyListsEvent(ev.lists);
+      break;
+    case 'parental':
+      // mode, PIN or duration changed on another device: reload the lock state and the lists
+      void loadAdult({ refresh: true });
       break;
     case 'catalog-updated':
       clearApiCache();

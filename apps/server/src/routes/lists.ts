@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { EMPTY_RULES, itemsByIds, nowNext, toChannel } from '../catalog/store';
 import { auth, type Services } from '../context';
 import { ChannelLists } from '../lists';
+import { parentalCtx } from '../parental';
 
 const Id = z.string().min(1).max(64);
 const Ids = z.array(Id).max(10_000);
@@ -48,11 +49,14 @@ export function listRoutes(app: FastifyInstance, s: Services): void {
   });
 
   // Hide rules don't apply here on purpose: what the user put in a list stays visible in it.
+  // The parental lock does: hidden adult channels drop out, locked ones are masked.
   app.get<{ Params: { id: string } }>('/api/lists/:id/channels', async (req): Promise<LiveChannelWithNow[]> => {
     const list = lists.get(pid(req), req.params.id);
+    const adult = s.parental.view(parentalCtx(req));
+    const rules = adult.rules(EMPTY_RULES);
     const now = Date.now();
     const rows = [];
-    for (let i = 0; i < list.channelIds.length; i += 500) rows.push(...itemsByIds(s.db, 'live', list.channelIds.slice(i, i + 500), EMPTY_RULES));
-    return rows.map((c) => ({ ...toChannel(c), ...nowNext(s.db, c, now) }));
+    for (let i = 0; i < list.channelIds.length; i += 500) rows.push(...itemsByIds(s.db, 'live', list.channelIds.slice(i, i + 500), rules));
+    return rows.map((c) => adult.item({ ...toChannel(c), ...nowNext(s.db, c, now) }));
   });
 }

@@ -30,7 +30,7 @@ function ContinueMovies() {
         {!cont.data
           ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} h="auto" r="0.75rem" style={{ aspectRatio: '16 / 9' }} />)
           : items.map((m) => (
-              <ContinueCard key={m.id} to={`/play/movie/${m.id}`} id={m.id} title={m.name} poster={m.poster} position={m.progress.position} duration={m.progress.duration} />
+              <ContinueCard key={m.id} to={`/play/movie/${m.id}`} id={m.id} title={m.name} poster={m.poster} position={m.progress.position} duration={m.progress.duration} locked={m.locked} />
             ))}
       </div>
     </section>

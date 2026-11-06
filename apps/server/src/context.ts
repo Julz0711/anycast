@@ -4,6 +4,7 @@ import type { CatalogSync } from './catalog/sync';
 import type { Config } from './config';
 import type { Db } from './db';
 import type { EventBus } from './events';
+import type { Parental } from './parental';
 import type { PlaybackService } from './playback/service';
 import type { SourceService } from './source';
 import type { UserData } from './userdata';
@@ -17,6 +18,7 @@ export interface Services {
   bus: EventBus;
   userData: UserData;
   playback: PlaybackService;
+  parental: Parental;
 }
 
 export interface AuthContext {

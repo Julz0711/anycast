@@ -1,22 +1,39 @@
 /** Poster, continue-watching and channel cards. */
 import { memo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import type { LiveChannelWithNow, Movie, Series } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
 import { toneFor } from '../lib/misc';
 import { fmtClock, fmtDuration } from '../lib/time';
-import { IconMore, IconStar } from './Icons';
+import { IconLock, IconMore, IconStar } from './Icons';
 import { useChannelMenu } from './lists';
+import { whenUnlocked } from '../store/parental';
 import { LogoTile, ProgressBar } from './ui';
 import { prefetch } from '../api/client';
 import { prefetchPlayer } from '../player/prefetch';
 
-function Art(props: { id: string; name: string; src: string | null; children?: React.ReactNode; wide?: boolean }) {
+/** Locked adult items: the link asks for the PIN first, then continues. */
+function useLockedLink(locked: boolean | undefined, to: string) {
+  const navigate = useNavigate();
+  return locked
+    ? (e: React.MouseEvent) => {
+        e.preventDefault();
+        whenUnlocked(true, () => navigate(to));
+      }
+    : undefined;
+}
+
+function Art(props: { id: string; name: string; src: string | null; children?: React.ReactNode; wide?: boolean; locked?: boolean }) {
   const show = useApp((s) => s.prefs.appearance.showArtwork);
   const [broken, setBroken] = useState(false);
   return (
     <div className={props.wide ? 'wide-art' : 'poster-art'} style={{ background: toneFor(props.id) }}>
-      {show && props.src && !broken ? (
+      {props.locked ? (
+        <span className="ph ph-locked">
+          <IconLock />
+          {!props.wide && props.name}
+        </span>
+      ) : show && props.src && !broken ? (
         <img src={props.src} alt="" loading="lazy" decoding="async" onError={() => setBroken(true)} />
       ) : !props.wide ? (
         <span className="ph">{props.name}</span>
@@ -31,10 +48,11 @@ export const PosterCard = memo(function PosterCard(props: { kind: 'movie' | 'ser
   const fav = useIsFavorite(kind, item.id);
   const to = kind === 'movie' ? `/movies/${item.id}` : `/series/${item.id}`;
   const meta = [item.year, item.rating ? item.rating.toFixed(1) : null].filter(Boolean).join(' · ');
-  const warm = () => kind === 'series' && prefetch('GET /api/series/:id', { params: { id: item.id } });
+  const warm = () => !item.locked && kind === 'series' && prefetch('GET /api/series/:id', { params: { id: item.id } });
+  const onClick = useLockedLink(item.locked, to);
   return (
-    <Link to={to} className="poster" onMouseEnter={warm} onFocus={warm} aria-label={`${item.name}${meta ? ', ' + meta : ''}${fav ? ', favorite' : ''}`}>
-      <Art id={item.id} name={item.name} src={item.poster}>
+    <Link to={to} className="poster" onClick={onClick} onMouseEnter={warm} onFocus={warm} aria-label={`${item.name}${meta ? ', ' + meta : ''}${fav ? ', favorite' : ''}`}>
+      <Art id={item.id} name={item.name} src={item.poster} locked={item.locked}>
         {fav && !props.noBadge && (
           <span className="badge">
             <IconStar filled />
@@ -47,11 +65,12 @@ export const PosterCard = memo(function PosterCard(props: { kind: 'movie' | 'ser
   );
 });
 
-export function ContinueCard(props: { to: string; id: string; title: string; subtitle?: string; poster: string | null; position: number; duration: number }) {
+export function ContinueCard(props: { to: string; id: string; title: string; subtitle?: string; poster: string | null; position: number; duration: number; locked?: boolean }) {
   const left = props.duration - props.position;
+  const onClick = useLockedLink(props.locked, props.to);
   return (
-    <Link to={props.to} className="cont-card poster" onMouseEnter={prefetchPlayer} onFocus={prefetchPlayer}>
-      <Art id={props.id} name={props.title} src={props.poster} wide>
+    <Link to={props.to} className="cont-card poster" onClick={onClick} onMouseEnter={prefetchPlayer} onFocus={prefetchPlayer}>
+      <Art id={props.id} name={props.title} src={props.poster} wide locked={props.locked}>
         <span className="left tabnum">{left < 3600 ? `${Math.max(1, Math.round(left / 60))} min left` : `${fmtDuration(props.position)} of ${fmtDuration(props.duration)}`}</span>
       </Art>
       <ProgressBar value={props.position / props.duration} label={`${Math.round((props.position / props.duration) * 100)}% watched`} />
@@ -84,12 +103,12 @@ export const ChannelRow = memo(function ChannelRow(props: {
       type="button"
       className="ch-row"
       {...menu}
-      onClick={() => props.onOpen(ch.id)}
+      onClick={() => whenUnlocked(ch.locked, () => props.onOpen(ch.id))}
       onMouseEnter={prefetchPlayer}
       onFocus={prefetchPlayer}
       aria-label={`${live.showChannelNumbers ? ch.number + ' ' : ''}${ch.name}${p ? ', now: ' + p.title : !ch.hasEpg && props.category ? ', ' + props.category : ''}`}
     >
-      {live.showLogos && <LogoTile name={ch.name} logo={ch.logo} />}
+      {live.showLogos && <LogoTile name={ch.name} logo={ch.logo} locked={ch.locked} />}
       <div className="ch-main">
         <div className="ch-top">
           <span className="name">

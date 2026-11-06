@@ -225,4 +225,15 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (list_id, channel_id)
   ) WITHOUT ROWID;
   `,
+  `
+  -- parental lock per profile (PRD AC-3): mode, unlock duration and the argon2 hash of the PIN.
+  -- IF NOT EXISTS keeps it safe to reorder against migrations added on other branches.
+  CREATE TABLE IF NOT EXISTS parental (
+    profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL DEFAULT 'hidden',
+    unlock_minutes INTEGER NOT NULL DEFAULT 30,
+    pin_hash TEXT,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];
