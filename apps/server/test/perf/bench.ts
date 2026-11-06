@@ -25,6 +25,8 @@ const repo = path.resolve(here, '../../../..');
 const ADMIN_PASSWORD = 'perf-admin-password-1';
 
 const { values: args } = parseArgs({
+  // `pnpm run perf -- --size huge` passes the "--" through
+  args: process.argv.slice(2).filter((a) => a !== '--'),
   options: {
     size: { type: 'string', default: 'real' },
     'no-web': { type: 'boolean', default: false },
