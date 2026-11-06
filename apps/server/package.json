@@ -7,6 +7,7 @@
     "dev": "tsx watch src/main.ts",
     "start": "node --max-semi-space-size=4 --import tsx src/main.ts",
     "doctor": "tsx src/doctor/cli.ts",
+    "restore": "tsx src/backup/cli.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
