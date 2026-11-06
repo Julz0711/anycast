@@ -1,6 +1,6 @@
 /** Global app state (zustand). Actions live in ./actions.ts. */
 import { create } from 'zustand';
-import { DEFAULT_PREFERENCES, type Favorite, type HideRules, type Me, type Preferences, type Progress } from '@anycast/shared';
+import { DEFAULT_PREFERENCES, type ChannelList, type Favorite, type HideRules, type Me, type Preferences, type Progress } from '@anycast/shared';
 import type { DeviceOverride } from '../lib/device';
 import { readLocal } from '../lib/storage';
 
@@ -21,6 +21,11 @@ export interface AppState {
   progress: Record<string, Progress>;
   hideRules: HideRules;
   hideRulesLoaded: boolean;
+  /** the profile's channel lists, in the user's order (LB-3) */
+  lists: ChannelList[];
+  listsLoaded: boolean;
+  /** the channel the "Add to list" sheet is open for */
+  addToList: { id: string; name: string } | null;
   /** bumps when the catalog or hide rules change, so lists refetch */
   catalogVersion: number;
   deviceOverride: DeviceOverride;
@@ -44,6 +49,9 @@ export const useApp = create<AppState>(() => ({
   progress: {},
   hideRules: EMPTY_RULES,
   hideRulesLoaded: false,
+  lists: [],
+  listsLoaded: false,
+  addToList: null,
   catalogVersion: 0,
   deviceOverride: (readLocal('anycast.device') as DeviceOverride | null) ?? 'auto',
   zapList: [],

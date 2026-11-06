@@ -1,6 +1,7 @@
 /** Small shared UI primitives: Segmented, Toggle, Chips, Skeleton, ProgressBar, LogoTile, Empty. */
 import { useState, type ReactNode } from 'react';
 import { initials } from '../lib/misc';
+import { IconLock } from './Icons';
 
 export function Segmented<T extends string | number>(props: {
   value: T;
@@ -36,11 +37,12 @@ export function Toggle(props: { checked: boolean; onChange: (v: boolean) => void
   );
 }
 
-export function Chips<T extends string>(props: { items: { id: T; label: string }[]; value: T; onChange: (v: T) => void; label: string }) {
+export function Chips<T extends string>(props: { items: { id: T; label: string; locked?: boolean }[]; value: T; onChange: (v: T) => void; label: string }) {
   return (
     <div className="chips" role="toolbar" aria-label={props.label} data-nav-row={`chips-${props.label}`}>
       {props.items.map((c) => (
-        <button key={c.id} type="button" className="chip" aria-pressed={c.id === props.value} onClick={() => props.onChange(c.id)}>
+        <button key={c.id} type="button" className="chip" aria-pressed={c.id === props.value} onClick={() => props.onChange(c.id)} aria-label={c.locked ? `${c.label}, locked` : undefined}>
+          {c.locked && <IconLock className="ico lock-mark" />}
           {c.label}
         </button>
       ))}
@@ -67,12 +69,12 @@ export function ProgressBar(props: { value: number; label?: string }) {
   );
 }
 
-export function LogoTile(props: { name: string; logo: string | null; small?: boolean; show?: boolean }) {
+export function LogoTile(props: { name: string; logo: string | null; small?: boolean; show?: boolean; /** a locked adult channel */ locked?: boolean }) {
   const [broken, setBroken] = useState(false);
   const showImg = props.show !== false && props.logo && !broken;
   return (
     <div className={`logo-tile${props.small ? ' sm' : ''}`} aria-hidden="true">
-      {showImg ? <img src={props.logo!} alt="" loading="lazy" decoding="async" onError={() => setBroken(true)} /> : initials(props.name)}
+      {props.locked ? <IconLock className="ico lock-tile" /> : showImg ? <img src={props.logo!} alt="" loading="lazy" decoding="async" onError={() => setBroken(true)} /> : initials(props.name)}
     </div>
   );
 }

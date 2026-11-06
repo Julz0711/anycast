@@ -6,13 +6,15 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chips } from './ui';
-import { IconClose, IconSearch } from './Icons';
+import { IconClose, IconLock, IconSearch } from './Icons';
+import { whenUnlocked } from '../store/parental';
 
 const SHOW_ALL = 60;
 const SHOWN = 16;
 const MORE = '__more';
 
-export interface ChipItem { id: string; label: string }
+/** `locked`: an adult category of a locked profile; picking it asks for the PIN first */
+export interface ChipItem { id: string; label: string; locked?: boolean }
 
 export function CategoryChips(props: {
   label: string;
@@ -26,6 +28,7 @@ export function CategoryChips(props: {
 }) {
   const { lead, categories, value } = props;
   const [open, setOpen] = useState(false);
+  const choose = (id: string) => whenUnlocked(categories.find((c) => c.id === id)?.locked, () => props.onChange(id));
   const many = categories.length > SHOW_ALL;
   const items = useMemo(() => {
     if (!many) return [...lead, ...categories];
@@ -36,7 +39,7 @@ export function CategoryChips(props: {
   }, [many, lead, categories, value, props.noun]);
   return (
     <>
-      <Chips label={props.label} items={items} value={value} onChange={(id) => (id === MORE ? setOpen(true) : props.onChange(id))} />
+      <Chips label={props.label} items={items} value={value} onChange={(id) => (id === MORE ? setOpen(true) : choose(id))} />
       {open && (
         <CategorySheet
           title={`${props.noun[0]!.toUpperCase()}${props.noun.slice(1)}`}
@@ -44,7 +47,7 @@ export function CategoryChips(props: {
           value={value}
           onPick={(id) => {
             setOpen(false);
-            props.onChange(id);
+            choose(id);
           }}
           onClose={() => setOpen(false)}
         />
@@ -86,7 +89,7 @@ function CategorySheet(props: { title: string; categories: ChipItem[]; value: st
         <div className="sheet-list" role="list" aria-label={props.title}>
           {list.map((c) => (
             <button key={c.id} type="button" role="listitem" className="sheet-item" aria-current={c.id === props.value ? 'true' : undefined} onClick={() => props.onPick(c.id)}>
-              {c.label}
+              {c.locked && <IconLock className="ico lock-mark" />} {c.label}
             </button>
           ))}
           {!list.length && <p className="muted" style={{ padding: '0.75rem' }}>Nothing matches “{q}”.</p>}

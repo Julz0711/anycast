@@ -89,7 +89,8 @@ describe('catalog', () => {
     expect(src.counts).toEqual({ live: mock.catalog.live.length, movie: mock.catalog.movies.length, series: mock.catalog.series.length });
     expect(src.account.maxConnections).toBe(2);
     const live = await json<Page<{ name: string; rawName: string; country: string | null; now: unknown; logo: string | null }>>({ url: '/api/live?limit=500' });
-    expect(live.total).toBe(mock.catalog.live.length);
+    // adult channels are hidden by default (parental lock)
+    expect(live.total).toBe(mock.catalog.live.filter((c) => !c.tags.adult).length);
     const ard = live.items.find((c) => c.rawName.startsWith('DE | ARD'))!;
     expect(ard).toMatchObject({ name: expect.stringMatching(/^ARD/), country: 'de' });
     expect(live.items.filter((c) => c.now).length).toBeGreaterThan(live.items.length / 2);

@@ -6,6 +6,8 @@ import {
   toChannel, toEpisode, toMovie, toSeries, visibleChannels,
 } from '../catalog/store';
 import { auth, type Services } from '../context';
+import { listedChannelIds } from '../lists';
+import { parentalCtx } from '../parental';
 import { search } from '../search';
 
 const PageQuery = z.object({
@@ -25,7 +27,11 @@ const Kind = z.enum(['live', 'movie', 'series']);
 const MAX_EPG_SPAN_MS = 3 * 86400_000;
 
 export function catalogRoutes(app: FastifyInstance, s: Services): void {
-  const rules = (req: Parameters<typeof auth>[0]) => s.userData.hideRules(auth(req).profileId);
+  /** The profile's hide rules plus its parental lock (hidden adult categories, masking of locked ones). */
+  const scope = (req: Parameters<typeof auth>[0], opts: { search?: boolean } = {}) => {
+    const adult = s.parental.view(parentalCtx(req));
+    return { adult, rules: adult.rules(s.userData.hideRules(auth(req).profileId), opts) };
+  };
 
   app.get('/api/source', async (): Promise<SourceStatus> => ({
     configured: s.source.credentials() !== null,
@@ -45,7 +51,8 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
   app.get('/api/categories', async (req, reply) => {
     const q = z.object({ kind: Kind, all: z.string().optional() }).safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'bad_request', message: 'kind must be live, movie or series' });
-    return listCategories(s.db, q.data.kind as MediaKind, q.data.all === '1' ? EMPTY_RULES : rules(req));
+    const { adult, rules } = scope(req);
+    return listCategories(s.db, q.data.kind as MediaKind, q.data.all === '1' ? adult.rules(EMPTY_RULES) : rules).map((c) => adult.category(c));
   });
 
   // grouping ~200k rows takes ~80 ms on a big panel; the answer only changes with a catalog sync
@@ -84,21 +91,22 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
 
   app.get('/api/live', async (req) => {
     const q = PageQuery.parse(req.query);
-    const page = pageChannels(s.db, rules(req), q);
+    const { adult, rules } = scope(req);
+    const page = pageChannels(s.db, rules, q);
     const now = Date.now();
-    const items: LiveChannelWithNow[] = page.items.map((c) => ({ ...c, ...nowNext(s.db, { id: c.id, epg_channel_id: c.epgChannelId }, now) }));
+    const items: LiveChannelWithNow[] = page.items.map((c) => adult.item({ ...c, ...nowNext(s.db, { id: c.id, epg_channel_id: c.epgChannelId }, now) }));
     return { items, total: page.total };
   });
 
   app.get('/api/items', async (req, reply): Promise<ItemsById | undefined> => {
     const q = ItemsQuery.safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'bad_request', message: 'live, movie and series are comma-separated id lists' });
-    const r = rules(req);
+    const { adult, rules: r } = scope(req);
     const now = Date.now();
     return {
-      live: itemsByIds(s.db, 'live', q.data.live, r).map((c) => ({ ...toChannel(c), ...nowNext(s.db, c, now) })),
-      movies: itemsByIds(s.db, 'movie', q.data.movie, r).map(toMovie),
-      series: itemsByIds(s.db, 'series', q.data.series, r).map(toSeries),
+      live: itemsByIds(s.db, 'live', q.data.live, r).map((c) => adult.item({ ...toChannel(c), ...nowNext(s.db, c, now) })),
+      movies: itemsByIds(s.db, 'movie', q.data.movie, r).map((m) => adult.item(toMovie(m))),
+      series: itemsByIds(s.db, 'series', q.data.series, r).map((x) => adult.item(toSeries(x))),
     };
   });
 
@@ -109,15 +117,36 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
     if (!q.success || q.data.to <= q.data.from) return reply.code(400).send({ error: 'bad_request', message: 'channelIds, from and to are required' });
     const ids = q.data.channelIds.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 500);
     const to = Math.min(q.data.to, q.data.from + MAX_EPG_SPAN_MS);
-    return epgFor(s.db, visibleChannels(s.db, ids, rules(req)), q.data.from, to);
+    const { adult, rules } = scope(req);
+    // channels in one of the profile's lists show their guide even when hide rules would hide them;
+    // the parental lock still applies to them
+    const listed = listedChannelIds(s.db, auth(req).profileId);
+    const inLists = ids.filter((id) => listed.has(id));
+    const channels = [
+      ...visibleChannels(s.db, ids.filter((id) => !listed.has(id)), rules),
+      ...itemsByIds(s.db, 'live', inLists, adult.rules(EMPTY_RULES)),
+    ];
+    const out = epgFor(s.db, channels, q.data.from, to);
+    for (const c of channels) out[c.id] = adult.programs(out[c.id] ?? [], c.category_id);
+    return out;
   });
 
-  app.get('/api/movies', async (req) => pageMovies(s.db, rules(req), PageQuery.parse(req.query)));
-  app.get('/api/series', async (req) => pageSeries(s.db, rules(req), PageQuery.parse(req.query)));
+  app.get('/api/movies', async (req) => {
+    const { adult, rules } = scope(req);
+    const page = pageMovies(s.db, rules, PageQuery.parse(req.query));
+    return { ...page, items: page.items.map((m) => adult.item(m)) };
+  });
+  app.get('/api/series', async (req) => {
+    const { adult, rules } = scope(req);
+    const page = pageSeries(s.db, rules, PageQuery.parse(req.query));
+    return { ...page, items: page.items.map((x) => adult.item(x)) };
+  });
 
   app.get<{ Params: { id: string } }>('/api/series/:id', async (req, reply): Promise<SeriesDetail | undefined> => {
     const row = getSeries(s.db, req.params.id);
     if (!row) return reply.code(404).send({ error: 'not_found', message: 'Series not found' });
+    const { adult } = scope(req);
+    adult.assertOpen(row.category_id);
     try {
       await s.sync.ensureEpisodes(row.id);
     } catch (err) {
@@ -132,11 +161,13 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
       list.push(e);
       seasons.set(e.season, list);
     }
-    return { ...toSeries(row), seasons: [...seasons.entries()].map(([season, episodes]) => ({ season, episodes })) };
+    return { ...adult.item(toSeries(row)), seasons: [...seasons.entries()].map(([season, episodes]) => ({ season, episodes })) };
   });
 
   app.get('/api/search', async (req) => {
     const q = z.object({ q: z.string().max(200).catch('') }).parse(req.query);
-    return search(s.db, q.q, rules(req));
+    const { adult, rules } = scope(req, { search: true });
+    const res = search(s.db, q.q, rules);
+    return { live: res.live.map((x) => adult.item(x)), movies: res.movies.map((x) => adult.item(x)), series: res.series.map((x) => adult.item(x)) };
   });
 }

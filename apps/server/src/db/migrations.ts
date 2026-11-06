@@ -207,4 +207,33 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX series_added ON series(added DESC, country, language, category_id);
   CREATE INDEX series_cat ON series(category_id, added DESC, country, language);
   `,
+  `
+  -- custom ordered channel lists per profile (LB-3); items keep channel ids even when a sync drops
+  -- the channel, so it comes back in place if the provider brings it back
+  CREATE TABLE channel_lists (
+    id TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX channel_lists_profile ON channel_lists(profile_id, position);
+  CREATE TABLE channel_list_items (
+    list_id TEXT NOT NULL REFERENCES channel_lists(id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (list_id, channel_id)
+  ) WITHOUT ROWID;
+  `,
+  `
+  -- parental lock per profile (PRD AC-3): mode, unlock duration and the argon2 hash of the PIN.
+  -- IF NOT EXISTS keeps it safe to reorder against migrations added on other branches.
+  CREATE TABLE IF NOT EXISTS parental (
+    profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+    mode TEXT NOT NULL DEFAULT 'hidden',
+    unlock_minutes INTEGER NOT NULL DEFAULT 30,
+    pin_hash TEXT,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];

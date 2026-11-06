@@ -32,6 +32,7 @@ function ContinueEpisodes() {
                 poster={e.series.poster}
                 position={e.progress.position}
                 duration={e.progress.duration}
+                locked={e.series.locked}
               />
             ))}
       </div>

@@ -34,7 +34,7 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
     writeLocal(`anycast.cat.${kind}`, id);
     window.scrollTo({ top: 0 });
   };
-  const catChips = useMemo(() => (cats.data ?? []).map((c) => ({ id: c.id, label: catLabel(c) })), [cats.data]);
+  const catChips = useMemo(() => (cats.data ?? []).map((c) => ({ id: c.id, label: catLabel(c), locked: c.locked })), [cats.data]);
   const chips = useMemo(() => [HOME, ...catChips], [catChips]);
   useEffect(() => {
     if (cats.data && !chips.some((c) => c.id === cat)) setCat('home');
