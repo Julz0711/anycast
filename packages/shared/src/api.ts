@@ -56,6 +56,23 @@ export interface BufferStatus {
   caps: { maxHoursPerChannel: number; maxBytes: number; maxPins: number | null };
 }
 
+/**
+ * Scrub thumbnails of a movie or episode (PB-1). Each tile is the frame at `start` seconds (it
+ * covers start .. start + interval), cut out of a sprite sheet: show `url` as a background at
+ * -x/-y with size w x h. Only parts that were played somewhere have tiles; the list grows while
+ * playing, and a sheet's `url` changes (?v=) when tiles are added to it.
+ */
+export interface ThumbTile { start: number; url: string; x: number; y: number; w: number; h: number }
+export interface ThumbIndex {
+  /** seconds between tiles */
+  interval: number;
+  /** tile size in px (height 0 while there are no tiles yet) */
+  width: number;
+  height: number;
+  /** sorted by start */
+  tiles: ThumbTile[];
+}
+
 export interface Page<T> { items: T[]; total: number; }
 
 export interface LiveChannelWithNow extends Channel {
@@ -158,6 +175,12 @@ export interface Api {
   'GET /api/timeline/:channelId': { res: TimelineInfo };
   'GET /api/play/movie/:id': { res: PlaybackInfo };
   'GET /api/play/episode/:id': { res: PlaybackInfo };
+  /**
+   * Scrub thumbnails (kind: movie | episode). Built from what the server already streams for
+   * playback (HLS sessions), so no extra provider connection: unplayed parts have no tiles yet.
+   * Re-fetch while playing to pick up new ones. Sprites: GET /api/thumbs/:kind/:id/sheet/:n.jpg (image/jpeg).
+   */
+  'GET /api/thumbs/:kind/:id': { res: ThumbIndex };
   /**
    * Stops the playback that holds the connection this client was refused (the holder named in the
    * 409). The stopped client gets a 'playback-stopped' event. Streams of the stopped playback then
