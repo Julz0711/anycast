@@ -76,6 +76,36 @@ has in its App Store:
 AnyCast is then at `https://<server-name>.<your-tailnet>.ts.net`, with a valid certificate, from
 anywhere, without opening ports on your router. On the phone, open it and use "Add to Home Screen".
 
+## 5. Optional: Hardware transcoding
+
+Most streams play without any conversion. When a device can't decode a stream's video (HEVC on
+an older browser, say), the server converts it to H.264, which costs a lot of CPU. With a GPU
+passed into the container, it uses the GPU instead. Nothing to do if you don't need it: without
+a GPU, AnyCast simply uses the CPU.
+
+**Intel (most mini PCs and NAS boxes) or AMD:**
+
+1. Check the server has a GPU device: `ls /dev/dri` should list `renderD128`.
+2. In `docker-compose.yml`, uncomment the two `devices:` lines under "Hardware transcoding".
+3. Restart: `docker compose up -d`.
+4. In the app, open Settings › All settings › Diagnostics: **Video encoder** should say
+   `VAAPI (h264_vaapi)`. If it says Software, the hint under it says what the test found.
+
+To check from the server itself: `docker compose exec anycast vainfo` lists what the GPU can do
+(look for `VAProfileH264` with `VAEntrypointEncSlice` or `VAEntrypointEncSliceLP`).
+
+**NVIDIA:** install the NVIDIA Container Toolkit on the host, uncomment the `deploy:` block in
+`docker-compose.yml` instead, and restart. Diagnostics should then say `NVIDIA NVENC (h264_nvenc)`.
+
+By default (`ANYCAST_HWACCEL=auto`) the server tries NVENC, VAAPI and Quick Sync with a one second
+test encode at startup and uses the first that works. An admin can force one, or turn it off, in
+Settings › All settings › Player › Hardware encoding (the **Check again** button there re-runs the
+test). If the GPU fails during playback, that stream carries on with the CPU and the GPU is left
+alone for 15 minutes.
+
+The GPU drivers add about 50 MB to the image. To build without them:
+`docker compose build --build-arg HWACCEL_DRIVERS=0`.
+
 ## Updating
 
 ```sh

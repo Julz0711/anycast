@@ -12,9 +12,22 @@ services:
     volumes:
       - anycast-data:/data
       - anycast-buffer:/buffer
-    # Hardware transcoding (Intel/AMD): uncomment if your server has /dev/dri
+    # Hardware transcoding (optional, see docs/casaos.md). Without it, conversions use the CPU.
+    # Intel/AMD: uncomment if `ls /dev/dri` on the server lists renderD128.
     # devices:
     #   - /dev/dri:/dev/dri
+    # Only if you run the container as a non-root user: the GID of the host's render group
+    # (`getent group render | cut -d: -f3`), e.g.
+    # group_add:
+    #   - "105"
+    # NVIDIA: install the NVIDIA Container Toolkit on the host, then uncomment instead:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu, video]
 
 volumes:
   anycast-data:
