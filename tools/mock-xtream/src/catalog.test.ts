@@ -114,7 +114,7 @@ describe('FORMAT_MATRIX', () => {
       expect(covered.has(`movie:${p}`), p).toBe(true);
       expect(covered.has(`episode:${p}`), p).toBe(true);
     }
-    for (const p of ['live_h264_aac', 'live_hevc_aac', 'live_h264_ac3']) expect(covered.has(`live:${p}`), p).toBe(true);
+    for (const p of ['live_h264_aac', 'live_hevc_aac', 'live_h264_ac3', 'live_h264_aac_multi']) expect(covered.has(`live:${p}`), p).toBe(true);
     for (const e of FORMAT_MATRIX) {
       expect(e).toMatchObject(PROFILES[e.id]);
       for (const id of e.ids) {
