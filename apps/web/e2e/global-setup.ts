@@ -188,6 +188,10 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
   // mock VOD length is 120 + (id % 3) * 60 s
   const movie = movies.find((m) => mp4Ids.has(m.id) && Number(m.id) % 3 >= 1);
   if (!movie) throw new Error('no MP4 movie of 3+ minutes in the mock catalog');
+  // index % 5 == 2 is MKV H.264 with E-AC-3 audio: HLS with AAC audio in Chromium
+  const mkvIds = new Set(vod.filter((_, i) => i % 5 === 2).map((v) => String(v.stream_id)));
+  const hlsMovie = movies.find((m) => mkvIds.has(m.id) && Number(m.id) % 3 >= 1);
+  if (!hlsMovie) throw new Error('no MKV movie of 3+ minutes in the mock catalog');
 
   // series: episode k of series i uses VOD profile (i + k) % 5; i % 5 == 4 gives TS then MP4, both H.264/AAC
   const seriesList = await api('get_series');
@@ -204,7 +208,7 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
       if (!r.ok) throw new Error(`warming mock ${kind} ${id} failed: ${r.status}`);
     });
 
-  await Promise.all([warm('movie', movie.id), warm('series', ep1!.id), warm('series', ep2!.id)]);
+  await Promise.all([warm('movie', movie.id), warm('movie', hlsMovie.id), warm('series', ep1!.id), warm('series', ep2!.id)]);
 
   const liveCats = await get<Cat[]>('/api/categories?kind=live&all=1');
   const noGuide = live.find((c) => !c.hasEpg);
@@ -227,6 +231,7 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
     zapChannels: live.slice(0, 3).map((c) => c.id),
     noGuideChannel: { id: noGuide.id, name: noGuide.name, category: liveCats.find((c) => c.id === noGuide.categoryId)!.name },
     movie: { id: movie.id, name: movie.name },
+    hlsMovie: { id: hlsMovie.id, name: hlsMovie.name },
     series: { id: String(binge.series_id), name: detail.name, ep1: ep1!.id, ep2: ep2!.id, ep2Title: ep2!.title },
     declutter: {
       liveCat: { de: pick(liveCats, 'de', 'live category').name, en: pick(liveCats, 'en', 'live category').name },
