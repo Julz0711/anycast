@@ -6,21 +6,23 @@ import { z } from 'zod';
 
 const toNull = (v: unknown) => (v === '' || v === undefined || v === 'null' ? null : v);
 
-const num = z
-  .preprocess((v) => {
-    const x = toNull(v);
-    if (x === null) return null;
-    const n = typeof x === 'number' ? x : Number(String(x).trim());
-    return Number.isFinite(n) ? n : null;
-  }, z.number().nullable())
-  .catch(null);
+// Field conversions, shared by the zod schemas and the fast list parsers below.
+const toNum = (v: unknown): number | null => {
+  const x = toNull(v);
+  if (x === null) return null;
+  const n = typeof x === 'number' ? x : Number(String(x).trim());
+  return Number.isFinite(n) ? n : null;
+};
+const toStr = (v: unknown): string | null => {
+  const x = toNull(v);
+  return x === null || typeof x === 'object' ? null : String(x);
+};
+const toName = (v: unknown): string => (v == null ? '' : String(v));
+const toId = (v: unknown): string | undefined => (v === null || v === undefined || v === '' ? undefined : String(v));
 
-const str = z
-  .preprocess((v) => {
-    const x = toNull(v);
-    return x === null || typeof x === 'object' ? null : String(x);
-  }, z.string().nullable())
-  .catch(null);
+const num = z.preprocess(toNum, z.number().nullable()).catch(null);
+const str = z.preprocess(toStr, z.string().nullable()).catch(null);
+const name = z.preprocess(toName, z.string());
 
 const bool = z.preprocess((v) => v === true || v === 1 || v === '1' || v === 'true', z.boolean()).catch(false);
 
@@ -35,7 +37,7 @@ export function parseList<T extends z.ZodTypeAny>(schema: T, data: unknown): z.o
   return out;
 }
 
-const id = z.preprocess((v) => (v === null || v === undefined || v === '' ? undefined : String(v)), z.string());
+const id = z.preprocess(toId, z.string());
 
 export const UserInfo = z.object({
   auth: num,
@@ -72,7 +74,7 @@ export type XCategory = z.output<typeof XCategory>;
 
 export const XLiveStream = z.object({
   num: num,
-  name: z.preprocess((v) => (v == null ? '' : String(v)), z.string()),
+  name,
   stream_id: id,
   stream_icon: str,
   epg_channel_id: str,
@@ -85,7 +87,7 @@ export type XLiveStream = z.output<typeof XLiveStream>;
 
 export const XVodStream = z.object({
   num: num,
-  name: z.preprocess((v) => (v == null ? '' : String(v)), z.string()),
+  name,
   stream_id: id,
   stream_icon: str,
   rating: num,
@@ -100,7 +102,7 @@ export type XVodStream = z.output<typeof XVodStream>;
 
 export const XSeries = z.object({
   num: num,
-  name: z.preprocess((v) => (v == null ? '' : String(v)), z.string()),
+  name,
   series_id: id,
   cover: str,
   plot: str,
@@ -112,6 +114,42 @@ export const XSeries = z.object({
   category_id: str,
 });
 export type XSeries = z.output<typeof XSeries>;
+
+/**
+ * Fast equivalents of XLiveStream/XVodStream/XSeries.safeParse for the big streamed lists: the
+ * same conversions, without zod's per-field machinery, which was ~20 µs per item (3 s of a
+ * 140k movie sync). Return null where safeParse fails (not an object, or no id). A test checks
+ * they agree with the schemas.
+ */
+type Fields = Record<string, 'num' | 'str' | 'name' | 'id'>;
+const CONVERT = { num: toNum, str: toStr, name: toName, id: toId };
+function fastObject<T>(fields: Fields): (v: unknown) => T | null {
+  const entries = Object.entries(fields).map(([k, kind]) => [k, CONVERT[kind], kind === 'id'] as const);
+  return (v) => {
+    if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
+    const src = v as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, convert, required] of entries) {
+      const x = convert(src[k]);
+      if (required && x === undefined) return null;
+      out[k] = x;
+    }
+    return out as T;
+  };
+}
+
+export const parseLiveStream = fastObject<XLiveStream>({
+  num: 'num', name: 'name', stream_id: 'id', stream_icon: 'str', epg_channel_id: 'str', added: 'num', category_id: 'str',
+  tv_archive: 'num', tv_archive_duration: 'num',
+});
+export const parseVodStream = fastObject<XVodStream>({
+  num: 'num', name: 'name', stream_id: 'id', stream_icon: 'str', rating: 'num', added: 'num', category_id: 'str',
+  container_extension: 'str', year: 'num', plot: 'str', duration_secs: 'num',
+});
+export const parseSeries = fastObject<XSeries>({
+  num: 'num', name: 'name', series_id: 'id', cover: 'str', plot: 'str', releaseDate: 'str', release_date: 'str', year: 'num',
+  last_modified: 'num', rating: 'num', category_id: 'str',
+});
 
 const EpisodeInfo = z
   .preprocess(

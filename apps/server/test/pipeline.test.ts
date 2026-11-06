@@ -55,8 +55,66 @@ test('parseFfprobe normalizes containers and skips cover art', () => {
   });
   expect(r).toEqual({
     container: 'mkv', duration: 125.5, video: { codec: 'hevc', width: 3840, height: 2160 },
-    audio: [{ codec: 'eac3', language: 'deu', channels: 6 }], subtitles: [{ codec: 'subrip', language: 'eng' }],
+    audio: [{ codec: 'eac3', language: 'deu', channels: 6, title: null, default: false }],
+    subtitles: [{ codec: 'subrip', language: 'eng', title: null, default: false, forced: false }],
   });
+});
+
+test('parseFfprobe keeps every audio and subtitle stream in order, with titles and flags', () => {
+  const r = parseFfprobe({
+    format: { format_name: 'matroska,webm', duration: '60' },
+    streams: [
+      { codec_type: 'video', codec_name: 'h264' },
+      { codec_type: 'audio', codec_name: 'ac3', channels: 6, tags: { LANGUAGE: 'ger', title: ' Surround ' }, disposition: { default: 1 } },
+      { codec_type: 'audio', tags: { language: 'eng' } },
+      { codec_type: 'subtitle', codec_name: 'hdmv_pgs_subtitle', tags: { language: 'eng' }, disposition: { forced: 1 } },
+      { codec_type: 'subtitle', codec_name: 'ass', tags: { language: 'und', title: '' } },
+    ],
+  });
+  expect(r.audio).toEqual([
+    { codec: 'ac3', language: 'ger', channels: 6, title: 'Surround', default: true },
+    // a stream ffprobe cannot name still takes its place, so 0:a:N stays right
+    { codec: 'unknown', language: 'eng', channels: null, title: null, default: false },
+  ]);
+  expect(r.subtitles).toEqual([
+    { codec: 'hdmv_pgs_subtitle', language: 'eng', title: null, default: false, forced: true },
+    { codec: 'ass', language: 'und', title: null, default: false, forced: false },
+  ]);
+});
+
+describe('choosePipeline with tracks (PB-3)', () => {
+  const multi: ProbeResult = {
+    container: 'mp4', duration: 100, video: { codec: 'h264', width: 1920, height: 1080 },
+    audio: [{ codec: 'aac', language: 'eng', channels: 2 }, { codec: 'aac', language: 'deu', channels: 2 }, { codec: 'ac3', language: 'fra', channels: 6 }],
+    subtitles: [{ codec: 'mov_text', language: 'eng' }],
+  };
+  test.each([
+    ['first track of an mp4 plays directly', { audio: 0 }, 'vod', 'passthrough', 'file'],
+    ['another track needs a remux (browsers play only the first)', { audio: 1 }, 'vod', 'remux', 'hls'],
+    ['an AC-3 track the client cannot decode is transcoded', { audio: 2 }, 'vod', 'transcode-audio', 'hls'],
+    ['subtitles need the FFmpeg run', { audio: 0, subtitles: true }, 'vod', 'remux', 'hls'],
+    ['live: another track leaves raw TS for HLS', { audio: 1 }, 'live', 'remux', 'hls'],
+  ] as const)('%s', (_n, tracks, mode, pipeline, type) => {
+    const p = mode === 'live' ? { ...multi, container: 'ts' } : multi;
+    expect(choosePipeline(p, chrome, mode, tracks)).toEqual({ pipeline, type });
+  });
+  test('a single-track source plays directly whatever index is asked', () => {
+    expect(choosePipeline(probe('mp4', 'h264', 'aac'), chrome, 'vod', { audio: 3 })).toEqual({ pipeline: 'passthrough', type: 'file' });
+  });
+});
+
+test('hls args: the chosen audio track is mapped, text subtitles go to WebVTT outputs after the HLS one', () => {
+  const args = buildHlsArgs({
+    input: 'http://x/m.mkv', pipeline: 'remux', dir: '/d', run: 2, segmentSeconds: 6, mode: 'vod', audioIndex: 2,
+    subtitles: [{ index: 0, file: '/d/subs_r2_0.vtt' }, { index: 3, file: '/d/subs_r2_3.vtt' }],
+  });
+  const line = args.join(' ');
+  expect(line).toContain('-map 0:v:0? -map 0:a:2? -sn');
+  const hlsOut = args.indexOf('/d/r2.m3u8');
+  expect(args.slice(hlsOut + 1).join(' ')).toBe(
+    '-map 0:s:0 -c:s webvtt -flush_packets 1 -f webvtt /d/subs_r2_0.vtt -map 0:s:3 -c:s webvtt -flush_packets 1 -f webvtt /d/subs_r2_3.vtt',
+  );
+  expect(buildHlsArgs({ input: 'pipe:0', pipeline: 'remux', dir: '/d', run: 0, segmentSeconds: 4, mode: 'live' }).join(' ')).toContain('-map 0:a:0?');
 });
 
 test('hls args: vod seek keeps timestamps, transcode forces keyframes from the seek point', () => {

@@ -172,14 +172,19 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
       { stream_id?: number; series_id?: number }[]
     >;
   const live = (await get<{ items: Ch[] }>('/api/live?limit=500')).items;
-  // mock live profile by catalog position: index % 10 == 3 is HEVC, == 7 is AC-3; the rest is H.264/AAC
-  const h264 = (c: Ch) => ![3, 7].includes((c.number - 1) % 10);
+  // mock live profile by catalog position: index % 10 == 3 is HEVC, == 7 is AC-3, index % 20 == 5 has
+  // English and German audio; the rest is H.264/AAC with one audio track
+  const multiAudio = (c: Ch) => (c.number - 1) % 20 === 5;
+  const h264 = (c: Ch) => ![3, 7].includes((c.number - 1) % 10) && !multiAudio(c);
   const now = Date.now();
   const epg = await get<Record<string, Program[]>>(`/api/epg?channelIds=${live.map((c) => c.id).join(',')}&from=${now - 4 * 3600_000}&to=${now}`);
   const archive = live.find(
     (c) => h264(c) && c.archiveDays > 0 && c.epgChannelId && (epg[c.id] ?? []).some((p) => p.end <= now - 5 * 60_000 && p.start >= now - 3 * 3600_000),
   );
   if (!archive) throw new Error('no H.264 archive channel with a recent past programme in the mock catalog');
+  // not the first of them (zapChannels), so no other spec plays it
+  const tracksChannel = live.find((c) => multiAudio(c) && c.number > 20 && c.archiveDays > 0);
+  if (!tracksChannel) throw new Error('no live channel with two audio tracks and an archive in the mock catalog');
 
   // movies: mock profile by position in get_vod_streams; index % 5 == 0 is MP4 H.264/AAC (direct play)
   const vod = await api('get_vod_streams');
@@ -192,6 +197,9 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
   const mkvIds = new Set(vod.filter((_, i) => i % 5 === 2).map((v) => String(v.stream_id)));
   const hlsMovie = movies.find((m) => mkvIds.has(m.id) && Number(m.id) % 3 >= 1);
   if (!hlsMovie) throw new Error('no MKV movie of 3+ minutes in the mock catalog');
+  // the same profile has two audio and two subtitle tracks; a movie of its own, since HLS sessions are shared per title
+  const tracksMovie = movies.find((m) => mkvIds.has(m.id) && Number(m.id) % 3 >= 1 && m.id !== hlsMovie.id);
+  if (!tracksMovie) throw new Error('no second MKV movie of 3+ minutes in the mock catalog');
 
   // series: episode k of series i uses VOD profile (i + k) % 5; i % 5 == 4 gives TS then MP4, both H.264/AAC
   const seriesList = await api('get_series');
@@ -208,7 +216,7 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
       if (!r.ok) throw new Error(`warming mock ${kind} ${id} failed: ${r.status}`);
     });
 
-  await Promise.all([warm('movie', movie.id), warm('movie', hlsMovie.id), warm('series', ep1!.id), warm('series', ep2!.id)]);
+  await Promise.all([warm('movie', movie.id), warm('movie', hlsMovie.id), warm('movie', tracksMovie.id), warm('series', ep1!.id), warm('series', ep2!.id)]);
 
   const liveCats = await get<Cat[]>('/api/categories?kind=live&all=1');
   const noGuide = live.find((c) => !c.hasEpg);
@@ -232,6 +240,8 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
     noGuideChannel: { id: noGuide.id, name: noGuide.name, category: liveCats.find((c) => c.id === noGuide.categoryId)!.name },
     movie: { id: movie.id, name: movie.name },
     hlsMovie: { id: hlsMovie.id, name: hlsMovie.name },
+    tracksMovie: { id: tracksMovie.id, name: tracksMovie.name },
+    tracksChannel: { id: tracksChannel.id, name: tracksChannel.name },
     series: { id: String(binge.series_id), name: detail.name, ep1: ep1!.id, ep2: ep2!.id, ep2Title: ep2!.title },
     declutter: {
       liveCat: { de: pick(liveCats, 'de', 'live category').name, en: pick(liveCats, 'en', 'live category').name },

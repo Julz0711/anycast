@@ -1,11 +1,14 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createReadStream } from 'node:fs';
 import { PassThrough } from 'node:stream';
+import { z } from 'zod';
+import { getChannel, getEpisode, getMovie } from '../catalog/store';
 import { auth, type Services } from '../context';
 import { parentalCtx } from '../parental';
 import { parseCaps } from '../playback/caps';
 import type { Viewer } from '../playback/claims';
-import { isHlsPipeline, type StreamBody, type VodKind } from '../playback/service';
+import { isHlsPipeline, type StreamBody, type TrackRequest, type VodKind } from '../playback/service';
+import type { TrackKind } from '../userdata';
 
 const CLIENT_ID = /^[\w-]{8,64}$/;
 
@@ -24,6 +27,7 @@ const caps = (req: FastifyRequest) => parseCaps((req.headers['x-anycast-caps'] a
 
 function contentType(file: string): string {
   if (file.endsWith('.m3u8')) return 'application/vnd.apple.mpegurl';
+  if (file.endsWith('.vtt')) return 'text/vtt; charset=utf-8';
   if (file.endsWith('.mp4')) return 'video/mp4';
   if (file.endsWith('.m4s')) return 'video/iso.segment';
   return 'application/octet-stream';
@@ -52,6 +56,13 @@ function sendStream(req: FastifyRequest, reply: FastifyReply, s: StreamBody) {
   req.raw.on('close', () => s.body.destroy());
   return reply.code(s.status).headers({ ...s.headers, 'cache-control': 'no-store' }).send(s.body);
 }
+
+/** HLS file names under a pipeline: optionally an audio track ("a1/"), then a plain name. */
+const LIVE_FILE = /^(?:a\d{1,2}\/)?[\w.-]+$/;
+
+const TrackChoiceBody = z
+  .object({ audio: z.number().int().min(0).max(99).optional(), subtitle: z.number().int().min(0).max(99).nullable().optional() })
+  .strict();
 
 function abortOnClose(req: FastifyRequest): AbortSignal {
   const ac = new AbortController();
@@ -83,16 +94,30 @@ export function playbackRoutes(app: FastifyInstance, s: Services): void {
     views[0]?.assertOpen(category);
   });
 
+  /** ?audio / ?sub of a play request, with the item's (or channel's) saved choice and the profile's preferences (PB-3). */
+  const tracks = (req: FastifyRequest, item: { kind: TrackKind; id: string }): TrackRequest => {
+    const q = req.query as { audio?: string; sub?: string };
+    const index = (v: string | undefined) => (v !== undefined && /^\d{1,2}$/.test(v) ? Number(v) : undefined);
+    const { profileId } = auth(req);
+    return {
+      audio: index(q.audio),
+      sub: q.sub === 'off' ? 'off' : index(q.sub),
+      saved: s.userData.trackChoice(profileId, item.kind, item.id),
+      prefs: s.userData.preferences(profileId).player,
+    };
+  };
+
   app.get<{ Params: { id: string } }>('/api/play/live/:id', async (req) => {
     gate(req, 'live', req.params.id);
-    return p.liveInfo(req.params.id, caps(req), viewerOf(req, s));
+    return p.liveInfo(req.params.id, caps(req), viewerOf(req, s), tracks(req, { kind: 'live', id: req.params.id }));
   });
 
   app.get<{ Params: { id: string }; Querystring: { at?: string } }>('/api/play/live/:id/at', async (req, reply) => {
     const at = Number(req.query.at);
     if (!Number.isFinite(at)) return reply.code(400).send({ error: 'bad_request', message: 'at (epoch ms) is required' });
     gate(req, 'live', req.params.id);
-    return p.atInfo(req.params.id, at, caps(req), viewerOf(req, s));
+    // the channel's saved audio track also plays in its archive and buffer
+    return p.atInfo(req.params.id, at, caps(req), viewerOf(req, s), tracks(req, { kind: 'live', id: req.params.id }));
   });
 
   app.get<{ Params: { channelId: string } }>('/api/timeline/:channelId', async (req) => {
@@ -105,9 +130,24 @@ export function playbackRoutes(app: FastifyInstance, s: Services): void {
       gate(req, kind, req.params.id);
       const saved = s.userData.progressFor(auth(req).profileId, kind, req.params.id);
       const resumeAt = saved && !saved.finished && saved.position > 0 ? saved.position : null;
-      return p.vodInfo(kind, req.params.id, caps(req), resumeAt, viewerOf(req, s));
+      return p.vodInfo(kind, req.params.id, caps(req), resumeAt, viewerOf(req, s), tracks(req, { kind, id: req.params.id }));
     });
   }
+
+  app.put<{ Params: { kind: string; id: string } }>('/api/tracks/:kind/:id', async (req, reply) => {
+    const { kind, id } = req.params;
+    if (kind !== 'movie' && kind !== 'episode' && kind !== 'live') return reply.code(404).send({ error: 'not_found', message: 'Not found' });
+    const body = TrackChoiceBody.safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: 'bad_request', message: 'audio and subtitle are track numbers (subtitle null = off)' });
+    const exists = kind === 'live' ? getChannel(s.db, id) : kind === 'movie' ? getMovie(s.db, id) : getEpisode(s.db, id);
+    if (!exists) {
+      return reply.code(404).send({ error: 'not_found', message: kind === 'live' ? 'Channel not found' : kind === 'movie' ? 'Movie not found' : 'Episode not found' });
+    }
+    gate(req, kind, id);
+    // live channels show no subtitles: only their audio track is kept
+    s.userData.saveTrackChoice(auth(req).profileId, kind, id, kind === 'live' ? { audio: body.data.audio } : body.data);
+    return { ok: true as const };
+  });
 
   app.post('/api/play/takeover', async (req, reply) => {
     const viewer = viewerOf(req, s);
@@ -131,7 +171,7 @@ export function playbackRoutes(app: FastifyInstance, s: Services): void {
   app.get<{ Params: { id: string; pipeline: string; '*': string } }>('/api/stream/live/:id/:pipeline/*', async (req, reply) => {
     const { id, pipeline } = req.params;
     const file = req.params['*'];
-    if (!isHlsPipeline(pipeline) || !/^[\w.-]+$/.test(file)) return reply.code(404).send({ error: 'not_found', message: 'Not found' });
+    if (!isHlsPipeline(pipeline) || !LIVE_FILE.test(file)) return reply.code(404).send({ error: 'not_found', message: 'Not found' });
     return sendHls(reply, file, await p.liveHls(id, pipeline, file));
   });
 
@@ -145,7 +185,7 @@ export function playbackRoutes(app: FastifyInstance, s: Services): void {
     async (req, reply) => {
       const { id, start, dur, pipeline } = req.params;
       const file = req.params['*'];
-      if (!isHlsPipeline(pipeline) || !/^[\w.-]+$/.test(file) || !/^\d+$/.test(start) || !/^\d+$/.test(dur)) {
+      if (!isHlsPipeline(pipeline) || !LIVE_FILE.test(file) || !/^\d+$/.test(start) || !/^\d+$/.test(dur)) {
         return reply.code(404).send({ error: 'not_found', message: 'Not found' });
       }
       return sendHls(reply, file, await p.timeshiftHls(id, Number(start), Number(dur), pipeline, file));
@@ -172,7 +212,7 @@ export function playbackRoutes(app: FastifyInstance, s: Services): void {
   app.get<{ Params: BufParams & { pipeline: string; '*': string } }>('/api/stream/buffer/:id/:run/:from/:pipeline/*', async (req, reply) => {
     const { id, run, from, pipeline } = req.params;
     const file = req.params['*'];
-    if (!bufOk(req.params) || !isHlsPipeline(pipeline) || !/^[\w.-]+$/.test(file)) return reply.code(404).send(notFound);
+    if (!bufOk(req.params) || !isHlsPipeline(pipeline) || !LIVE_FILE.test(file)) return reply.code(404).send(notFound);
     return sendHls(reply, file, await p.bufferHls(id, Number(run), Number(from), pipeline, file));
   });
 

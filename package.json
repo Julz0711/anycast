@@ -10,7 +10,8 @@
     "typecheck": "pnpm -r typecheck",
     "mock": "pnpm --filter @anycast/mock-xtream start",
     "doctor": "pnpm --filter @anycast/server run doctor",
-    "e2e": "pnpm --filter @anycast/web e2e"
+    "e2e": "pnpm --filter @anycast/web e2e",
+    "perf": "pnpm --filter @anycast/server perf"
   },
   "engines": {
     "node": ">=22"

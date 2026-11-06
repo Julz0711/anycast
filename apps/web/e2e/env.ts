@@ -13,6 +13,10 @@ export interface E2EFixtures {
   movie: { id: string; name: string };
   /** MKV H.264 movie (served as HLS, so it gets scrub thumbnails), 3+ minutes */
   hlsMovie: { id: string; name: string };
+  /** another movie of the same multi-track MKV profile (German + English audio and subtitles), for tracks.spec.ts alone */
+  tracksMovie: { id: string; name: string };
+  /** a live channel with English and German audio (English first) and an archive, for tracks.spec.ts alone */
+  tracksChannel: { id: string; name: string };
   /** a series whose first two episodes are H.264/AAC */
   series: { id: string; name: string; ep1: string; ep2: string; ep2Title: string };
   declutter: {

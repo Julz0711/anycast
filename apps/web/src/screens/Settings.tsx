@@ -19,6 +19,7 @@ import { IconDown, IconDrag, IconRefresh, IconUp } from '../components/Icons';
 import { ListsManager } from '../components/ListEditor';
 import type { DeviceOverride, FormFactor } from '../lib/device';
 import { ParentalLock } from './ParentalLock';
+import { DiagnosticsSection } from './Diagnostics';
 import '../theme/settings.css';
 
 type P = Preferences;
@@ -33,6 +34,7 @@ export default function SettingsScreen() {
   const form = useFormFactor();
   const all = prefs.settingsMode === 'all';
   const profile = me?.profiles.find((p) => p.id === profileId);
+  const isAdmin = me?.user.isAdmin ?? false;
 
   const sections: { id: string; title: string; body: ReactNode; basic?: boolean }[] = all
     ? [
@@ -46,6 +48,11 @@ export default function SettingsScreen() {
         { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
         { id: 'profiles', title: 'Profiles', body: <Profiles /> },
         { id: 'source', title: 'Source & account', body: <Source /> },
+        {
+          id: 'diagnostics',
+          title: 'Diagnostics',
+          body: <DiagnosticsSection isAdmin={isAdmin} Row={Row} />,
+        },
         { id: 'about', title: 'About', body: <About /> },
       ]
     : [
@@ -253,10 +260,27 @@ function LangSelect(props: { label: string; value: string | null; onChange: (v: 
   );
 }
 
+const SUBTITLE_HINT: Record<P['player']['subtitlesDefault'], string> = {
+  off: 'Turn them on in the player when you want them.',
+  auto: 'Shown when the audio is not in your subtitle language.',
+  on: 'Shown whenever a title has them, in your subtitle language if it can.',
+};
+
 function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
   const p = prefs.player;
   return (
     <>
+      <Row label="Audio language" hint="Played when a movie or channel has several. A track you pick in the player is remembered for that title.">
+        <LangSelect label="Audio language" value={p.preferredAudioLanguage} onChange={(v) => setPref('player', { preferredAudioLanguage: v })} />
+      </Row>
+      <Row label="Subtitles" hint={SUBTITLE_HINT[p.subtitlesDefault]}>
+        <Segmented label="Subtitles" value={p.subtitlesDefault} options={opts<P['player']['subtitlesDefault']>(['off', 'Off'], ['auto', 'Auto'], ['on', 'Always'])} onChange={(v) => setPref('player', { subtitlesDefault: v })} />
+      </Row>
+      {p.subtitlesDefault !== 'off' && (
+        <Row label="Subtitle language">
+          <LangSelect label="Subtitle language" value={p.preferredSubtitleLanguage} onChange={(v) => setPref('player', { preferredSubtitleLanguage: v })} />
+        </Row>
+      )}
       <Row label="Autoplay next episode" hint={p.autoplayNext ? `Starts after a ${p.autoplayCountdown} s countdown.` : 'Off: playback stops at the end of an episode.'}>
         <Toggle label="Autoplay next episode" checked={p.autoplayNext} onChange={(v) => setPref('player', { autoplayNext: v })} />
       </Row>
@@ -278,15 +302,6 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
           </Row>
           <Row label="Timeline" hint="What appears under the video on live channels.">
             <Segmented label="Timeline style" value={p.timelineStyle} options={opts<P['player']['timelineStyle']>(['ribbon', 'With programme blocks'], ['bar', 'Bar only'])} onChange={(v) => setPref('player', { timelineStyle: v })} />
-          </Row>
-          <Row label="Subtitles">
-            <Segmented label="Subtitles" value={p.subtitlesDefault} options={opts<P['player']['subtitlesDefault']>(['off', 'Off'], ['auto', 'Auto'], ['on', 'Always'])} onChange={(v) => setPref('player', { subtitlesDefault: v })} />
-          </Row>
-          <Row label="Preferred audio language" hint="Picked automatically when a stream has several.">
-            <LangSelect label="Preferred audio language" value={p.preferredAudioLanguage} onChange={(v) => setPref('player', { preferredAudioLanguage: v })} />
-          </Row>
-          <Row label="Preferred subtitle language">
-            <LangSelect label="Preferred subtitle language" value={p.preferredSubtitleLanguage} onChange={(v) => setPref('player', { preferredSubtitleLanguage: v })} />
           </Row>
         </>
       )}

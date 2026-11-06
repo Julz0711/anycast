@@ -50,8 +50,12 @@ test('channel lists: create a list, add two channels, reorder, see the order on 
   // zapping from the list follows the list's order
   await a.locator('.live-list .ch-row').first().click();
   await expect(a).toHaveURL(new RegExp(`/play/live/${secondId}$`));
-  await a.keyboard.press('ArrowDown');
-  await expect(a).toHaveURL(new RegExp(`/play/live/${firstId}$`));
+  // the player's key handler mounts with the player; under load a press can land before it,
+  // so press again only while the URL still shows the first channel (never overshoots)
+  await expect(async () => {
+    if (new RegExp(`/play/live/${secondId}$`).test(a.url())) await a.keyboard.press('ArrowDown');
+    await expect(a).toHaveURL(new RegExp(`/play/live/${firstId}$`), { timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
 
   // the other device got the list over SSE, in the new order
   await b.getByRole('toolbar', { name: 'Channel groups' }).getByRole('button', { name: 'News', exact: true }).click();

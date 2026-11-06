@@ -4,10 +4,17 @@
  *
  * VOD seeking: the playlist is generated up front (fixed SEGMENT_SECONDS slots over the probed
  * duration) so players see the full timeline. Requesting a slot that the current FFmpeg run
- * will not reach soon restarts FFmpeg with input seeking at slot * SEGMENT_SECONDS and
+ * will not reach soon restarts FFmpeg with input seeking at slot * SEGMENT_SECONDS (a slot earlier
+ * when it also writes subtitles, see SUB_LEAD) and
  * -start_number slot. Source timestamps are kept (-copyts), so segments carry their true media
  * time and players place them correctly even though stream-copied cuts land on the nearest
  * keyframe. Runs ahead of playback are paused (SIGSTOP) to bound disk and upstream usage.
+ *
+ * VOD subtitles (PB-3): each run also writes the item's text subtitle tracks as WebVTT. Their cues
+ * are gathered across runs and served as HLS subtitle renditions over the same slots
+ * (master.m3u8 -> subs/{k}.m3u8 -> subs/{k}/{slot}.vtt). Cue times are source timestamps, like
+ * the segments, so players place them on the same timeline (no X-TIMESTAMP-MAP: cue time 0 is
+ * media time 0).
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -17,6 +24,7 @@ import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { buildHlsArgs, completedSegments, runInit, runPlaylist, runSegment, type HlsPipeline } from './ffmpeg';
 import type { Lease } from './upstream';
+import { cueKey, formatVtt, parseVtt, type Cue } from './webvtt';
 
 const SEGMENT_SECONDS = 6;
 const LIVE_SEGMENT_SECONDS = 4;
@@ -47,7 +55,26 @@ interface Run {
   paused: boolean;
   completed: Map<number, string>;
   lease: Lease;
+  /** subtitle track index -> WebVTT file this run writes */
+  subs: Map<number, string>;
 }
+
+/** A text subtitle track carried as an HLS rendition: its source index (0:s:N) and display attributes. */
+export interface SubtitleRendition {
+  index: number;
+  name: string;
+  language: string | null;
+}
+
+/** Slots on either side of a subtitle segment whose cues it also carries (cuts land on keyframes, so players' slot times are approximate). */
+const SUB_MARGIN = 1;
+/**
+ * With subtitles, a run that starts at a seek begins this many slots earlier. Input seeking skips
+ * every packet before the seek point, and a subtitle cue is one packet at its start time: a cue
+ * that began a few seconds before the slot (and is still on screen) would never be read. One slot
+ * (6 s) of lead keeps those; it costs one extra segment of work before the requested one.
+ */
+const SUB_LEAD = 1;
 
 abstract class Session {
   lastAccess = Date.now();
@@ -90,11 +117,13 @@ export class StreamHlsSession extends Session {
     private readonly lease: Lease | null,
     onError: (msg: string) => void,
     audioCodec: string | null = null,
+    /** source audio track to map (PB-3) */
+    audioIndex: number | null = null,
   ) {
     super(dir);
     const args = buildHlsArgs({
       input: 'stream' in input ? 'pipe:0' : input.url, pipeline, dir, run: 0,
-      segmentSeconds: LIVE_SEGMENT_SECONDS, mode, audioCodec,
+      segmentSeconds: LIVE_SEGMENT_SECONDS, mode, audioCodec, audioIndex,
     });
     this.proc = spawnFfmpeg(args, onError, 'stream' in input ? input.stream : undefined);
     this.proc.on('close', () => {
@@ -137,6 +166,12 @@ export class VodHlsSession extends Session {
   private lastRequested = 0;
   private readonly count: number;
   private readonly throttle: NodeJS.Timeout;
+  /** gathered subtitle cues per track, across runs */
+  private readonly cues = new Map<number, Map<string, Cue>>();
+  /** slots whose subtitle cues (with SUB_MARGIN) are all gathered */
+  private readonly subsReady = new Set<number>();
+  /** a run with subtitle outputs failed before writing anything: play on without subtitles */
+  private subsFailed = false;
 
   constructor(
     dir: string,
@@ -148,6 +183,8 @@ export class VodHlsSession extends Session {
     private readonly audioCodec: string | null = null,
     /** each newly completed segment (thumbnails read these local files; see thumbs.ts) */
     private readonly onSegment?: (seg: { init: string; file: string; start: number; end: number }) => void,
+    /** source audio track to map, and text subtitle tracks to carry (PB-3) */
+    private readonly tracks: { audio: number | null; subtitles: SubtitleRendition[] } = { audio: null, subtitles: [] },
   ) {
     super(dir);
     this.count = Math.max(1, Math.ceil(duration / SEGMENT_SECONDS));
@@ -168,16 +205,79 @@ export class VodHlsSession extends Session {
     return lines.join('\n');
   }
 
+  /** Master playlist: the media playlist plus the text subtitle tracks as WebVTT renditions. */
+  masterPlaylist(): string {
+    this.touch();
+    const q = (v: string) => v.replace(/["\r\n]/g, "'");
+    const lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-INDEPENDENT-SEGMENTS'];
+    for (const s of this.tracks.subtitles) {
+      const lang = s.language ? `,LANGUAGE="${q(s.language)}"` : '';
+      lines.push(`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="${q(s.name)}"${lang},DEFAULT=NO,AUTOSELECT=NO,URI="subs/${s.index}.m3u8"`);
+    }
+    lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=4000000${this.tracks.subtitles.length ? ',SUBTITLES="subs"' : ''}`, 'index.m3u8', '');
+    return lines.join('\n');
+  }
+
+  private subtitle(k: number): SubtitleRendition {
+    const s = this.tracks.subtitles.find((t) => t.index === k);
+    if (!s) throw new HlsError(404, 'Subtitle track not available');
+    return s;
+  }
+
+  /** A subtitle track's media playlist: the same slots as the video. */
+  subtitlePlaylist(k: number): string {
+    this.touch();
+    this.subtitle(k);
+    const lines = ['#EXTM3U', '#EXT-X-VERSION:3', `#EXT-X-TARGETDURATION:${SEGMENT_SECONDS}`, '#EXT-X-MEDIA-SEQUENCE:0', '#EXT-X-PLAYLIST-TYPE:VOD'];
+    for (let i = 0; i < this.count; i++) {
+      const d = i === this.count - 1 ? this.duration - i * SEGMENT_SECONDS : SEGMENT_SECONDS;
+      lines.push(`#EXTINF:${d.toFixed(3)},`, `${k}/${i}.vtt`);
+    }
+    lines.push('#EXT-X-ENDLIST', '');
+    return lines.join('\n');
+  }
+
+  /**
+   * WebVTT of subtitle track k around slot n. Waits until the run has read past the slot (video
+   * requests start and move runs; this never does), or answers with what is known when no run is
+   * going to get there.
+   */
+  async subtitleSegment(k: number, n: number): Promise<string> {
+    this.touch();
+    this.subtitle(k);
+    if (!Number.isInteger(n) || n < 0 || n >= this.count) throw new HlsError(404, 'Segment not available');
+    const deadline = Date.now() + WAIT_MS;
+    for (;;) {
+      const run = this.run;
+      if (run) await this.refresh(run);
+      if (this.subsReady.has(n) || this.subsFailed || this.closed) break;
+      // the current run started after this slot, or will not get there soon: answer with what is known
+      if (run && (n < run.start || n > this.maxCompleted(run) + LOOKAHEAD + PAUSE_AHEAD)) break;
+      if (run?.exited || Date.now() > deadline) break;
+      await sleep(150);
+    }
+    const from = (n - SUB_MARGIN) * SEGMENT_SECONDS;
+    const to = (n + 1 + SUB_MARGIN) * SEGMENT_SECONDS;
+    return formatVtt([...(this.cues.get(k)?.values() ?? [])].filter((c) => c.end > from && c.start < to));
+  }
+
+  /** Where a run that has to deliver slot n starts: a little earlier when it also writes subtitles (SUB_LEAD). */
+  private runStartFor(n: number): number {
+    return this.tracks.subtitles.length && !this.subsFailed ? Math.max(0, n - SUB_LEAD) : n;
+  }
+
   private startRun(start: number): Run {
     this.stopRun();
     const lease = this.acquire();
     const id = ++this.runCounter;
+    const subs = new Map<number, string>(this.subsFailed ? [] : this.tracks.subtitles.map((s) => [s.index, path.join(this.dir, `subs_r${id}_${s.index}.vtt`)]));
     const args = buildHlsArgs({
       input: this.url(), pipeline: this.pipeline, dir: this.dir, run: id, segmentSeconds: SEGMENT_SECONDS,
       mode: 'vod', seek: start * SEGMENT_SECONDS, startNumber: start, audioCodec: this.audioCodec,
+      audioIndex: this.tracks.audio, subtitles: [...subs].map(([index, file]) => ({ index, file })),
     });
     const proc = spawnFfmpeg(args, this.onError);
-    const run: Run = { id, proc, start, exited: false, exitCode: null, paused: false, completed: new Map(), lease };
+    const run: Run = { id, proc, start, exited: false, exitCode: null, paused: false, completed: new Map(), lease, subs };
     proc.on('close', (code) => {
       run.exited = true;
       run.exitCode = code;
@@ -193,13 +293,44 @@ export class VodHlsSession extends Session {
     this.run = null;
     run.proc.kill('SIGKILL');
     run.lease.release();
+    // its subtitle files stay until the session closes: gather what they hold now
+    void this.gatherCues(run);
     const files = [runPlaylist(run.id), runInit(run.id), ...run.completed.values()];
     void Promise.all(files.map((f) => unlink(path.join(this.dir, f)).catch(() => undefined)));
   }
 
+  /**
+   * A run that carried subtitles failed before writing a segment (a subtitle track FFmpeg could
+   * not convert, say): start it again without them, so the video still plays. The new run, or null.
+   */
+  private retryWithoutSubs(run: Run): Run | null {
+    if (!run.exited || run.exitCode === 0 || run.completed.size || !run.subs.size || this.subsFailed || this.run !== run) return null;
+    this.subsFailed = true;
+    return this.startRun(run.start);
+  }
+
+  private async gatherCues(run: Run, complete = false): Promise<void> {
+    for (const [k, file] of run.subs) {
+      const text = await readFile(file, 'utf8').catch(() => '');
+      if (!text) continue;
+      let store = this.cues.get(k);
+      if (!store) this.cues.set(k, (store = new Map()));
+      for (const c of parseVtt(text, complete)) store.set(cueKey(c), c);
+    }
+  }
+
   private async refresh(run: Run): Promise<void> {
+    const exited = run.exited;
     const text = await readFile(path.join(this.dir, runPlaylist(run.id)), 'utf8').catch(() => '');
-    for (const n of completedSegments(text, run.id)) {
+    const done = completedSegments(text, run.id);
+    if (run.subs.size) {
+      // read after the playlist: the cues up to where the segments got are in the files by now
+      await this.gatherCues(run, exited);
+      // a slot's cues (with the margin) are all read once the run wrote segments past it, or finished
+      const top = exited && run.exitCode === 0 ? this.count + SUB_MARGIN : Math.max(run.start - 1, ...done);
+      for (let m = run.start; m < top - SUB_MARGIN && m < this.count; m++) this.subsReady.add(m);
+    }
+    for (const n of done) {
       if (run.completed.has(n)) continue;
       run.completed.set(n, runSegment(run.id, n));
       if (this.onSegment && this.run === run) {
@@ -243,12 +374,17 @@ export class VodHlsSession extends Session {
 
   async init(): Promise<string[]> {
     this.touch();
-    const run = this.run ?? this.startRun(this.lastRequested);
+    let run = this.run ?? this.startRun(this.runStartFor(this.lastRequested));
     const deadline = Date.now() + WAIT_MS;
     for (;;) {
       await this.refresh(run);
       const file = path.join(this.dir, runInit(run.id));
       if (run.completed.size && (await stat(file).catch(() => null))?.size) return [file];
+      const retry = this.retryWithoutSubs(run);
+      if (retry) {
+        run = retry;
+        continue;
+      }
       if (run.exited) throw new HlsError(502, 'The video could not be prepared');
       if (Date.now() > deadline) throw new HlsError(504, 'The video took too long to prepare');
       await sleep(150);
@@ -264,13 +400,18 @@ export class VodHlsSession extends Session {
     let run = this.run;
     if (run) await this.refresh(run);
     const reachable = run && !run.exited && n >= run.start && n <= this.maxCompleted(run) + 1 + LOOKAHEAD;
-    if (!run || (!run.completed.has(n) && !reachable)) run = this.startRun(n);
+    if (!run || (!run.completed.has(n) && !reachable)) run = this.startRun(this.runStartFor(n));
     this.setPaused(run, false);
     const deadline = Date.now() + WAIT_MS;
     for (;;) {
       if (this.run !== run) throw new HlsError(409, 'Playback moved elsewhere');
       await this.refresh(run);
       if (!last && run.completed.has(n)) return [path.join(this.dir, run.completed.get(n)!)];
+      const retry = this.retryWithoutSubs(run);
+      if (retry) {
+        run = retry;
+        continue;
+      }
       if (last && run.exited) {
         const tail = [...run.completed.entries()].filter(([k]) => k >= n).sort((a, b) => a[0] - b[0]);
         if (!tail.length) throw new HlsError(404, 'Segment not available');
@@ -297,6 +438,8 @@ export class VodHlsSession extends Session {
 export class HlsSessions {
   private readonly sessions = new Map<string, Session>();
   private readonly pending = new Map<string, Promise<Session>>();
+  /** sessions being created when closeWhere() matched them: closed as soon as they exist */
+  private readonly cancelled = new Set<string>();
   private readonly reaper: NodeJS.Timeout;
   private readonly root: Promise<string>;
 
@@ -304,6 +447,11 @@ export class HlsSessions {
     this.root = mkdir(baseDir, { recursive: true }).then(() => baseDir);
     this.reaper = setInterval(() => this.reap(), 5000);
     this.reaper.unref();
+  }
+
+  /** sessions (FFmpeg conversions) open now */
+  get size(): number {
+    return this.sessions.size;
   }
 
   get<T extends Session>(key: string): T | undefined {
@@ -326,25 +474,34 @@ export class HlsSessions {
         const dir = await mkdtemp(path.join(await this.root, 'session-'));
         try {
           const s = await make(dir);
+          if (this.cancelled.has(key)) {
+            // stopped (a track switch, zapping) while it started: it must not keep the provider connection
+            s.close();
+            throw new HlsError(409, 'Playback moved elsewhere');
+          }
           this.sessions.set(key, s);
           return s;
         } catch (err) {
           void rm(dir, { recursive: true, force: true });
           throw err;
         }
-      })().finally(() => this.pending.delete(key));
+      })().finally(() => {
+        this.pending.delete(key);
+        this.cancelled.delete(key);
+      });
       this.pending.set(key, pending);
     }
     return pending;
   }
 
-  /** Closes every session whose key matches (e.g. all sessions of one provider connection). */
+  /** Closes every session whose key matches (e.g. all sessions of one provider connection), also ones still starting. */
   closeWhere(match: (key: string) => boolean): void {
     for (const [key, s] of this.sessions) {
       if (!match(key)) continue;
       s.close();
       this.sessions.delete(key);
     }
+    for (const key of this.pending.keys()) if (match(key)) this.cancelled.add(key);
   }
 
   private reap(): void {

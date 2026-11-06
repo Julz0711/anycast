@@ -1,4 +1,4 @@
-/** CLI: pnpm --filter @anycast/mock-xtream start [--port 8899] [--size full|small|huge] [--timezone Europe/Berlin] [--username test] [--password test] */
+/** CLI: pnpm --filter @anycast/mock-xtream start [--port 8899] [--size full|small|huge|real] [--timezone Europe/Berlin] [--username test] [--password test] */
 import { parseArgs } from 'node:util';
 import { createMockXtream } from './server.js';
 
@@ -19,7 +19,7 @@ const { values } = parseArgs({
 
 const env = process.env;
 const size = values.size ?? env.SIZE ?? 'full';
-if (size !== 'full' && size !== 'small' && size !== 'huge') throw new Error(`SIZE must be full, small or huge, got ${size}`);
+if (size !== 'full' && size !== 'small' && size !== 'huge' && size !== 'real') throw new Error(`SIZE must be full, small, huge or real, got ${size}`);
 
 const mock = await createMockXtream({
   port: Number(values.port ?? env.PORT ?? 8899),

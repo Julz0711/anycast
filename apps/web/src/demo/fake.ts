@@ -206,6 +206,12 @@ function contains(hay: string, needle: string) {
 type Handler = (m: RegExpExecArray, q: URLSearchParams, body: unknown, st: ProfileState) => unknown;
 const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/health$/, () => ({ ok: true, version: 'demo' })],
+  ['GET', /^\/api\/diagnostics$/, () => ({
+    version: 'demo', uptimeSeconds: Math.round(performance.now() / 1000), node: 'demo', platform: 'browser',
+    ffmpeg: { available: true, version: 'demo' }, ffprobe: { available: true, version: 'demo' }, hwEncoders: [],
+    connections: { active: 0, max: 2, byKind: {} }, hlsSessions: 0,
+    buffer: { enabled: true, bytes: 0, maxBytes: 20 * 1024 ** 3, recording: 0 }, thumbnails: { bytes: 0 },
+  })],
   ['POST', /^\/api\/auth\/login$/, (_m, _q, body) => {
     const b = body as { username: string; password: string };
     if (!b.username || b.password !== 'demo') throw new ApiError(401, 'Wrong username or password. (Demo: any name, password "demo".)');
@@ -395,7 +401,13 @@ const routes: [string, RegExp, Handler][] = [
   ['POST', /^\/api\/play\/stop$/, () => ({ ok: true })],
   ['GET', /^\/api\/play\/movie\/([^/]+)$/, (m, _q, _b, st): PlaybackInfo => {
     const p = st.progress.get(`movie:${m[1]}`);
-    return { url: clipUrl, type: 'file', pipeline: 'passthrough', resumeAt: p && !p.finished ? Math.min(p.position, CLIP_SECONDS - 20) : undefined };
+    return {
+      url: clipUrl, type: 'file', pipeline: 'passthrough', resumeAt: p && !p.finished ? Math.min(p.position, CLIP_SECONDS - 20) : undefined,
+      diagnostics: {
+        source: 'movie', reason: 'Demo: a small WebM clip plays directly.', assumed: false,
+        probe: { container: 'webm', duration: CLIP_SECONDS, video: { codec: 'vp8', width: 320, height: 180, fps: 12 }, audio: [], subtitles: [] },
+      },
+    };
   }],
   ['GET', /^\/api\/play\/episode\/([^/]+)$/, (m, _q, _b, st): PlaybackInfo => {
     const p = st.progress.get(`episode:${m[1]}`);

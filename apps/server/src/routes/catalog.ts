@@ -2,7 +2,7 @@ import type { ItemsById, LiveChannelWithNow, MediaKind, SeriesDetail, SourceStat
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
-  countsByKind, EMPTY_RULES, epgFor, getSeries, itemsByIds, listCategories, listEpisodes, nowNext, pageChannels, pageMovies, pageSeries,
+  countsByKind, EMPTY_RULES, type CountCache, epgFor, getSeries, itemsByIds, listCategories, listEpisodes, nowNext, pageChannels, pageMovies, pageSeries,
   toChannel, toEpisode, toMovie, toSeries, visibleChannels,
 } from '../catalog/store';
 import { auth, type Services } from '../context';
@@ -31,6 +31,15 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
   const scope = (req: Parameters<typeof auth>[0], opts: { search?: boolean } = {}) => {
     const adult = s.parental.view(parentalCtx(req));
     return { adult, rules: adult.rules(s.userData.hideRules(auth(req).profileId), opts) };
+  };
+
+  // page totals only change with a sync: kept per finished catalog and guide sync, never while one runs
+  let counts: { key: string; map: CountCache } = { key: '', map: new Map() };
+  const countCache = (): CountCache | undefined => {
+    if (s.sync.syncing) return undefined;
+    const key = `${s.sync.lastCatalog()}|${s.sync.lastEpg()}`;
+    if (counts.key !== key) counts = { key, map: new Map() };
+    return counts.map;
   };
 
   app.get('/api/source', async (): Promise<SourceStatus> => ({
@@ -92,7 +101,7 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
   app.get('/api/live', async (req) => {
     const q = PageQuery.parse(req.query);
     const { adult, rules } = scope(req);
-    const page = pageChannels(s.db, rules, q);
+    const page = pageChannels(s.db, rules, q, countCache());
     const now = Date.now();
     const items: LiveChannelWithNow[] = page.items.map((c) => adult.item({ ...c, ...nowNext(s.db, { id: c.id, epg_channel_id: c.epgChannelId }, now) }));
     return { items, total: page.total };
@@ -133,12 +142,12 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
 
   app.get('/api/movies', async (req) => {
     const { adult, rules } = scope(req);
-    const page = pageMovies(s.db, rules, PageQuery.parse(req.query));
+    const page = pageMovies(s.db, rules, PageQuery.parse(req.query), countCache());
     return { ...page, items: page.items.map((m) => adult.item(m)) };
   });
   app.get('/api/series', async (req) => {
     const { adult, rules } = scope(req);
-    const page = pageSeries(s.db, rules, PageQuery.parse(req.query));
+    const page = pageSeries(s.db, rules, PageQuery.parse(req.query), countCache());
     return { ...page, items: page.items.map((x) => adult.item(x)) };
   });
 
