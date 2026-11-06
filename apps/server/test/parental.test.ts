@@ -113,6 +113,11 @@ describe('hidden (the default)', () => {
     }
     const save = await call({ method: 'PUT', url: `/api/tracks/movie/${adultMovie}`, payload: { audio: 1 } });
     expect(save.statusCode).toBe(403);
+    // a channel's audio track, and the archive and buffer stream URLs of a track
+    expect((await call({ method: 'PUT', url: `/api/tracks/live/${adultChannel}`, payload: { audio: 1 } })).statusCode).toBe(403);
+    for (const url of [`/api/stream/timeshift/${adultChannel}/29000000/30/remux/a1/index.m3u8`, `/api/stream/buffer/${adultChannel}/1/0/remux/a1/index.m3u8`]) {
+      expect((await call({ url })).statusCode, url).toBe(403);
+    }
   });
 
   test('an adult channel put in a list stays out of it while hidden', async () => {
