@@ -12,6 +12,7 @@ import { EventBus } from './events';
 import { HlsError } from './playback/hls';
 import { ConnectionBusyError, TakenOverError } from './playback/claims';
 import { ProbeCache } from './playback/probe';
+import { Parental, ParentalError } from './parental';
 import { NotFoundError, PlaybackService } from './playback/service';
 import { archiveSource } from './playback/timeline';
 import { ConnectionLimitError, GapError, UpstreamError } from './playback/upstream';
@@ -21,6 +22,7 @@ import { authRoutes, registerAuthHook } from './routes/auth';
 import { bufferRoutes } from './routes/buffer';
 import { catalogRoutes } from './routes/catalog';
 import { eventRoutes } from './routes/events';
+import { parentalRoutes } from './routes/parental';
 import { playbackRoutes } from './routes/playback';
 import { userDataRoutes } from './routes/userdata';
 import { SourceService } from './source';
@@ -83,7 +85,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
       type: 'playback-stopped', profileId: victim.profileId, clientId: victim.clientId, reason: 'taken-over',
       by: { profileName: by.profileName, ...(by.device ? { device: by.device } : {}) },
     });
-  const services: Services = { config, db, users, source, sync, bus, userData: new UserData(db, bus), playback };
+  const services: Services = { config, db, users, source, sync, bus, userData: new UserData(db, bus), playback, parental: new Parental(db, bus) };
 
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
@@ -94,6 +96,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
       return reply.code(409).send({ error: err.code, message: err.message, holder: err.holder, canTakeOver: true });
     }
     if (err instanceof TakenOverError) return reply.code(409).send({ error: err.code, message: err.message });
+    if (err instanceof ParentalError) return reply.code(err.statusCode).send(err.body);
     if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.code, message: err.message });
     if (err instanceof NotFoundError) return reply.code(404).send({ error: 'not_found', message: err.message });
     if (err instanceof GapError) return reply.code(err.statusCode).send({ error: 'gap', message: err.message, cause: err.gap });
@@ -113,6 +116,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   userDataRoutes(app, services);
   playbackRoutes(app, services);
   bufferRoutes(app, services);
+  parentalRoutes(app, services);
   eventRoutes(app, services);
   artRoutes(app, services);
 

@@ -15,6 +15,7 @@ import type {
   Category, Channel, EpgProgram, Episode, Favorite, HideRules, ItemRef, Movie, PlaybackInfo,
   Progress, Series, SeriesDetail, TimelineInfo,
 } from './catalog';
+import type { AdultMode, AdultStatus, UnlockMinutes } from './parental';
 import type { Preferences } from './settings';
 
 export interface Profile { id: string; name: string; }
@@ -96,6 +97,8 @@ export type SyncEvent =
   | { type: 'preferences'; profileId: string; preferences: Preferences }
   | { type: 'hide-rules'; profileId: string; rules: HideRules }
   | { type: 'catalog-updated' }
+  /** the profile's parental lock settings changed (mode, PIN, duration): refetch GET /api/adult and lists */
+  | { type: 'parental'; profileId: string }
   /**
    * Sent to the profile whose playback was stopped by another client taking over the connection.
    * `clientId` is the stopped client's x-anycast-client id; other clients of the profile ignore it.
@@ -174,6 +177,22 @@ export interface Api {
   'GET /api/preferences': { res: Preferences };
   'PUT /api/preferences': { body: Partial<Preferences>; res: Preferences };
   'GET /api/hide-rules': { res: HideRules };
+
+  /**
+   * Parental lock (see parental.ts). Adult items of a profile that cannot open them answer 403
+   * AdultLockedError on play, detail and art routes. PIN routes answer PinError on failure; wrong
+   * PINs and passwords count towards PIN_MAX_ATTEMPTS per PIN_WINDOW_MS per profile.
+   */
+  'GET /api/adult': { res: AdultStatus };
+  /** pin is needed to make the mode more permissive and, unless the mode is 'shown', to change unlockMinutes */
+  'PUT /api/adult/settings': { body: { mode?: AdultMode; unlockMinutes?: UnlockMinutes; pin?: string }; res: AdultStatus };
+  /** Sets or changes the PIN: needs currentPin, or the account password (forgotten PIN, or the first PIN) */
+  'PUT /api/adult/pin': { body: { pin: string; currentPin?: string; password?: string }; res: AdultStatus };
+  /** Admin only: removes another (or any) profile's PIN and sets its mode back to 'hidden' */
+  'POST /api/adult/reset': { body: { profileId: string }; res: { ok: true } };
+  /** Unlocks this device for the profile for unlockMinutes (an httpOnly cookie that ends with the browser session) */
+  'POST /api/adult/unlock': { body: { pin: string }; res: AdultStatus };
+  'POST /api/adult/lock': { res: AdultStatus };
   'PUT /api/hide-rules': { body: HideRules; res: HideRules };
 }
 
