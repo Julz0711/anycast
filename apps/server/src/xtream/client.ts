@@ -3,7 +3,7 @@ import type { z } from 'zod';
 import { jsonListItems } from './jsonstream';
 import type { XtreamCredentials } from '../config';
 import {
-  AuthResponse, parseList, parseSeriesInfo, XCategory, XLiveStream, XSeries, XVodStream,
+  AuthResponse, parseList, parseLiveStream, parseSeries, parseSeriesInfo, parseVodStream, XCategory, XLiveStream, XSeries, XVodStream,
   type XSeriesInfo,
 } from './schemas';
 
@@ -107,16 +107,16 @@ export class XtreamClient {
    * The big lists, streamed: items are parsed and validated one at a time, so a 140k movie
    * panel never sits in memory as one document. Invalid items are skipped, like parseList.
    */
-  liveStreamsIter() { return this.listIter(XLiveStream, 'get_live_streams'); }
-  vodStreamsIter() { return this.listIter(XVodStream, 'get_vod_streams'); }
-  seriesIter() { return this.listIter(XSeries, 'get_series'); }
+  liveStreamsIter() { return this.listIter(parseLiveStream, 'get_live_streams'); }
+  vodStreamsIter() { return this.listIter(parseVodStream, 'get_vod_streams'); }
+  seriesIter() { return this.listIter(parseSeries, 'get_series'); }
 
-  private async *listIter<T extends z.ZodTypeAny>(schema: T, action: string): AsyncGenerator<z.output<T>> {
+  private async *listIter<T>(parse: (item: unknown) => T | null, action: string): AsyncGenerator<T> {
     const res = await this.request(this.apiUrl({ action }));
     if (!res.body) return;
     for await (const item of jsonListItems(res.body as unknown as AsyncIterable<Uint8Array>)) {
-      const r = schema.safeParse(item);
-      if (r.success) yield r.data;
+      const r = parse(item);
+      if (r) yield r;
     }
   }
 
