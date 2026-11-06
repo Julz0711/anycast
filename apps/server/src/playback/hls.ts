@@ -438,6 +438,8 @@ export class VodHlsSession extends Session {
 export class HlsSessions {
   private readonly sessions = new Map<string, Session>();
   private readonly pending = new Map<string, Promise<Session>>();
+  /** sessions being created when closeWhere() matched them: closed as soon as they exist */
+  private readonly cancelled = new Set<string>();
   private readonly reaper: NodeJS.Timeout;
   private readonly root: Promise<string>;
 
@@ -472,25 +474,34 @@ export class HlsSessions {
         const dir = await mkdtemp(path.join(await this.root, 'session-'));
         try {
           const s = await make(dir);
+          if (this.cancelled.has(key)) {
+            // stopped (a track switch, zapping) while it started: it must not keep the provider connection
+            s.close();
+            throw new HlsError(409, 'Playback moved elsewhere');
+          }
           this.sessions.set(key, s);
           return s;
         } catch (err) {
           void rm(dir, { recursive: true, force: true });
           throw err;
         }
-      })().finally(() => this.pending.delete(key));
+      })().finally(() => {
+        this.pending.delete(key);
+        this.cancelled.delete(key);
+      });
       this.pending.set(key, pending);
     }
     return pending;
   }
 
-  /** Closes every session whose key matches (e.g. all sessions of one provider connection). */
+  /** Closes every session whose key matches (e.g. all sessions of one provider connection), also ones still starting. */
   closeWhere(match: (key: string) => boolean): void {
     for (const [key, s] of this.sessions) {
       if (!match(key)) continue;
       s.close();
       this.sessions.delete(key);
     }
+    for (const key of this.pending.keys()) if (match(key)) this.cancelled.add(key);
   }
 
   private reap(): void {
