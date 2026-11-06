@@ -25,6 +25,7 @@ working directory and from the repo root.
 | `BUFFER_MAX_HOURS_PER_CHANNEL` (2), `BUFFER_MAX_GB` (20) | Buffer caps. The oldest segments are evicted first. |
 | `BUFFER_GRACE_MINUTES` (10) | Keep recording this long after the last viewer leaves. |
 | `BUFFER_ENABLED` (on) | Set to `0` to turn the rolling buffer off. |
+| `THUMBS_MAX_GB` (2) | Cap for the scrub thumbnail cache in `DATA_DIR/thumbs`. Least recently used titles are removed first. |
 | `WEB_DIST` | The built web app. Defaults to `apps/web/dist` if that folder exists. Any unknown non-API path gets `index.html`. |
 | `TRUST_PROXY` | Set to `1` behind a reverse proxy that sets `X-Forwarded-*`. |
 | `LOG_LEVEL` | Pino level (`info` by default). |
@@ -114,12 +115,36 @@ src/
   search.ts               FTS5 search (prefix tokens, folds diacritics)
   progress.ts             finished threshold, continue watching
   userdata.ts, events.ts  per-profile favorites/progress/preferences/hide rules, SSE bus
+  lists.ts                per-profile ordered channel lists (they ignore hide rules on purpose)
   auth/users.ts           users (argon2), sessions (sha256 of token), profiles
   playback/               caps, ffprobe cache, pipeline choice, connection pool, live fan-out,
                           HLS sessions, timeline sources, PlaybackService
   routes/                 HTTP routes
   doctor/                 provider diagnostics
 ```
+
+## Parental lock
+
+Categories the tagger flags as adult (XXX / ADULT / 18+) follow each profile's mode
+(`src/parental.ts`, routes in `routes/parental.ts`, contract in `packages/shared/src/parental.ts`):
+
+- **Hidden** (default for every profile): the adult categories join the profile's hide rules, so
+  every list, count, search, guide and items-by-id answer leaves them out. Play, timeline, series
+  detail and artwork answer `403 {error: 'adult_locked', mode: 'hidden'}`.
+- **Locked**: categories are listed with `locked: true`; their items come back as placeholders
+  (`name: 'Locked'`, no artwork, plot or guide titles, `locked: true`) and never match a search.
+  Play and detail routes answer `403 adult_locked` until the device unlocks.
+- **Shown**: no restriction.
+
+The PIN (4–6 digits) is an argon2 hash in the `parental` table and never leaves the server. The
+first PIN needs the account password; changing it needs the current PIN or the password; admins can
+reset a profile (`POST /api/adult/reset`: no PIN, mode Hidden). Loosening the mode or lengthening
+the unlock needs the PIN. `POST /api/adult/unlock` sets an httpOnly session cookie
+(`anycast_unlock_<profile>`, no Max-Age, so it ends with the browser) whose token the server maps
+to the sign-in session and profile until the profile's unlock duration (default 30 min) runs out;
+`POST /api/adult/lock`, a PIN change or a restart end it sooner. Wrong PINs and passwords count
+per profile: 5 per 10 minutes, then `429 pin_locked_out` with `lockedOutUntil`. Unlocked adult
+artwork URLs carry `?profile=` because `<img>` requests send no profile header.
 
 ## Playback notes
 
@@ -173,3 +198,13 @@ src/
   `GET /api/play/live/:id/at` serves buffered times as a growing EVENT playlist of the recorded
   TS segments (or through FFmpeg when the client needs other codecs). On start the index is checked
   against the disk: unmatched rows and files are removed. `GET /api/buffer/status` reports it all.
+- **Scrub thumbnails** (`playback/thumbs.ts`): built only from what is already streamed for playback,
+  so they never take a provider connection. When a VOD HLS session finishes a segment, the segment
+  is hard-linked (playback can delete its copy as usual) and a serial FFmpeg job at the lowest CPU
+  priority keeps the first frame at or after each 10 s mark in it (with `-copyts`, so frame times are
+  playback positions), 160 px wide. `GET /api/thumbs/:kind/:id` lists the tiles; they are packed into
+  10 × 10 sprite sheets (`.../sheet/:n.jpg`, built on request, URLs versioned by tile count). Parts
+  nobody played have no tiles yet, and nothing is decoded again for parts that have them. Titles
+  played as a direct MP4 file (passthrough) get none: the browser reads that file in byte ranges
+  straight from the provider, and there is no second connection to spare for a separate pass. The
+  cache lives in `DATA_DIR/thumbs` (`THUMBS_MAX_GB`), whole titles evicted least recently used first.

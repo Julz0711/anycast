@@ -16,7 +16,9 @@ import { isDemo } from '../demo/flag';
 import { TABS, visibleTabs } from '../layout/tabs';
 import { ProgressBar, Segmented, Skeleton, Toggle } from '../components/ui';
 import { IconDown, IconDrag, IconRefresh, IconUp } from '../components/Icons';
+import { ListsManager } from '../components/ListEditor';
 import type { DeviceOverride, FormFactor } from '../lib/device';
+import { ParentalLock } from './ParentalLock';
 import '../theme/settings.css';
 
 type P = Preferences;
@@ -36,9 +38,11 @@ export default function SettingsScreen() {
     ? [
         { id: 'appearance', title: 'Appearance', body: <Appearance prefs={prefs} all /> },
         { id: 'live', title: 'Live TV', body: <LiveSettings prefs={prefs} form={form} all /> },
+        { id: 'lists', title: 'Channel lists', body: <ListsManager /> },
         { id: 'player', title: 'Player', body: <PlayerSettings prefs={prefs} all /> },
         { id: 'tabs', title: 'Start & tabs', body: <StartTabs prefs={prefs} all /> },
         { id: 'filters', title: 'Filters', body: <Filters all /> },
+        { id: 'parental', title: 'Parental lock', body: <ParentalLock Row={Row} /> },
         { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
         { id: 'profiles', title: 'Profiles', body: <Profiles /> },
         { id: 'source', title: 'Source & account', body: <Source /> },

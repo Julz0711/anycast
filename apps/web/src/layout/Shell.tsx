@@ -7,6 +7,7 @@ import { isTypingTarget } from '../lib/misc';
 import { BrandMark } from '../components/Icons';
 import { TABS, visibleTabs } from './tabs';
 import { clearProfile } from '../store/actions';
+import { LockNowButton } from '../components/Locks';
 
 export function Shell() {
   const form = useFormFactor();
@@ -52,6 +53,7 @@ export function Shell() {
             );
           })}
         </nav>
+        <LockNowButton className="lock-now-fab lock-now" label="Lock" />
       </div>
     );
   }
@@ -73,6 +75,9 @@ export function Shell() {
             </NavLink>
           );
         })}
+        <div className="rail-foot rail-lock">
+          <LockNowButton className="rail-profile lock-now" label="Lock adult content" />
+        </div>
         {profile && (me?.profiles.length ?? 0) > 1 && (
           <div className="rail-foot">
             <button type="button" className="rail-profile" onClick={clearProfile} aria-label={`Profile ${profile.name}. Switch profile`}>

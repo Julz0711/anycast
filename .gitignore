@@ -11,3 +11,4 @@ test-results
 .DS_Store
 e2e-report
 e2e-results
+.claude/worktrees/

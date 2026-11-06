@@ -15,9 +15,18 @@ import type {
   Category, Channel, EpgProgram, Episode, Favorite, HideRules, ItemRef, Movie, PlaybackInfo,
   Progress, Series, SeriesDetail, TimelineInfo,
 } from './catalog';
+import type { AdultMode, AdultStatus, UnlockMinutes } from './parental';
 import type { Preferences } from './settings';
 
 export interface Profile { id: string; name: string; }
+
+/**
+ * A profile's own named, ordered list of live channels ("News", "Sport", "Kids"), LB-3.
+ * `channelIds` is in the user's order. Lists ignore hide rules: a channel the user put in a list
+ * stays in it (and visible there) even when its country, language or group is hidden.
+ */
+export interface ChannelList { id: string; name: string; channelIds: string[] }
+export const CHANNEL_LIST_LIMITS = { lists: 100, channels: 2000, name: 60 } as const;
 
 export interface Me {
   user: { id: string; username: string; isAdmin: boolean };
@@ -46,6 +55,23 @@ export interface BufferChannelStatus {
 export interface BufferStatus {
   enabled: boolean; channels: BufferChannelStatus[]; totalBytes: number;
   caps: { maxHoursPerChannel: number; maxBytes: number; maxPins: number | null };
+}
+
+/**
+ * Scrub thumbnails of a movie or episode (PB-1). Each tile is the frame at `start` seconds (it
+ * covers start .. start + interval), cut out of a sprite sheet: show `url` as a background at
+ * -x/-y with size w x h. Only parts that were played somewhere have tiles; the list grows while
+ * playing, and a sheet's `url` changes (?v=) when tiles are added to it.
+ */
+export interface ThumbTile { start: number; url: string; x: number; y: number; w: number; h: number }
+export interface ThumbIndex {
+  /** seconds between tiles */
+  interval: number;
+  /** tile size in px (height 0 while there are no tiles yet) */
+  width: number;
+  height: number;
+  /** sorted by start */
+  tiles: ThumbTile[];
 }
 
 export interface Page<T> { items: T[]; total: number; }
@@ -95,7 +121,11 @@ export type SyncEvent =
   | { type: 'progress'; profileId: string; progress: Progress }
   | { type: 'preferences'; profileId: string; preferences: Preferences }
   | { type: 'hide-rules'; profileId: string; rules: HideRules }
+  /** the profile's channel lists, all of them in order, after any change */
+  | { type: 'lists'; profileId: string; lists: ChannelList[] }
   | { type: 'catalog-updated' }
+  /** the profile's parental lock settings changed (mode, PIN, duration): refetch GET /api/adult and lists */
+  | { type: 'parental'; profileId: string }
   /**
    * Sent to the profile whose playback was stopped by another client taking over the connection.
    * `clientId` is the stopped client's x-anycast-client id; other clients of the profile ignore it.
@@ -125,6 +155,7 @@ export interface Api {
 
   /** hidden items already filtered out for the current profile; hasEpg=1: only channels with guide data */
   'GET /api/live': { query: { categoryId?: string; offset?: number; limit?: number; hasEpg?: '1' }; res: Page<LiveChannelWithNow> };
+  /** hidden channels are left out, except channels in one of the profile's lists */
   'GET /api/epg': { query: { channelIds: string; from: number; to: number }; res: Record<string, EpgProgram[]> };
   'GET /api/movies': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Movie> };
   'GET /api/series': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Series> };
@@ -147,6 +178,12 @@ export interface Api {
   'GET /api/timeline/:channelId': { res: TimelineInfo };
   'GET /api/play/movie/:id': { res: PlaybackInfo };
   'GET /api/play/episode/:id': { res: PlaybackInfo };
+  /**
+   * Scrub thumbnails (kind: movie | episode). Built from what the server already streams for
+   * playback (HLS sessions), so no extra provider connection: unplayed parts have no tiles yet.
+   * Re-fetch while playing to pick up new ones. Sprites: GET /api/thumbs/:kind/:id/sheet/:n.jpg (image/jpeg).
+   */
+  'GET /api/thumbs/:kind/:id': { res: ThumbIndex };
   /**
    * Stops the playback that holds the connection this client was refused (the holder named in the
    * 409). The stopped client gets a 'playback-stopped' event. Streams of the stopped playback then
@@ -173,7 +210,37 @@ export interface Api {
   /** includes `setupDone`, the per-profile first-run flag */
   'GET /api/preferences': { res: Preferences };
   'PUT /api/preferences': { body: Partial<Preferences>; res: Preferences };
+  /**
+   * Channel lists (LB-3), per profile, in the user's order. Errors: 404 not_found, 400 bad_request,
+   * 409 list_limit (more than CHANNEL_LIST_LIMITS). Every change sends a 'lists' SyncEvent.
+   */
+  'GET /api/lists': { res: ChannelList[] };
+  'POST /api/lists': { body: { name: string; channelIds?: string[] }; res: ChannelList };
+  'PATCH /api/lists/:id': { body: { name: string }; res: ChannelList };
+  'DELETE /api/lists/:id': { res: { ok: true } };
+  /** the whole new channel order (duplicates dropped); ids of unknown channels are kept, see GET channels */
+  'PUT /api/lists/:id/channels': { body: { channelIds: string[] }; res: ChannelList };
+  /** the new order of the lists; lists left out keep their relative order after the named ones */
+  'PUT /api/lists/order': { body: { ids: string[] }; res: ChannelList[] };
+  /** the list's channels with now/next, in list order; hide rules don't apply, channels gone from the catalog are left out */
+  'GET /api/lists/:id/channels': { res: LiveChannelWithNow[] };
   'GET /api/hide-rules': { res: HideRules };
+
+  /**
+   * Parental lock (see parental.ts). Adult items of a profile that cannot open them answer 403
+   * AdultLockedError on play, detail and art routes. PIN routes answer PinError on failure; wrong
+   * PINs and passwords count towards PIN_MAX_ATTEMPTS per PIN_WINDOW_MS per profile.
+   */
+  'GET /api/adult': { res: AdultStatus };
+  /** pin is needed to make the mode more permissive and, unless the mode is 'shown', to change unlockMinutes; a pin sent with no change is just verified */
+  'PUT /api/adult/settings': { body: { mode?: AdultMode; unlockMinutes?: UnlockMinutes; pin?: string }; res: AdultStatus };
+  /** Sets or changes the PIN: needs currentPin, or the account password (forgotten PIN, or the first PIN) */
+  'PUT /api/adult/pin': { body: { pin: string; currentPin?: string; password?: string }; res: AdultStatus };
+  /** Admin only: removes another (or any) profile's PIN and sets its mode back to 'hidden' */
+  'POST /api/adult/reset': { body: { profileId: string }; res: { ok: true } };
+  /** Unlocks this device for the profile for unlockMinutes (an httpOnly cookie that ends with the browser session) */
+  'POST /api/adult/unlock': { body: { pin: string }; res: AdultStatus };
+  'POST /api/adult/lock': { res: AdultStatus };
   'PUT /api/hide-rules': { body: HideRules; res: HideRules };
 }
 

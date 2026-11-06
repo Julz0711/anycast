@@ -11,6 +11,8 @@ export interface E2EFixtures {
   zapChannels: string[];
   /** MP4 movie (direct play), 3+ minutes */
   movie: { id: string; name: string };
+  /** MKV H.264 movie (served as HLS, so it gets scrub thumbnails), 3+ minutes */
+  hlsMovie: { id: string; name: string };
   /** a series whose first two episodes are H.264/AAC */
   series: { id: string; name: string; ep1: string; ep2: string; ep2Title: string };
   declutter: {

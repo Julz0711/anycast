@@ -16,6 +16,7 @@ import { ProbeCache, type ProbeResult } from './probe';
 import { BufferManager } from './buffer';
 import { buildTimeline, gapAt, sourceAt, type TimelineSource } from './timeline';
 import type { BufferConfig } from '../config';
+import type { Thumbnails } from './thumbs';
 import { GapError, openUpstream, UpstreamError, UpstreamPool, type Lease } from './upstream';
 import { Claims, ConnectionBusyError, holderOf, TakenOverError, type Claim, type Viewer } from './claims';
 
@@ -51,6 +52,8 @@ export class PlaybackService {
   /** direct (non-HLS) upstream streams per connection key, so they can be stopped at once */
   private readonly direct = new Map<string, Set<() => void>>();
   private lastRelease = 0;
+  /** scrub thumbnails, fed from VOD HLS segments as they are written (no provider connection of their own) */
+  thumbs: Thumbnails | null = null;
   /** a client's playback was stopped because `by` took its connection over */
   onTakenOver: (victim: Claim, by: Viewer) => void = () => undefined;
 
@@ -449,13 +452,18 @@ export class PlaybackService {
       this.guard(key);
       this.pool.check(key);
       const probe = this.probes.cached(key);
-      const duration = probe?.duration ?? item.duration;
+      // ffprobe can only estimate a TS file's length from its bitrate when it cannot open a second
+      // connection to read the end (one-connection providers); then the catalog's length is better
+      const probed = probe?.duration ?? null;
+      const duration = probed && item.duration && Math.abs(probed - item.duration) > item.duration * 0.1 ? item.duration : (probed ?? item.duration);
       if (!duration) throw new HlsError(422, 'The video length is unknown, so it cannot be prepared for this device');
       const acquire = () => {
         this.guard(key);
         return this.pool.acquire(key);
       };
-      return new VodHlsSession(dir, item.url, pipeline, duration, acquire, this.ffmpegError, probe?.audio[0]?.codec ?? null);
+      const thumbs = this.thumbs;
+      const onSegment = thumbs ? (seg: Parameters<Thumbnails['ingest']>[2]) => thumbs.ingest(kind, id, seg) : undefined;
+      return new VodHlsSession(dir, item.url, pipeline, duration, acquire, this.ffmpegError, probe?.audio[0]?.codec ?? null, onSegment);
     });
     if (file === 'index.m3u8') return { text: session.playlist() };
     if (file === 'init.mp4') return { files: await session.init() };
@@ -467,6 +475,7 @@ export class PlaybackService {
   async close(): Promise<void> {
     await this.buffer?.close();
     this.sessions.closeAll();
+    this.thumbs?.close();
   }
 }
 

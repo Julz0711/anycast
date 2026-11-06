@@ -49,6 +49,8 @@ export interface Config {
   scheduler: boolean;
   /** rolling live buffer; missing fields take DEFAULT_BUFFER values */
   buffer?: Partial<BufferConfig>;
+  /** scrub thumbnail cache cap in bytes (default 2 GB), under DATA_DIR/thumbs */
+  thumbsMaxBytes?: number;
 }
 
 const num = (v: string | undefined): number | null => {
@@ -110,5 +112,6 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: /^(1|true|yes)$/i.test(env.TRUST_PROXY?.trim() ?? ''),
     scheduler: true,
     buffer: bufferFromEnv(env),
+    ...(num(env.THUMBS_MAX_GB) !== null ? { thumbsMaxBytes: num(env.THUMBS_MAX_GB)! * 1024 ** 3 } : {}),
   };
 }
