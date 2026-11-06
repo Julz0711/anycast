@@ -19,7 +19,7 @@ import { IconDown, IconDrag, IconRefresh, IconUp } from '../components/Icons';
 import { ListsManager } from '../components/ListEditor';
 import type { DeviceOverride, FormFactor } from '../lib/device';
 import { ParentalLock } from './ParentalLock';
-import { Diagnostics } from './Diagnostics';
+import { DiagnosticsSection } from './Diagnostics';
 import '../theme/settings.css';
 
 type P = Preferences;
@@ -48,7 +48,11 @@ export default function SettingsScreen() {
         { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
         { id: 'profiles', title: 'Profiles', body: <Profiles /> },
         { id: 'source', title: 'Source & account', body: <Source /> },
-        ...(isAdmin ? [{ id: 'diagnostics', title: 'Diagnostics', body: <Diagnostics Row={Row} /> }] : []),
+        {
+          id: 'diagnostics',
+          title: 'Diagnostics',
+          body: <DiagnosticsSection isAdmin={isAdmin} Row={Row} />,
+        },
         { id: 'about', title: 'About', body: <About /> },
       ]
     : [

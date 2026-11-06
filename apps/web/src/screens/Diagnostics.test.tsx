@@ -1,5 +1,9 @@
-import { expect, test } from 'vitest';
-import { connectionsHint, fmtUptime } from './Diagnostics';
+import { cleanup, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { afterEach, expect, test, vi } from 'vitest';
+import { connectionsHint, DiagnosticsSection, fmtUptime } from './Diagnostics';
+
+afterEach(cleanup);
 
 test('uptime', () => {
   expect(fmtUptime(42)).toBe('42 s');
@@ -11,4 +15,14 @@ test('uptime', () => {
 test('connections hint', () => {
   expect(connectionsHint({})).toBe('Nothing is playing from the provider right now.');
   expect(connectionsHint({ live: 1, timeshift: 1 })).toBe('In use for: 1 live, 1 archive.');
+});
+
+test('non-admins see a one-line note instead of the server diagnostics, and nothing is fetched', () => {
+  const fetchSpy = vi.spyOn(globalThis, 'fetch');
+  const Row = (p: { label: string; children: ReactNode }) => <div>{p.children}</div>;
+  render(<DiagnosticsSection isAdmin={false} Row={Row} />);
+  expect(screen.getByTestId('diagnostics-admin-only').textContent).toBe('Server diagnostics (FFmpeg, provider connections, disk use) are visible to admins.');
+  expect(screen.queryByTestId('diagnostics')).toBeNull();
+  expect(fetchSpy).not.toHaveBeenCalled();
+  fetchSpy.mockRestore();
 });
