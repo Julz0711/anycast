@@ -19,6 +19,7 @@ import { IconDown, IconDrag, IconRefresh, IconUp } from '../components/Icons';
 import { ListsManager } from '../components/ListEditor';
 import type { DeviceOverride, FormFactor } from '../lib/device';
 import { ParentalLock } from './ParentalLock';
+import { Diagnostics } from './Diagnostics';
 import '../theme/settings.css';
 
 type P = Preferences;
@@ -33,6 +34,7 @@ export default function SettingsScreen() {
   const form = useFormFactor();
   const all = prefs.settingsMode === 'all';
   const profile = me?.profiles.find((p) => p.id === profileId);
+  const isAdmin = me?.user.isAdmin ?? false;
 
   const sections: { id: string; title: string; body: ReactNode; basic?: boolean }[] = all
     ? [
@@ -46,6 +48,7 @@ export default function SettingsScreen() {
         { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
         { id: 'profiles', title: 'Profiles', body: <Profiles /> },
         { id: 'source', title: 'Source & account', body: <Source /> },
+        ...(isAdmin ? [{ id: 'diagnostics', title: 'Diagnostics', body: <Diagnostics Row={Row} /> }] : []),
         { id: 'about', title: 'About', body: <About /> },
       ]
     : [
