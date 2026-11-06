@@ -1,6 +1,7 @@
-/** Per-profile state: favorites, progress, preferences, hide rules. Every change emits a SyncEvent. */
+/** Per-profile state: favorites, progress, preferences, hide rules, track choices. Every change but track choices emits a SyncEvent. */
 import {
   DEFAULT_PREFERENCES, mergePreferences, type Favorite, type HideRules, type MediaKind, type Preferences, type Progress,
+  type TrackChoice,
 } from '@anycast/shared';
 import { EMPTY_RULES } from './catalog/store';
 import type { Db } from './db';
@@ -68,6 +69,29 @@ export class UserData {
       .run(profileId, progress.kind, progress.id, progress.seriesId ?? null, position, duration, progress.finished ? 1 : 0, progress.updatedAt);
     this.bus.emit({ type: 'progress', profileId, progress });
     return progress;
+  }
+
+  /** The audio and subtitle track picked for a movie or episode (PB-3); null when nothing was picked. */
+  trackChoice(profileId: string, kind: 'movie' | 'episode', id: string): { audio: number | null; subtitle: number | null | undefined } | null {
+    const r = this.db.prepare('SELECT audio, subtitle FROM track_choices WHERE profile_id = ? AND kind = ? AND item_id = ?').get(profileId, kind, id) as
+      | { audio: number | null; subtitle: number | null }
+      | undefined;
+    if (!r) return null;
+    return { audio: r.audio, subtitle: r.subtitle === null ? undefined : r.subtitle < 0 ? null : r.subtitle };
+  }
+
+  /** Fields left out keep their saved value; subtitle null = off. */
+  saveTrackChoice(profileId: string, kind: 'movie' | 'episode', id: string, choice: TrackChoice): void {
+    const sub = choice.subtitle === undefined ? undefined : choice.subtitle === null ? -1 : choice.subtitle;
+    this.db
+      .prepare(
+        `INSERT INTO track_choices (profile_id, kind, item_id, audio, subtitle, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(profile_id, kind, item_id) DO UPDATE SET
+           audio = COALESCE(excluded.audio, track_choices.audio),
+           subtitle = COALESCE(excluded.subtitle, track_choices.subtitle),
+           updated_at = excluded.updated_at`,
+      )
+      .run(profileId, kind, id, choice.audio ?? null, sub ?? null, Date.now());
   }
 
   preferences(profileId: string): Preferences {

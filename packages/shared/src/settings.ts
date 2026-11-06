@@ -58,8 +58,14 @@ export interface Preferences {
     timelineStyle: 'ribbon' | 'bar';
     autoplayNext: boolean;
     autoplayCountdown: number;
+    /**
+     * off: no subtitles unless chosen for the item; on: always, in the preferred subtitle language
+     * when there is one; auto: only when the audio is not in the preferred subtitle language
+     */
     subtitlesDefault: 'off' | 'auto' | 'on';
+    /** ISO 639-1; picked automatically when a stream has several audio tracks. null: the stream's default */
     preferredAudioLanguage: string | null;
+    /** ISO 639-1; null: the stream's default subtitle track, else the first one */
     preferredSubtitleLanguage: string | null;
   };
   start: {
@@ -98,8 +104,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
     timelineStyle: 'ribbon',
     autoplayNext: true,
     autoplayCountdown: 10,
-    subtitlesDefault: 'auto',
-    preferredAudioLanguage: null,
+    subtitlesDefault: 'off',
+    preferredAudioLanguage: 'en',
     preferredSubtitleLanguage: null,
   },
   start: {

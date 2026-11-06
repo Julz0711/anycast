@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { Episode, PlaybackInfo, TimelineInfo } from '@anycast/shared';
+import type { Episode, PlaybackInfo, TimelineInfo, TrackChoice } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
 import { saveProgress, saveProgressOnUnload, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
 import { cachedGet, call } from '../api/client';
@@ -15,12 +15,14 @@ import { writeLocal } from '../lib/storage';
 import { isTypingTarget } from '../lib/misc';
 import { fmtBehind, fmtClock, fmtDay, fmtDuration, fmtRange } from '../lib/time';
 import { parseMediaTime, parseTimeInput } from '../lib/timeParse';
-import { applyTrackPrefs, createEngine, PlaybackFailure, type Engine } from './engine';
+import { createEngine, PlaybackFailure, type Engine } from './engine';
 import { fromApiError, fromPlaybackFailure, type PlayerErr } from './errors';
 import { absolutePosition, computeWindow, mediaTimeFor, programAt, resolveSeek, type Win } from './timelineMath';
 import { Ribbon, VodBar } from './Timeline';
 import { useThumbIndex } from './thumbs';
-import { IconBack, IconClock, IconClose, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks } from '../components/Icons';
+import { hasTrackChoice, renditionOf, subtitleAction } from './tracks';
+import { TracksMenu } from './TracksMenu';
+import { IconBack, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock } from '../components/Icons';
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
 import { useMediaSession } from './mediaSession';
@@ -30,6 +32,15 @@ import '../theme/player.css';
 
 /** Within this of the live edge counts as live. */
 const LIVE_SLACK_MS = 6_000;
+
+/** How a stream is (re)loaded: VOD from the start or a position, with other tracks (PB-3). */
+interface LoadOpts {
+  fromStart?: boolean;
+  /** VOD: media time to continue from (a track switch) */
+  position?: number;
+  audio?: number;
+  sub?: number | 'off';
+}
 
 interface Stream {
   info: PlaybackInfo;
@@ -68,6 +79,8 @@ export default function PlayerScreen() {
   const [seekHint, setSeekHint] = useState<{ t: number; key: number } | null>(null);
   const [, setTick] = useState(0);
   const [tracksVer, setTracksVer] = useState(0);
+  /** subtitle track shown (source index), null = off (PB-3) */
+  const [subIdx, setSubIdx] = useState<number | null>(null);
   const [timeline, setTimeline] = useState<TimelineInfo | null>(null);
   const [clockOffset, setClockOffset] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -90,7 +103,7 @@ export default function PlayerScreen() {
   movedRef.current = !!moved;
   const stopped = useApp((s) => s.playbackStopped);
   const loadStarted = useRef(0);
-  const lastLoad = useRef<{ at: number | null; opts: { fromStart?: boolean } }>({ at: null, opts: {} });
+  const lastLoad = useRef<{ at: number | null; opts: LoadOpts }>({ at: null, opts: {} });
   const progressBodyRef = useRef<() => ProgressBody | null>(() => null);
   const stats = useStatsToggle();
 
@@ -148,7 +161,7 @@ export default function PlayerScreen() {
   );
 
   const load = useCallback(
-    async (at: number | null, opts: { fromStart?: boolean } = {}) => {
+    async (at: number | null, opts: LoadOpts = {}) => {
       const seq = ++loadSeq.current;
       lastLoad.current = { at, opts };
       loadStarted.current = Date.now();
@@ -160,12 +173,13 @@ export default function PlayerScreen() {
       engineRef.current?.destroy();
       engineRef.current = null;
       let pi: PlaybackInfo;
+      const { audio, sub } = opts;
       try {
         pi = isLive
           ? at !== null
-            ? await call('GET /api/play/live/:id/at', { params: { id }, query: { at: Math.round(at) } })
-            : await call('GET /api/play/live/:id', { params: { id } })
-          : await call(kind === 'episode' ? 'GET /api/play/episode/:id' : 'GET /api/play/movie/:id', { params: { id } });
+            ? await call('GET /api/play/live/:id/at', { params: { id }, query: { at: Math.round(at), audio } })
+            : await call('GET /api/play/live/:id', { params: { id }, query: { audio } })
+          : await call(kind === 'episode' ? 'GET /api/play/episode/:id' : 'GET /api/play/movie/:id', { params: { id }, query: { audio, sub } });
       } catch (e) {
         if (seq !== loadSeq.current) return;
         setError(fromApiError(e, { live: isLive, timeshift: at !== null }));
@@ -177,11 +191,14 @@ export default function PlayerScreen() {
         ? at !== null && pi.startsAt !== undefined && at - pi.startsAt > 1000
           ? (at - pi.startsAt) / 1000
           : undefined
-        : opts.fromStart
-          ? 0
-          : pi.resumeAt;
+        : opts.position !== undefined
+          ? opts.position
+          : opts.fromStart
+            ? 0
+            : pi.resumeAt;
       streamRef.current = { info: pi, liveEdge: at === null, seekTo };
       setInfo(pi);
+      setSubIdx(pi.tracks?.subtitleIndex ?? null);
       const video = videoRef.current!;
       try {
         const engine = await createEngine(video, pi, { live: isLive, onFatal, onTracks: () => setTracksVer((x) => x + 1) });
@@ -560,7 +577,6 @@ export default function PlayerScreen() {
       v.currentTime = s.seekTo;
       s.seekTo = undefined;
     }
-    if (engineRef.current) applyTrackPrefs(engineRef.current, prefs);
   };
   const onEnded = () => {
     if (isLive) {
@@ -659,6 +675,48 @@ export default function PlayerScreen() {
     return () => clearTimeout(t);
   }, [form, id, info]);
 
+  /* ---------------- audio & subtitles (PB-3) ---------------- */
+  // show the chosen subtitle rendition once the engine knows the stream's renditions
+  useEffect(() => {
+    const e = engineRef.current;
+    const t = info?.tracks;
+    if (!e || !t) return;
+    const pos = renditionOf(t, subIdx);
+    if (pos !== null && pos >= e.subtitleCount()) return; // not read yet: onTracks brings us back
+    e.setSubtitle(pos);
+  }, [info, subIdx, tracksVer]);
+
+  const saveTracks = useCallback(
+    (choice: TrackChoice) => {
+      if (isLive) return; // live: the profile's preferences decide per channel
+      void call('PUT /api/tracks/:kind/:id', { params: { kind: vodKind, id }, body: choice }).catch(() => undefined);
+    },
+    [isLive, vodKind, id],
+  );
+  /** Asks the server for the stream with other tracks and continues where playback was. */
+  const reloadTracks = useCallback(
+    (audio: number | undefined, sub: number | null) => {
+      if (isLive) void load(atLive ? null : position, { audio });
+      else void load(null, { position: videoRef.current?.currentTime ?? 0, audio, sub: sub ?? 'off' });
+    },
+    [isLive, atLive, position, load],
+  );
+  const chooseAudio = (n: number) => {
+    const t = info?.tracks;
+    if (!t || n === t.audioIndex) return;
+    saveTracks({ audio: n });
+    reloadTracks(n, subIdx);
+  };
+  const chooseSubtitle = (n: number | null) => {
+    const t = info?.tracks;
+    if (!t || n === subIdx) return;
+    const action = subtitleAction(t, n);
+    if (action === 'none') return;
+    setSubIdx(n);
+    saveTracks({ subtitle: n });
+    if (action === 'reload') reloadTracks(t.audioIndex ?? undefined, n);
+  };
+
   /* ---------------- render ---------------- */
   const ch = channel.data;
   const metaLine = isLive
@@ -667,11 +725,8 @@ export default function PlayerScreen() {
       ? [series.data?.name, episode ? `S${episode.season} E${episode.episode}` : null].filter(Boolean).join(' · ')
       : [movie.data?.year, duration ? fmtDuration(duration) : null].filter(Boolean).join(' · ');
   const title = isLive ? (program?.title ?? ch?.name ?? 'Live') : kind === 'episode' ? (episode?.title ?? 'Episode') : (movie.data?.name ?? 'Movie');
-  const engine = engineRef.current;
-  void tracksVer;
-  const audio = engine?.audioTracks() ?? [];
-  const texts = engine?.textTracks() ?? [];
-  const hasTracks = audio.length > 1 || texts.length > 0;
+  const tracks = info?.tracks;
+  const hasTracks = hasTrackChoice(tracks);
   const showPlayOverlay = !error && !moved && countdown === null && (needsTap || (paused && !waiting));
 
   /* ---------------- media session (lock screen, media keys) ---------------- */
@@ -754,7 +809,7 @@ export default function PlayerScreen() {
             </span>
           )}
         </div>
-        {stats.open && <StatsOverlay video={video} info={info} routeKind={kind} engine={engine?.kind ?? null} behindLiveMs={isLive && info ? rawBehind : null} onClose={stats.close} />}
+        {stats.open && <StatsOverlay video={video} info={info} routeKind={kind} engine={engineRef.current?.kind ?? null} behindLiveMs={isLive && info ? rawBehind : null} onClose={stats.close} />}
         {ripple && (
           <div key={ripple.key} className="pl-ripple" data-side={ripple.side} aria-hidden="true">
             {ripple.text}
@@ -990,32 +1045,8 @@ export default function PlayerScreen() {
             }}
           />
         )}
-        {menu === 'tracks' && engine && (
-          <div className="pl-menu" data-player-keys="off" data-nav-trap="" role="dialog" aria-label="Audio and subtitles">
-            <div className="pl-menu-col">
-              <h3 className="label">Audio</h3>
-              {audio.length === 0 && <p className="muted">Only one audio track.</p>}
-              {audio.map((a) => (
-                <button key={a.id} type="button" role="menuitemradio" aria-checked={a.active} className="pl-menu-item" onClick={() => (engine.setAudioTrack(a.id), setTracksVer((x) => x + 1))}>
-                  {a.label}
-                </button>
-              ))}
-            </div>
-            <div className="pl-menu-col">
-              <h3 className="label">Subtitles</h3>
-              <button type="button" role="menuitemradio" aria-checked={!texts.some((t) => t.active)} className="pl-menu-item" onClick={() => (engine.setTextTrack(null), setTracksVer((x) => x + 1))}>
-                Off
-              </button>
-              {texts.map((t) => (
-                <button key={t.id} type="button" role="menuitemradio" aria-checked={t.active} className="pl-menu-item" onClick={() => (engine.setTextTrack(t.id), setTracksVer((x) => x + 1))}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            <button type="button" className="icon-btn pl-menu-close" onClick={() => setMenu(null)} aria-label="Close">
-              <IconClose />
-            </button>
-          </div>
+        {menu === 'tracks' && tracks && (
+          <TracksMenu tracks={tracks} subtitle={subIdx} onAudio={chooseAudio} onSubtitle={chooseSubtitle} onClose={() => setMenu(null)} />
         )}
 
         {isLive && !overlay && timeline && <Earlier timeline={timeline} now={now} position={position} onPlay={seekAbs} />}

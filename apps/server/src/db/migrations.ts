@@ -236,4 +236,17 @@ export const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  `
+  -- audio and subtitle track picked per movie or episode (PB-3): audio = source audio index;
+  -- subtitle = source subtitle index, -1 = turned off; NULL = not picked (preferences decide)
+  CREATE TABLE IF NOT EXISTS track_choices (
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    audio INTEGER,
+    subtitle INTEGER,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, kind, item_id)
+  ) WITHOUT ROWID;
+  `,
 ];

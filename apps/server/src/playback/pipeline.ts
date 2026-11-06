@@ -13,14 +13,25 @@ export interface PipelineChoice {
  * - remux: everything else whose codecs the client decodes -> HLS (fMP4) with stream copy
  * - transcode-audio: video playable, audio not -> copy video, AAC audio
  * - transcode: video not playable -> H.264 + AAC
+ *
+ * `tracks.audio` is the source audio track to play (PB-3). Played directly, browsers play the
+ * source's first track and cannot switch, so another track of a multi-track source, or subtitles
+ * (which come out of the FFmpeg run), need at least a remux.
  */
-export function choosePipeline(probe: ProbeResult, caps: ClientCaps, mode: 'vod' | 'live'): PipelineChoice {
+export function choosePipeline(
+  probe: ProbeResult,
+  caps: ClientCaps,
+  mode: 'vod' | 'live',
+  tracks: { audio?: number | null; subtitles?: boolean } = {},
+): PipelineChoice {
+  const audioIndex = tracks.audio ?? 0;
   const video = probe.video?.codec ?? null;
-  const audio = probe.audio[0]?.codec ?? null;
+  const audio = probe.audio[audioIndex]?.codec ?? probe.audio[0]?.codec ?? null;
   const videoOk = video === null || supportsCodec(caps, video);
   const audioOk = audio === null || supportsCodec(caps, audio);
   if (!videoOk) return { pipeline: 'transcode', type: 'hls' };
-  const plainAvc = video === 'h264' && (audio === null || audio === 'aac') && audioOk;
+  const direct = (audioIndex === 0 || probe.audio.length <= 1) && !tracks.subtitles;
+  const plainAvc = direct && video === 'h264' && (audio === null || audio === 'aac') && audioOk;
   if (plainAvc && mode === 'vod' && probe.container === 'mp4') return { pipeline: 'passthrough', type: 'file' };
   if (plainAvc && mode === 'live' && probe.container === 'ts' && caps.mse) return { pipeline: 'passthrough', type: 'mpegts' };
   if (!audioOk) return { pipeline: 'transcode-audio', type: 'hls' };
@@ -64,7 +75,8 @@ export function explainPipeline(probe: ProbeResult, caps: ClientCaps, mode: 'vod
       if (mode === 'live' && !caps.mse) reason = `${codecs} plays here; without Media Source Extensions it is repackaged as HLS (nothing is re-encoded).`;
       else if (mode === 'vod' && probe.container && probe.container !== 'mp4') {
         reason = `${codecs} plays here but the ${probe.container.toUpperCase()} container doesn't, so it is repackaged as HLS (nothing is re-encoded).`;
-      } else reason = `${codecs} plays here; it is repackaged as HLS (nothing is re-encoded).`;
+      } else if (mode === 'vod') reason = `${codecs} plays here; it is repackaged as HLS for the chosen audio track or subtitles (nothing is re-encoded).`;
+      else reason = `${codecs} plays here; it is repackaged as HLS (nothing is re-encoded).`;
   }
   return assumed ? `${reason} The source couldn't be probed, so typical codecs were assumed.` : reason;
 }

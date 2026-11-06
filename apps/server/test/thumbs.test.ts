@@ -62,7 +62,7 @@ describe('from a real playback session', () => {
 
     const pi = (await (await get(`/api/play/movie/${id}`, CLIENT)).json()) as PlaybackInfo;
     expect(pi).toMatchObject({ type: 'hls', pipeline: 'transcode-audio' });
-    const seg = (name: string) => get(pi.url.replace('index.m3u8', name)).then(async (r) => (expect(r.status, name).toBe(200), Buffer.from(await r.arrayBuffer())));
+    const seg = (name: string) => get(pi.url.replace(/[^/]+$/, name)).then(async (r) => (expect(r.status, name).toBe(200), Buffer.from(await r.arrayBuffer())));
     await (await get(pi.url)).text();
     await seg('init.mp4');
     // watch the first 30 s, then jump to 2:00 and watch a bit there

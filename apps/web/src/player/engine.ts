@@ -5,23 +5,20 @@
  *   'file'   -> native <video src>
  * hls.js and mpegts.js are dynamic imports, so they are separate chunks loaded only when needed.
  */
-import type { PlaybackInfo, Preferences } from '@anycast/shared';
-
-export interface Track {
-  id: number;
-  label: string;
-  lang: string | null;
-  active: boolean;
-}
+import type { PlaybackInfo } from '@anycast/shared';
 
 export type EngineKind = 'hls.js' | 'native-hls' | 'mpegts' | 'native';
 
+/**
+ * Audio tracks are chosen on the server (PB-3: the stream plays one), so the engine only switches
+ * between the subtitle renditions the stream carries.
+ */
 export interface Engine {
   kind: EngineKind;
-  audioTracks(): Track[];
-  setAudioTrack(id: number): void;
-  textTracks(): Track[];
-  setTextTrack(id: number | null): void;
+  /** subtitle renditions the stream offers so far (they appear once the master playlist is read) */
+  subtitleCount(): number;
+  /** shows rendition `pos` (in the stream's order), or none */
+  setSubtitle(pos: number | null): void;
   /** Wall-clock time of the playhead if the stream carries it (HLS program date time). */
   positionDate(): number | null;
   /** Media time of the live edge if known. */
@@ -52,25 +49,13 @@ export function chooseEngine(type: PlaybackInfo['type'], env: { mse: boolean; na
 
 type Listener = () => void;
 
-/* ---------- native element tracks (Safari exposes audioTracks; textTracks everywhere) ---------- */
-interface NativeAudioTrack {
-  id: string;
-  label: string;
-  language: string;
-  enabled: boolean;
-}
-function nativeAudio(video: HTMLVideoElement): NativeAudioTrack[] {
-  const list = (video as unknown as { audioTracks?: ArrayLike<NativeAudioTrack> }).audioTracks;
-  return list ? Array.from(list) : [];
-}
+/* ---------- native element text tracks (native HLS: the master playlist's subtitle renditions) ---------- */
 function nativeText(video: HTMLVideoElement): TextTrack[] {
   return Array.from(video.textTracks).filter((t) => t.kind === 'subtitles' || t.kind === 'captions');
 }
 const nativeTracks = (video: HTMLVideoElement) => ({
-  audioTracks: () => nativeAudio(video).map((t, i) => ({ id: i, label: t.label || t.language || `Track ${i + 1}`, lang: t.language || null, active: t.enabled })),
-  setAudioTrack: (id: number) => nativeAudio(video).forEach((t, i) => (t.enabled = i === id)),
-  textTracks: () => nativeText(video).map((t, i) => ({ id: i, label: t.label || t.language || `Subtitles ${i + 1}`, lang: t.language || null, active: t.mode === 'showing' })),
-  setTextTrack: (id: number | null) => nativeText(video).forEach((t, i) => (t.mode = i === id ? 'showing' : 'disabled')),
+  subtitleCount: () => nativeText(video).length,
+  setSubtitle: (pos: number | null) => nativeText(video).forEach((t, i) => (t.mode = i === pos ? 'showing' : 'disabled')),
 });
 
 export async function createEngine(
@@ -122,19 +107,18 @@ export async function createEngine(
         hooks.onFatal(new PlaybackFailure('unsupported', d.details));
       }
     });
-    for (const ev of [Hls.Events.MANIFEST_PARSED, Hls.Events.AUDIO_TRACKS_UPDATED, Hls.Events.SUBTITLE_TRACKS_UPDATED, Hls.Events.AUDIO_TRACK_SWITCHED, Hls.Events.SUBTITLE_TRACK_SWITCH]) {
+    for (const ev of [Hls.Events.MANIFEST_PARSED, Hls.Events.SUBTITLE_TRACKS_UPDATED]) {
       hls.on(ev, hooks.onTracks);
     }
     hls.loadSource(info.url);
     hls.attachMedia(video);
     return {
       kind,
-      audioTracks: () => hls.audioTracks.map((t, i) => ({ id: i, label: t.name || t.lang || `Track ${i + 1}`, lang: t.lang ?? null, active: i === hls.audioTrack })),
-      setAudioTrack: (id) => (hls.audioTrack = id),
-      textTracks: () => hls.subtitleTracks.map((t, i) => ({ id: i, label: t.name || t.lang || `Subtitles ${i + 1}`, lang: t.lang ?? null, active: i === hls.subtitleTrack })),
-      setTextTrack: (id) => {
-        hls.subtitleDisplay = id !== null;
-        hls.subtitleTrack = id ?? -1;
+      subtitleCount: () => hls.subtitleTracks.length,
+      setSubtitle: (pos) => {
+        if (pos === (hls.subtitleTrack < 0 ? null : hls.subtitleTrack) && hls.subtitleDisplay === (pos !== null)) return;
+        hls.subtitleDisplay = pos !== null;
+        hls.subtitleTrack = pos ?? -1;
       },
       positionDate: () => hls.playingDate?.getTime() ?? null,
       liveEdge: () => hls.liveSyncPosition ?? null,
@@ -199,22 +183,4 @@ export async function createEngine(
       video.load();
     },
   };
-}
-
-/** Apply audio/subtitle preferences to the available tracks. */
-export function applyTrackPrefs(engine: Engine, prefs: Preferences['player']) {
-  const audio = engine.audioTracks();
-  if (prefs.preferredAudioLanguage && audio.length > 1) {
-    const m = audio.find((t) => t.lang?.toLowerCase().startsWith(prefs.preferredAudioLanguage!));
-    if (m && !m.active) engine.setAudioTrack(m.id);
-  }
-  const text = engine.textTracks();
-  if (!text.length) return;
-  if (prefs.subtitlesDefault === 'off') return engine.setTextTrack(null);
-  const want = prefs.preferredSubtitleLanguage;
-  const match = want ? text.find((t) => t.lang?.toLowerCase().startsWith(want)) : undefined;
-  if (prefs.subtitlesDefault === 'on') return engine.setTextTrack((match ?? text[0])!.id);
-  // auto: subtitles only when a preferred subtitle language is set and the audio isn't already in it
-  const activeAudio = engine.audioTracks().find((t) => t.active);
-  if (match && !activeAudio?.lang?.toLowerCase().startsWith(want!)) engine.setTextTrack(match.id);
 }
