@@ -97,6 +97,8 @@ function attrs(tag: string): Record<string, string> {
 }
 
 function textOf(inner: string): string {
+  // fast path: no markup and no whitespace but single plain spaces, as most guides write titles
+  if (!inner.includes('<') && !/[^\S ]| {2}/.test(inner)) return inner.trim();
   return inner
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, c: string) => c.replace(/&/g, '&amp;').replace(/</g, '&lt;'))
     .replace(/<[^>]*>/g, '')
@@ -104,8 +106,13 @@ function textOf(inner: string): string {
     .trim();
 }
 
+const elementRes = new Map<string, RegExp>();
 function firstElement(xml: string, name: string): string | null {
-  const re = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`);
+  let re = elementRes.get(name);
+  if (!re) {
+    re = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`);
+    elementRes.set(name, re);
+  }
   const m = re.exec(xml);
   if (!m) return null;
   const t = decodeEntities(textOf(m[1]!));

@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest';
 import { formatProviderTime, XtreamClient } from '../src/xtream/client';
-import { AuthResponse, parseList, parseSeriesInfo, XLiveStream, XVodStream } from '../src/xtream/schemas';
+import {
+  AuthResponse, parseList, parseLiveStream, parseSeries, parseSeriesInfo, parseVodStream, XLiveStream, XSeries, XVodStream,
+} from '../src/xtream/schemas';
 
 test('numbers as strings, empty strings and junk entries', () => {
   const list = parseList(XLiveStream, [
@@ -12,6 +14,33 @@ test('numbers as strings, empty strings and junk entries', () => {
   expect(list[0]).toMatchObject({ num: 3, stream_id: '17', tv_archive: 1, tv_archive_duration: 7, epg_channel_id: null, category_id: '5' });
   const vod = parseList(XVodStream, { a: { stream_id: 9, name: 'X', rating: '', container_extension: 'mkv' } });
   expect(vod[0]).toMatchObject({ stream_id: '9', rating: null, container_extension: 'mkv' });
+});
+
+test('the fast list parsers agree with the schemas on odd values', () => {
+  const odd: unknown[] = [
+    undefined, null, '', 'null', 0, -1, 1.5, '7', ' 8 ', 'x', true, false, [], [3], {}, { a: 1 }, NaN, 'Infinity', '1e3', '0x10',
+  ];
+  const keys = ['num', 'name', 'stream_id', 'series_id', 'stream_icon', 'epg_channel_id', 'added', 'category_id', 'tv_archive',
+    'tv_archive_duration', 'rating', 'container_extension', 'year', 'plot', 'duration_secs', 'cover', 'releaseDate', 'release_date',
+    'last_modified'];
+  const items: unknown[] = [null, 'x', 3, [], [{ stream_id: 1 }], {}, { stream_id: '' }, { series_id: null }];
+  // every odd value in every field, next to a valid id, plus every odd value as the id
+  for (const [i, v] of odd.entries()) {
+    const item: Record<string, unknown> = { stream_id: 10 + i, series_id: 10 + i, extra: v };
+    for (const [j, k] of keys.entries()) if (!k.endsWith('_id') || k.startsWith('category') || k.startsWith('epg')) item[k] = odd[(i + j) % odd.length];
+    items.push(item, { name: 'x', stream_id: v, series_id: v });
+  }
+  const viaZod = (schema: typeof XLiveStream | typeof XVodStream | typeof XSeries, x: unknown) => {
+    const r = schema.safeParse(x);
+    return r.success ? r.data : null;
+  };
+  for (const x of items) {
+    expect(parseLiveStream(x)).toStrictEqual(viaZod(XLiveStream, x));
+    expect(parseVodStream(x)).toStrictEqual(viaZod(XVodStream, x));
+    expect(parseSeries(x)).toStrictEqual(viaZod(XSeries, x));
+  }
+  expect(items.filter((x) => parseVodStream(x) !== null).length).toBeGreaterThan(20);
+  expect(items.filter((x) => parseSeries(x) === null).length).toBeGreaterThan(8);
 });
 
 test('auth response with odd shapes', () => {

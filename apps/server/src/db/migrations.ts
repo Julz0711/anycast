@@ -249,4 +249,9 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (profile_id, kind, item_id)
   ) WITHOUT ROWID;
   `,
+  `
+  -- only the hourly cleanup used it, and keeping it up to date was three quarters of an EPG sync
+  -- on a ~900k programme guide (random inserts into a 26 MB index); the cleanup scans instead
+  DROP INDEX IF EXISTS epg_end;
+  `,
 ];
