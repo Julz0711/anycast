@@ -23,6 +23,9 @@ import { useThumbIndex } from './thumbs';
 import { IconBack, IconClock, IconClose, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks } from '../components/Icons';
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
+import { useMediaSession } from './mediaSession';
+import { PipButton } from './PipButton';
+import { StatsButton, StatsOverlay, useStatsToggle } from './stats/Stats';
 import '../theme/player.css';
 
 /** Within this of the live edge counts as live. */
@@ -89,6 +92,7 @@ export default function PlayerScreen() {
   const loadStarted = useRef(0);
   const lastLoad = useRef<{ at: number | null; opts: { fromStart?: boolean } }>({ at: null, opts: {} });
   const progressBodyRef = useRef<() => ProgressBody | null>(() => null);
+  const stats = useStatsToggle();
 
   /* ---------------- metadata ---------------- */
   const channel = useAsync(
@@ -670,6 +674,26 @@ export default function PlayerScreen() {
   const hasTracks = audio.length > 1 || texts.length > 0;
   const showPlayOverlay = !error && !moved && countdown === null && (needsTap || (paused && !waiting));
 
+  /* ---------------- media session (lock screen, media keys) ---------------- */
+  const prevEpisode: Episode | undefined = epIdx > 0 ? episodes[epIdx - 1] : undefined;
+  useMediaSession(
+    video,
+    isLive
+      ? { title, artist: ch?.name, artwork: ch?.logo }
+      : kind === 'episode'
+        ? { title, artist: series.data?.name, album: episode ? `S${episode.season} E${episode.episode}` : null, artwork: series.data?.poster }
+        : { title, album: movie.data?.year ? String(movie.data.year) : null, artwork: movie.data?.poster },
+    {
+      play,
+      pause: () => videoRef.current?.pause(),
+      seekBy: (s) => skip(s < 0 ? -1 : 1, Math.abs(s)),
+      seekTo: (t) => videoRef.current && (videoRef.current.currentTime = t),
+      previous: isLive ? () => void zap(-1) : prevEpisode ? () => navigate(`/play/episode/${prevEpisode.id}?series=${prevEpisode.seriesId}`, { replace: true }) : undefined,
+      next: isLive ? () => void zap(1) : nextEpisode ? goNext : undefined,
+    },
+    !isLive,
+  );
+
   return (
     <div
       ref={rootRef}
@@ -730,6 +754,7 @@ export default function PlayerScreen() {
             </span>
           )}
         </div>
+        {stats.open && <StatsOverlay video={video} info={info} routeKind={kind} engine={engine?.kind ?? null} behindLiveMs={isLive && info ? rawBehind : null} onClose={stats.close} />}
         {ripple && (
           <div key={ripple.key} className="pl-ripple" data-side={ripple.side} aria-hidden="true">
             {ripple.text}
@@ -941,6 +966,8 @@ export default function PlayerScreen() {
               </button>
             </>
           )}
+          <PipButton videoRef={videoRef} />
+          <StatsButton open={stats.open} onToggle={stats.toggle} />
           {form === 'tv' && <span className="pl-hint">◀ ▶ seek · ▲▼ channels · Back to close</span>}
         </div>
 
