@@ -33,9 +33,10 @@ function startNode(
   cwd: string,
   env: Record<string, string>,
   onLine?: (line: string) => void,
+  nodeFlags: string[] = [],
 ): { child: ChildProcess; log: string[] } {
   const log: string[] = [];
-  const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [...nodeFlags, '--import', 'tsx', 'src/main.ts'], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
   let partial = '';
   const keep = (b: Buffer) => {
     log.push(String(b));
@@ -67,6 +68,9 @@ export function rssOf(pid: number): { rss: number; peak: number } | null {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** The node flags of the Docker image's CMD, so the numbers match production. */
+const SERVER_NODE_FLAGS = ['--max-semi-space-size=4'];
 
 export interface Timing { p50: number; p95: number; max: number }
 export function timing(samples: number[]): Timing {
@@ -157,7 +161,7 @@ export async function startStack(opts: {
       XTREAM_URL: mockUrl, XTREAM_USERNAME: MOCK.username, XTREAM_PASSWORD: MOCK.password,
       ANYCAST_SECRET: 'perf-secret-0123456789abcdef', ANYCAST_ADMIN_USER: ADMIN.username, ANYCAST_ADMIN_PASSWORD: ADMIN.password,
       LOG_LEVEL: opts.logLevel ?? 'warn',
-    }, onLine);
+    }, onLine, SERVER_NODE_FLAGS);
     const pid = server.child.pid!;
     let peak = 0;
     const sample = () => {

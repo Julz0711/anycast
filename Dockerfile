@@ -17,7 +17,8 @@ RUN pnpm --filter @anycast/web build
 RUN rm -rf node_modules apps/*/node_modules packages/*/node_modules tools/*/node_modules \
  && pnpm install --frozen-lockfile --prod --filter "@anycast/server..."
 # fail the build here, not at runtime, if a native module did not build
-RUN cd apps/server && node -e "require('better-sqlite3')(':memory:').close(); require('@node-rs/argon2'); require('tsx/esm/api')"
+RUN cd apps/server && node -e "require('better-sqlite3')(':memory:').close(); require('@node-rs/argon2'); require('tsx/esm/api')" \
+ && node --import tsx -e "0"
 
 FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates tini && rm -rf /var/lib/apt/lists/*
@@ -37,4 +38,6 @@ EXPOSE 8787
 WORKDIR /app/apps/server
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8787)+'/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node_modules/.bin/tsx", "src/main.ts"]
+# node loads tsx itself: the tsx CLI would add a second node process (~55 MB) just to relay
+# signals. A smaller young generation keeps the heap ~35 MB lower after a big sync at no cost in speed.
+CMD ["node", "--max-semi-space-size=4", "--import", "tsx", "src/main.ts"]
