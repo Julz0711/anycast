@@ -16,14 +16,10 @@ import { KIND_INDEX, KIND_TABLE, refreshHasEpg } from './store';
 import { tagCategory, tagItem, type Tag } from './tagger';
 
 const BATCH = 2000;
-/**
- * Longest stretch a sync keeps the event loop (parsing plus writing one transaction) before it
- * lets requests run. Parsing a chunk of rows takes about as long as writing it, so this is about
- * half the longest pause a request sees while a big catalog syncs.
- */
-const SLICE_MS = 25;
+/** About the longest stretch a sync keeps the event loop (parsing plus writing one transaction). */
+const SLICE_MS = 20;
 /** search rows per FTS transaction (see FtsWriter) */
-const FTS_BATCH = 4000;
+const FTS_BATCH = 3000;
 const CATALOG_INTERVAL_MS = 12 * 3600_000;
 const EPG_INTERVAL_MS = 3600_000;
 const EPISODES_TTL_MS = 12 * 3600_000;
@@ -87,22 +83,47 @@ class FtsWriter {
 }
 
 /**
- * Writes rows in short transactions: a transaction ends after BATCH rows or SLICE_MS of parsing,
- * then the event loop gets a turn. (A for-await over an already buffered stream only runs
- * microtasks, so without the explicit yield requests would wait for the whole list.)
+ * Cuts a sync into short stretches: rows are parsed into a chunk until parsing so far plus
+ * writing the chunk (estimated from the last transaction) would take SLICE_MS, or BATCH rows;
+ * then the chunk is written in one transaction and the event loop gets a turn. (A for-await
+ * over an already buffered stream only runs microtasks, so without the explicit yield requests
+ * would wait for the whole list.)
  */
+class Slicer {
+  private since = performance.now();
+  /** ms to write one row, as measured in the last transaction */
+  private perRow = 0;
+
+  due(rows: number): boolean {
+    return rows >= BATCH || performance.now() - this.since + rows * this.perRow >= SLICE_MS;
+  }
+
+  /** Runs one transaction of `rows` rows and measures it. */
+  write(rows: number, tx: () => void): void {
+    const t = performance.now();
+    tx();
+    if (rows > 0) this.perRow = (performance.now() - t) / rows;
+  }
+
+  /** Lets requests run, then starts the next stretch. */
+  async pause(): Promise<void> {
+    await yieldLoop();
+    this.since = performance.now();
+  }
+}
+
 async function inBatches<T>(db: Db, rows: Iterable<T> | AsyncIterable<T>, write: (row: T) => void, fts?: FtsWriter): Promise<void> {
   const tx = db.transaction((chunk: T[]) => chunk.forEach(write));
+  const slicer = new Slicer();
   let chunk: T[] = [];
-  let since = performance.now();
   for await (const row of rows) {
     chunk.push(row);
-    if (chunk.length >= BATCH || performance.now() - since >= SLICE_MS) {
-      tx(chunk);
+    if (slicer.due(chunk.length)) {
+      const c = chunk;
+      slicer.write(c.length, () => tx(c));
       chunk = [];
-      await yieldLoop();
-      if (fts?.flush()) await yieldLoop();
-      since = performance.now();
+      await slicer.pause();
+      if (fts?.flush()) await slicer.pause();
     }
   }
   if (chunk.length) tx(chunk);
@@ -337,30 +358,21 @@ export class CatalogSync {
         });
         let batch: [string, number, number, string, string | null][] = [];
         let count = 0;
-        let since = performance.now();
+        const slicer = new Slicer();
         for await (const p of parseXmltv(await client.xmltv(), this.source.timezone())) {
           if (known.has(p.channel) && p.stop >= minStart && p.start <= maxStart) batch.push([p.channel, p.start, p.stop, p.title, p.description]);
-          if (batch.length >= BATCH || performance.now() - since >= SLICE_MS) {
-            flush(batch);
-            count += batch.length;
+          if (slicer.due(batch.length)) {
+            const b = batch;
+            slicer.write(b.length, () => flush(b));
+            count += b.length;
             batch = [];
-            await yieldLoop();
-            since = performance.now();
+            await slicer.pause();
           }
         }
         flush(batch);
         count += batch.length;
         const streamed = Date.now();
-        this.db.transaction(() => {
-          // replace the old schedule where the new guide covers it; keep older history
-          this.db
-            .prepare(
-              `DELETE FROM epg WHERE gen < ? AND start >= (SELECT min(e2.start) FROM epg e2 WHERE e2.epg_id = epg.epg_id AND e2.gen = ?)`,
-            )
-            .run(gen, gen);
-          this.db.prepare('DELETE FROM epg WHERE end < ?').run(minStart);
-          refreshHasEpg(this.db);
-        })();
+        await this.cleanEpg(gen, minStart);
         kvSet(this.db, 'lastEpgSync', String(Date.now()));
         const phases = { stream: streamed - started, cleanup: Date.now() - streamed };
         this.log.info({ ms: Date.now() - started, programs: count, phases }, 'epg sync finished');
@@ -372,6 +384,36 @@ export class CatalogSync {
       }
     })();
     return this.epgRunning;
+  }
+
+  /**
+   * After an EPG sync, per guide channel: replaces the old schedule where the new guide covers it
+   * (keeping older history) and drops programmes that ended before `minStart`. Done one channel
+   * id at a time along the primary key, in short transactions, instead of two scans of the whole
+   * guide in one long one.
+   */
+  private async cleanEpg(gen: number, minStart: number): Promise<void> {
+    const nextId = this.db.prepare('SELECT min(epg_id) FROM epg WHERE epg_id > ?').pluck();
+    const replaced = this.db.prepare(
+      'DELETE FROM epg WHERE epg_id = ? AND gen < ? AND start >= (SELECT min(e2.start) FROM epg e2 WHERE e2.epg_id = ? AND e2.gen = ?)',
+    );
+    // end < minStart implies start < minStart, which keeps this a range of the primary key
+    const ended = this.db.prepare('DELETE FROM epg WHERE epg_id = ? AND start < ? AND end < ?');
+    const some = this.db.transaction((first: string): string | null => {
+      let id: string | null = first;
+      for (let n = 0; id !== null && n < 200; n++) {
+        replaced.run(id, gen, id, gen);
+        ended.run(id, minStart, minStart);
+        id = nextId.get(id) as string | null;
+      }
+      return id;
+    });
+    let id = nextId.get('') as string | null;
+    while (id !== null) {
+      id = some(id);
+      await yieldLoop();
+    }
+    refreshHasEpg(this.db);
   }
 
   /** Lazily fetches a series' episodes (once per TTL, deduplicated). */
