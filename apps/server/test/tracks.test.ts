@@ -6,12 +6,14 @@
  */
 import { DEFAULT_PREFERENCES, normalizeLanguage, sameLanguage, type PlaybackInfo, type Preferences } from '@anycast/shared';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { createReadStream, mkdtempSync, statSync, writeFileSync } from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'vitest';
 import { audioTracks, pickAudio, pickSubtitle, subtitleTracks } from '../src/playback/tracks';
 import { formatVtt, parseVtt } from '../src/playback/webvtt';
+import { VodHlsSession } from '../src/playback/hls';
 import type { ProbeAudio, ProbeSubtitle } from '../src/playback/probe';
 import { createMockXtream, FORMAT_MATRIX, login, makeApp } from './helpers';
 
@@ -130,6 +132,46 @@ describe('WebVTT', () => {
       'WEBVTT\n\n00:00:01.500 --> 00:00:02.000\na\n\n01:00:00.000 --> 01:00:02.500\nb\n',
     );
   });
+});
+
+describe('VOD subtitles after a seek', () => {
+  test('a cue that started before the seek point and is still on screen is kept', async () => {
+    // 60 s MKV, keyframes every 2 s, 9 s cues every 10 s: at slot 18 (108 s) the cue of 100-109 s is showing
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'anycast-subseek-'));
+    const ts = (s: number) => `00:${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')},000`;
+    const srt = Array.from({ length: 12 }, (_, i) => `${i + 1}\n${ts(i * 10)} --> ${ts(i * 10 + 9)}\nCue ${i * 10}\n`).join('\n');
+    writeFileSync(path.join(dir, 'a.srt'), srt);
+    const src = path.join(dir, 'a.mkv');
+    execFileSync('ffmpeg', [
+      '-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=160x90:rate=25', '-f', 'lavfi', '-i', 'sine=f=440', '-i', path.join(dir, 'a.srt'),
+      '-t', '120', '-map', '0', '-map', '1', '-map', '2', '-c:v', 'libx264', '-preset', 'ultrafast', '-g', '50', '-c:a', 'aac', '-c:s', 'srt', src,
+    ]);
+    // served over HTTP with ranges, like a provider
+    const server = http.createServer((req, res) => {
+      const size = statSync(src).size;
+      const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range ?? '');
+      const start = m ? Number(m[1]) : 0;
+      const end = m?.[2] ? Number(m[2]) : size - 1;
+      res.writeHead(m ? 206 : 200, { 'content-length': end - start + 1, 'accept-ranges': 'bytes', ...(m ? { 'content-range': `bytes ${start}-${end}/${size}` } : {}) });
+      createReadStream(src, { start, end }).pipe(res);
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/a.mkv`;
+    const out = mkdtempSync(path.join(os.tmpdir(), 'anycast-subseek-out-'));
+    const session = new VodHlsSession(out, () => url, 'remux', 120, () => ({ release: () => undefined }), () => undefined, 'aac', undefined, {
+      audio: 0, subtitles: [{ index: 0, name: 'Subtitles', language: null }],
+    });
+    try {
+      await session.segment(18);
+      const cues = parseVtt(await session.subtitleSegment(0, 18), true);
+      expect(cues.map((c) => c.text)).toContain('Cue 100');
+      expect(cues.find((c) => c.text === 'Cue 100')!.start).toBeCloseTo(100, 0);
+    } finally {
+      session.close();
+      server.closeAllConnections();
+      server.close();
+    }
+  }, 60_000);
 });
 
 /* ---------------- against the mock provider ---------------- */
