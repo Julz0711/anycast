@@ -105,6 +105,15 @@ describe('catalog', () => {
     for (const c of huge.liveCategories) expect(expectedTags(c.category_name)).toEqual(c.tags);
     expect(huge.live.slice(0, 60).map((c) => [c.id, c.profile])).toEqual(small.live.map((c) => [c.id, c.profile]));
   });
+
+  it('real is huge with a full guide: one listed epg id per channel that has one', () => {
+    const real = buildCatalog('real');
+    expect([real.live.length, real.movies.length, real.series.length]).toEqual([19810, 139250, 35663]);
+    const withEpg = real.live.filter((c) => c.epgChannelId);
+    expect(withEpg.length).toBeGreaterThan(3800);
+    expect(withEpg.every((c) => c.epgListed)).toBe(true);
+    expect(new Set(withEpg.map((c) => c.epgChannelId)).size).toBe(withEpg.length);
+  });
 });
 
 describe('FORMAT_MATRIX', () => {
