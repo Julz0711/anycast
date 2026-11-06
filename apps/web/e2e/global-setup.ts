@@ -192,6 +192,9 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
   const mkvIds = new Set(vod.filter((_, i) => i % 5 === 2).map((v) => String(v.stream_id)));
   const hlsMovie = movies.find((m) => mkvIds.has(m.id) && Number(m.id) % 3 >= 1);
   if (!hlsMovie) throw new Error('no MKV movie of 3+ minutes in the mock catalog');
+  // the same profile has two audio and two subtitle tracks; a movie of its own, since HLS sessions are shared per title
+  const tracksMovie = movies.find((m) => mkvIds.has(m.id) && Number(m.id) % 3 >= 1 && m.id !== hlsMovie.id);
+  if (!tracksMovie) throw new Error('no second MKV movie of 3+ minutes in the mock catalog');
 
   // series: episode k of series i uses VOD profile (i + k) % 5; i % 5 == 4 gives TS then MP4, both H.264/AAC
   const seriesList = await api('get_series');
@@ -208,7 +211,7 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
       if (!r.ok) throw new Error(`warming mock ${kind} ${id} failed: ${r.status}`);
     });
 
-  await Promise.all([warm('movie', movie.id), warm('movie', hlsMovie.id), warm('series', ep1!.id), warm('series', ep2!.id)]);
+  await Promise.all([warm('movie', movie.id), warm('movie', hlsMovie.id), warm('movie', tracksMovie.id), warm('series', ep1!.id), warm('series', ep2!.id)]);
 
   const liveCats = await get<Cat[]>('/api/categories?kind=live&all=1');
   const noGuide = live.find((c) => !c.hasEpg);
@@ -232,6 +235,7 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
     noGuideChannel: { id: noGuide.id, name: noGuide.name, category: liveCats.find((c) => c.id === noGuide.categoryId)!.name },
     movie: { id: movie.id, name: movie.name },
     hlsMovie: { id: hlsMovie.id, name: hlsMovie.name },
+    tracksMovie: { id: tracksMovie.id, name: tracksMovie.name },
     series: { id: String(binge.series_id), name: detail.name, ep1: ep1!.id, ep2: ep2!.id, ep2Title: ep2!.title },
     declutter: {
       liveCat: { de: pick(liveCats, 'de', 'live category').name, en: pick(liveCats, 'en', 'live category').name },
