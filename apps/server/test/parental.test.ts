@@ -130,6 +130,9 @@ describe('PIN and mode', () => {
   });
 
   test('changing the PIN needs the current PIN (or the password)', async () => {
+    // a PIN sent with no change just verifies it
+    expect((await call({ method: 'PUT', url: '/api/adult/settings', payload: { pin: '9999' } })).statusCode).toBe(403);
+    expect((await call({ method: 'PUT', url: '/api/adult/settings', payload: { pin: PIN } })).statusCode).toBe(200);
     expect((await call({ method: 'PUT', url: '/api/adult/pin', payload: { pin: '111111' } })).statusCode).toBe(409);
     expect((await call({ method: 'PUT', url: '/api/adult/pin', payload: { pin: '111111', currentPin: '9999' } })).statusCode).toBe(403);
     await json({ method: 'PUT', url: '/api/adult/pin', payload: { pin: '111111', currentPin: PIN } });

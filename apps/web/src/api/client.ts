@@ -42,8 +42,10 @@ interface ClientHooks {
   onUnauthorized: () => void;
   /** 403 {error:'profile'}: the stored profile is gone or not ours */
   onProfileInvalid: () => void;
+  /** 403 {error:'adult_locked', mode:'locked'}: ask for the PIN; true when unlocked (the request is then retried once) */
+  onAdultLocked: () => Promise<boolean>;
 }
-let hooks: ClientHooks = { profileId: () => null, caps: () => null, onUnauthorized: () => {}, onProfileInvalid: () => {} };
+let hooks: ClientHooks = { profileId: () => null, caps: () => null, onUnauthorized: () => {}, onProfileInvalid: () => {}, onAdultLocked: async () => false };
 export function configureClient(h: Partial<ClientHooks>) {
   hooks = { ...hooks, ...h };
 }
@@ -75,7 +77,24 @@ export function requestHeaders(json: boolean): Record<string, string> {
   return h;
 }
 
+/** 403 for adult content that unlocking with the PIN would open */
+export const isAdultLocked = (e: unknown) =>
+  e instanceof ApiError && e.status === 403 && (e.body as { error?: string; mode?: string } | undefined)?.error === 'adult_locked' && (e.body as { mode?: string }).mode === 'locked';
+
+/**
+ * Calls a route. A 403 adult_locked of a locked profile asks for the PIN (onAdultLocked) and, once
+ * unlocked, retries, so the action that hit the lock continues.
+ */
 export async function call<R extends Route>(route: R, opts: CallOpts<R> = {}): Promise<ResOf<R>> {
+  try {
+    return await callOnce(route, opts);
+  } catch (e) {
+    if (!isAdultLocked(e) || opts.signal?.aborted || !(await hooks.onAdultLocked())) throw e;
+    return callOnce(route, opts);
+  }
+}
+
+async function callOnce<R extends Route>(route: R, opts: CallOpts<R>): Promise<ResOf<R>> {
   const method = route.split(' ')[0]!;
   const url = buildPath(route, opts.params, opts.query as object | undefined);
 

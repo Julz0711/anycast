@@ -184,7 +184,7 @@ export interface Api {
    * PINs and passwords count towards PIN_MAX_ATTEMPTS per PIN_WINDOW_MS per profile.
    */
   'GET /api/adult': { res: AdultStatus };
-  /** pin is needed to make the mode more permissive and, unless the mode is 'shown', to change unlockMinutes */
+  /** pin is needed to make the mode more permissive and, unless the mode is 'shown', to change unlockMinutes; a pin sent with no change is just verified */
   'PUT /api/adult/settings': { body: { mode?: AdultMode; unlockMinutes?: UnlockMinutes; pin?: string }; res: AdultStatus };
   /** Sets or changes the PIN: needs currentPin, or the account password (forgotten PIN, or the first PIN) */
   'PUT /api/adult/pin': { body: { pin: string; currentPin?: string; password?: string }; res: AdultStatus };

@@ -57,5 +57,58 @@ for (const [dev, cfg] of Object.entries(devices)) {
     await ctx.close();
   }
 }
+// Parental lock (the demo profile has one adult group, locked with PIN 1234): pin-<shot>-<device>.png
+const pinShots = [
+  ['dialog', '/live', async (page) => {
+    await page.getByRole('button', { name: /Late Night, locked/ }).first().click();
+    const dialog = page.getByRole('dialog');
+    await dialog.waitFor();
+    await page.keyboard.type('0000');
+    await page.keyboard.press('Enter');
+    await page.getByText(/Wrong PIN/).waitFor();
+    await page.waitForTimeout(500);
+    await page.keyboard.type('12');
+  }],
+  ['settings', '/settings', async (page) => {
+    await page.locator('#set-parental').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  }],
+  ['locked', '/live', async () => {}, { 'anycast.liveCat': 'lcx' }],
+  ['unlocked', '/live', async (page) => {
+    await page.getByRole('button', { name: /Late Night, locked/ }).first().click();
+    await page.getByRole('dialog').waitFor();
+    await page.keyboard.type('1234');
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: /Velvet Room/ }).first().waitFor();
+  }],
+];
+for (const dev of ['phone', 'desktop']) {
+  const cfg = devices[dev];
+  for (const [name, path, act, local = {}] of pinShots) {
+    const file = `pin-${name}-${dev}.png`;
+    if (filter && !file.includes(filter)) continue;
+    const ctx = await browser.newContext({ viewport: cfg.viewport, deviceScaleFactor: cfg.deviceScaleFactor, isMobile: cfg.isMobile, hasTouch: cfg.hasTouch });
+    const p = { settingsMode: 'all', live: { layoutPhone: 'simple', layoutLarge: 'simple' }, appearance: { accent: cfg.accent } };
+    await ctx.addInitScript(([p, local]) => {
+      for (const [k, v] of Object.entries(local)) localStorage.setItem(k, v);
+      localStorage.setItem('anycast.profile.u1', 'p1');
+      sessionStorage.setItem('anycast.demo', '1');
+      sessionStorage.setItem('anycast.demo.prefs.p1', JSON.stringify(p));
+      localStorage.removeItem('anycast.prefs.p1');
+    }, [p, local]);
+    const page = await ctx.newPage();
+    page.on('console', (m) => m.type() === 'error' && problems.push(`${file}: ${m.text()}`));
+    page.on('pageerror', (e) => problems.push(`${file}: ${e.message}`));
+    await page.goto(BASE + path, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(500);
+    await act(page);
+    await page.waitForTimeout(500);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    if (overflow > 0) problems.push(`${file}: horizontal overflow ${overflow}px`);
+    await page.screenshot({ path: OUT + file });
+    console.log('saved', file);
+    await ctx.close();
+  }
+}
+
 await browser.close();
 if (problems.length) console.log('PROBLEMS:\n' + problems.join('\n'));

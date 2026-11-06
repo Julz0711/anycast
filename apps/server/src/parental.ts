@@ -286,7 +286,8 @@ export class Parental {
     const next: Row = { ...r, mode: mode as AdultMode, unlock_minutes: minutes as number };
     const morePermissive = ADULT_MODE_RANK[next.mode] > ADULT_MODE_RANK[r.mode];
     const longer = next.unlock_minutes !== r.unlock_minutes && r.pin_hash !== null && r.mode !== 'shown';
-    if (morePermissive || longer) await this.checkPin(ctx.profileId, r, typeof body.pin === 'string' ? body.pin : '');
+    // a PIN sent with no change just verifies it (the web app checks the current PIN before asking for a new one)
+    if (morePermissive || longer || body.pin !== undefined) await this.checkPin(ctx.profileId, r, typeof body.pin === 'string' ? body.pin : '');
     if (next.mode === r.mode && next.unlock_minutes === r.unlock_minutes) return;
     if (next.mode !== 'locked') this.revokeAll(ctx.profileId);
     this.save(ctx.profileId, next);
