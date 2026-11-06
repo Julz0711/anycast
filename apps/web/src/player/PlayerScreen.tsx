@@ -26,7 +26,7 @@ import { IconBack, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, I
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
 import { useMediaSession } from './mediaSession';
-import { PipButton } from './PipButton';
+import { PipButton, usePictureInPicture } from './PipButton';
 import { StatsButton, StatsOverlay, useStatsToggle } from './stats/Stats';
 import '../theme/player.css';
 
@@ -106,6 +106,8 @@ export default function PlayerScreen() {
   const lastLoad = useRef<{ at: number | null; opts: LoadOpts }>({ at: null, opts: {} });
   /** the tracks playing now (for which item), so every reload asks for them again (PB-3) */
   const playing = useRef<{ item: string; tracks: TrackRequest }>({ item: '', tracks: {} });
+  const pip = usePictureInPicture(videoRef);
+  const { supported: pipSupported, toggle: togglePip } = pip;
   const progressBodyRef = useRef<() => ProgressBody | null>(() => null);
   const stats = useStatsToggle();
 
@@ -499,6 +501,12 @@ export default function PlayerScreen() {
           handled();
           setMenu('jump');
           break;
+        case 'p':
+        case 'P':
+          if (!pipSupported) return;
+          handled();
+          void togglePip();
+          break;
         case 'Escape':
         case 'Backspace':
         case 'GoBack':
@@ -517,7 +525,7 @@ export default function PlayerScreen() {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds]);
+  }, [form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds, pipSupported, togglePip]);
 
   /* ---------------- progress (VOD) ---------------- */
   const progressBody = useCallback(() => {
@@ -1029,7 +1037,7 @@ export default function PlayerScreen() {
               </button>
             </>
           )}
-          <PipButton videoRef={videoRef} />
+          <PipButton pip={pip} />
           <StatsButton open={stats.open} onToggle={stats.toggle} />
           {form === 'tv' && <span className="pl-hint">◀ ▶ seek · ▲▼ channels · Back to close</span>}
         </div>

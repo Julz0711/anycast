@@ -1,6 +1,7 @@
 /**
  * Picture-in-picture (PB-4): the standard API (document.pictureInPictureEnabled) or Safari's
- * presentation mode (webkitSetPresentationMode). The button is not rendered where neither exists.
+ * presentation mode (webkitSetPresentationMode). The button is not rendered where neither exists;
+ * the player's `P` shortcut toggles it where it is.
  */
 import { useCallback, useEffect, useState, type RefObject } from 'react';
 import { IconPip } from './ExtrasIcons';
@@ -58,8 +59,10 @@ export function usePictureInPicture(videoRef: RefObject<HTMLVideoElement>) {
   return { supported: kind !== null, active, toggle };
 }
 
-export function PipButton({ videoRef, className = 'btn' }: { videoRef: RefObject<HTMLVideoElement>; className?: string }) {
-  const pip = usePictureInPicture(videoRef);
+export type PipControl = ReturnType<typeof usePictureInPicture>;
+
+/** The button (rendered only where picture in picture is supported); `P` toggles it too (PlayerScreen). */
+export function PipButton({ pip, className = 'btn' }: { pip: PipControl; className?: string }) {
   if (!pip.supported) return null;
   return (
     <button
@@ -67,7 +70,8 @@ export function PipButton({ videoRef, className = 'btn' }: { videoRef: RefObject
       className={`${className}${pip.active ? ' on' : ''}`}
       aria-pressed={pip.active}
       aria-label={pip.active ? 'Exit picture in picture' : 'Picture in picture'}
-      title="Picture in picture"
+      aria-keyshortcuts="P"
+      title="Picture in picture (P)"
       onClick={() => void pip.toggle()}
     >
       <IconPip />
