@@ -3,6 +3,67 @@ import type { Pipeline } from '@anycast/shared';
 
 export type HlsPipeline = Exclude<Pipeline, 'passthrough'>;
 
+/**
+ * The H.264 encoder of a full transcode. Hardware methods decode in software (the most robust
+ * path for any source) and only encode on the GPU: frames are scaled and converted to 8-bit NV12
+ * in software (so 10-bit HEVC sources work too), then uploaded.
+ */
+export type VideoEncoder =
+  | { method: 'software' }
+  | { method: 'vaapi'; device: string }
+  | { method: 'qsv'; device: string }
+  | { method: 'nvenc' };
+
+export const SOFTWARE: VideoEncoder = { method: 'software' };
+
+export const ENCODER_NAME = { software: 'libx264', vaapi: 'h264_vaapi', qsv: 'h264_qsv', nvenc: 'h264_nvenc' } as const;
+
+/** at most 1080p wide, height kept even */
+const SCALE = "scale='min(1920,iw)':-2";
+/** hardware encoders get a bitrate target with the same ceiling as libx264's capped CRF */
+const HW_RATE = ['-b:v', '6M', '-maxrate', '8M', '-bufsize', '16M'];
+
+/**
+ * FFmpeg arguments for one video encoder: `input` goes before -i (device setup), `output` after
+ * the maps. `keyframes` is the -force_key_frames expression that puts a keyframe on every
+ * segment boundary; hardware encoders are told to make those forced frames IDR frames, so
+ * every segment starts independently, as with libx264.
+ */
+export function videoEncoderArgs(enc: VideoEncoder, keyframes: string): { input: string[]; output: string[] } {
+  switch (enc.method) {
+    case 'software':
+      return {
+        input: [],
+        output: ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-maxrate', '8M', '-bufsize', '16M', '-pix_fmt', 'yuv420p', '-vf', SCALE, '-force_key_frames', keyframes],
+      };
+    case 'vaapi':
+      return {
+        input: ['-vaapi_device', enc.device],
+        output: ['-vf', `${SCALE},format=nv12,hwupload`, '-c:v', 'h264_vaapi', ...HW_RATE, '-force_key_frames', keyframes],
+      };
+    case 'qsv':
+      // QSV on Linux runs on top of a VAAPI device; frames are uploaded into QSV surfaces
+      return {
+        input: ['-init_hw_device', `vaapi=va:${enc.device}`, '-init_hw_device', 'qsv=qs@va', '-filter_hw_device', 'qs'],
+        output: [
+          '-vf', `${SCALE},format=nv12,hwupload=extra_hw_frames=64,format=qsv`, '-c:v', 'h264_qsv', '-preset', 'veryfast', ...HW_RATE,
+          '-forced_idr', '1', '-force_key_frames', keyframes,
+        ],
+      };
+    case 'nvenc':
+      return {
+        input: [],
+        output: ['-vf', `${SCALE},format=yuv420p`, '-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', ...HW_RATE, '-forced-idr', '1', '-force_key_frames', keyframes],
+      };
+  }
+}
+
+/** A one second test encode through the same device setup and filter chain as playback (null output). */
+export function hwTestArgs(enc: VideoEncoder): string[] {
+  const v = videoEncoderArgs(enc, 'expr:gte(t,n_forced*1)');
+  return ['-hide_banner', '-loglevel', 'error', '-nostdin', ...v.input, '-f', 'lavfi', '-i', 'testsrc2=size=320x240:rate=25', '-t', '1', ...v.output, '-f', 'null', '-'];
+}
+
 export interface HlsArgs {
   /** URL, or "pipe:0" for an MPEG-TS byte stream on stdin */
   input: string;
@@ -21,6 +82,8 @@ export interface HlsArgs {
   audioIndex?: number | null;
   /** text subtitle tracks (0:s:N) also written, as WebVTT files beside the HLS output (VOD) */
   subtitles?: { index: number; file: string }[];
+  /** full transcode: the H.264 encoder (default libx264) */
+  video?: VideoEncoder;
 }
 
 export const runPlaylist = (run: number) => `r${run}.m3u8`;
@@ -31,17 +94,17 @@ export function buildHlsArgs(o: HlsArgs): string[] {
   const seek = o.seek ?? 0;
   const args = ['-hide_banner', '-loglevel', 'error', '-nostats'];
   if (o.input !== 'pipe:0') args.push('-nostdin', '-user_agent', 'AnyCast/0.1', '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5');
+  const video = o.pipeline === 'transcode' ? (o.video ?? SOFTWARE) : null;
+  // keyframes on segment boundaries; with -copyts, t is the source timestamp
+  const kf = o.mode === 'vod' ? `expr:gte(t,${seek.toFixed(3)}+n_forced*${o.segmentSeconds})` : `expr:gte(t,n_forced*${o.segmentSeconds})`;
+  const enc = video ? videoEncoderArgs(video, kf) : null;
+  if (enc) args.push(...enc.input);
   if (o.mode === 'vod' && seek > 0) args.push('-ss', seek.toFixed(3));
   if (o.input === 'pipe:0') args.push('-f', 'mpegts');
   args.push('-i', o.input, '-map', '0:v:0?', '-map', `0:a:${o.audioIndex ?? 0}?`, '-sn', '-dn');
 
-  if (o.pipeline === 'transcode') {
-    // keyframes on segment boundaries; with -copyts, t is the source timestamp
-    const kf = o.mode === 'vod' ? `expr:gte(t,${seek.toFixed(3)}+n_forced*${o.segmentSeconds})` : `expr:gte(t,n_forced*${o.segmentSeconds})`;
-    args.push(
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-maxrate', '8M', '-bufsize', '16M',
-      '-pix_fmt', 'yuv420p', '-vf', "scale='min(1920,iw)':-2", '-force_key_frames', kf,
-    );
+  if (enc) {
+    args.push(...enc.output);
   } else {
     args.push('-c:v', 'copy');
   }
