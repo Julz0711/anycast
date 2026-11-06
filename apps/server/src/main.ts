@@ -12,6 +12,7 @@ try {
 
 const { app, services } = await buildApp(config);
 if (config.scheduler && services.source.credentials()) services.sync.start();
+if (config.scheduler) services.backups.start();
 if (!services.users.hasUsers()) app.log.warn('No users yet: set ANYCAST_ADMIN_USER and ANYCAST_ADMIN_PASSWORD and restart');
 if (!services.source.credentials()) app.log.warn('No provider configured: set XTREAM_URL, XTREAM_USERNAME and XTREAM_PASSWORD');
 

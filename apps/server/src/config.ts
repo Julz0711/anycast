@@ -51,6 +51,8 @@ export interface Config {
   buffer?: Partial<BufferConfig>;
   /** scrub thumbnail cache cap in bytes (default 2 GB), under DATA_DIR/thumbs */
   thumbsMaxBytes?: number;
+  /** automatic daily backups kept in DATA_DIR/backups (default 7); 0 = off */
+  backupKeep?: number;
 }
 
 const num = (v: string | undefined): number | null => {
@@ -112,6 +114,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: /^(1|true|yes)$/i.test(env.TRUST_PROXY?.trim() ?? ''),
     scheduler: true,
     buffer: bufferFromEnv(env),
+    ...(num(env.ANYCAST_BACKUP_KEEP) !== null ? { backupKeep: Math.floor(num(env.ANYCAST_BACKUP_KEEP)!) } : {}),
     ...(num(env.THUMBS_MAX_GB) !== null ? { thumbsMaxBytes: num(env.THUMBS_MAX_GB)! * 1024 ** 3 } : {}),
   };
 }
