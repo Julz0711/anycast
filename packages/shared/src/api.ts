@@ -17,6 +17,7 @@ import type {
 } from './catalog';
 import type { AdultMode, AdultStatus, UnlockMinutes } from './parental';
 import type { Preferences } from './settings';
+import type { TrackChoice } from './tracks';
 
 export interface Profile { id: string; name: string; }
 
@@ -72,6 +73,34 @@ export interface ThumbIndex {
   height: number;
   /** sorted by start */
   tiles: ThumbTile[];
+}
+
+/**
+ * Server diagnostics for Settings (admin only). Contains no provider URL, hostname or credentials,
+ * and no file system paths.
+ */
+export interface ServerDiagnostics {
+  version: string;
+  /** seconds since the server started */
+  uptimeSeconds: number;
+  node: string;
+  platform: string;
+  ffmpeg: { available: boolean; version: string | null };
+  ffprobe: { available: boolean; version: string | null };
+  /** H.264/HEVC hardware encoders this ffmpeg build lists (e.g. h264_nvenc, h264_vaapi). Detected only; AnyCast encodes with libx264. */
+  hwEncoders: string[];
+  connections: {
+    /** provider connections AnyCast holds right now */
+    active: number;
+    /** the provider's limit, null when unknown or unlimited */
+    max: number | null;
+    /** what holds them, e.g. "live", "movie", "timeshift" */
+    byKind: Record<string, number>;
+  };
+  /** HLS conversions (FFmpeg sessions) running now */
+  hlsSessions: number;
+  buffer: { enabled: boolean; bytes: number; maxBytes: number | null; recording: number };
+  thumbnails: { bytes: number } | null;
 }
 
 export interface Page<T> { items: T[]; total: number; }
@@ -135,6 +164,8 @@ export type SyncEvent =
 /** Route table (method + path -> request/response). Documentation as code. */
 export interface Api {
   'GET /api/health': { res: { ok: true; version: string } };
+  /** Admin only (403 {error:'forbidden'} otherwise). */
+  'GET /api/diagnostics': { res: ServerDiagnostics };
   'POST /api/auth/login': { body: { username: string; password: string }; res: Me };
   'POST /api/auth/logout': { res: { ok: true } };
   'GET /api/me': { res: Me };
@@ -169,15 +200,31 @@ export interface Api {
    * (same channel or title = shared, no conflict); 429 {error:'connection_limit', message} when the
    * connections are in use and nobody can be named.
    */
-  'GET /api/play/live/:id': { res: PlaybackInfo };
+  /**
+   * Tracks (PB-3, PlaybackInfo.tracks): audio = the source audio track to play (default: the saved
+   * choice for the item, else the preferred audio language, else the source's default track);
+   * sub = a subtitle track index, or 'off'. A different audio track, or subtitles on a stream that
+   * would otherwise be played directly, gives an HLS stream through FFmpeg mapping that track.
+   * Their URLs name the track (.../{pipeline}/a{n}/index.m3u8), so the client just plays the new
+   * URL from where it was. Movies and episodes with text subtitles get a master playlist
+   * (.../master.m3u8) with them as WebVTT subtitle renditions.
+   */
+  'GET /api/play/live/:id': { query: { audio?: number }; res: PlaybackInfo };
   /**
    * at = epoch ms; returns a stream starting at that time (archive or buffer).
    * When nothing covers `at`: 422 {error:'gap', message, cause: GapCause}.
    */
-  'GET /api/play/live/:id/at': { query: { at: number }; res: PlaybackInfo };
+  'GET /api/play/live/:id/at': { query: { at: number; audio?: number }; res: PlaybackInfo };
   'GET /api/timeline/:channelId': { res: TimelineInfo };
-  'GET /api/play/movie/:id': { res: PlaybackInfo };
-  'GET /api/play/episode/:id': { res: PlaybackInfo };
+  'GET /api/play/movie/:id': { query: { audio?: number; sub?: number | 'off' }; res: PlaybackInfo };
+  'GET /api/play/episode/:id': { query: { audio?: number; sub?: number | 'off' }; res: PlaybackInfo };
+  /**
+   * Saves the audio and subtitle track picked for a movie or episode (kind: movie | episode) for
+   * this profile; the next play of the item starts with them. subtitle null = off. Fields left out
+   * keep their saved value. kind live: the audio track of a channel (subtitle is ignored), used
+   * for its live stream, archive and buffer alike.
+   */
+  'PUT /api/tracks/:kind/:id': { body: TrackChoice; res: { ok: true } };
   /**
    * Scrub thumbnails (kind: movie | episode). Built from what the server already streams for
    * playback (HLS sessions), so no extra provider connection: unplayed parts have no tiles yet.

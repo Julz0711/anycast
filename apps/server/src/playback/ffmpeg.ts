@@ -17,6 +17,10 @@ export interface HlsArgs {
   startNumber?: number;
   /** source audio codec (ffprobe name), if known; remuxed AAC from MPEG-TS needs ADTS -> ASC for MP4 */
   audioCodec?: string | null;
+  /** which source audio track to map (0:a:N, PB-3); default the first */
+  audioIndex?: number | null;
+  /** text subtitle tracks (0:s:N) also written, as WebVTT files beside the HLS output (VOD) */
+  subtitles?: { index: number; file: string }[];
 }
 
 export const runPlaylist = (run: number) => `r${run}.m3u8`;
@@ -29,7 +33,7 @@ export function buildHlsArgs(o: HlsArgs): string[] {
   if (o.input !== 'pipe:0') args.push('-nostdin', '-user_agent', 'AnyCast/0.1', '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5');
   if (o.mode === 'vod' && seek > 0) args.push('-ss', seek.toFixed(3));
   if (o.input === 'pipe:0') args.push('-f', 'mpegts');
-  args.push('-i', o.input, '-map', '0:v:0?', '-map', '0:a:0?', '-sn', '-dn');
+  args.push('-i', o.input, '-map', '0:v:0?', '-map', `0:a:${o.audioIndex ?? 0}?`, '-sn', '-dn');
 
   if (o.pipeline === 'transcode') {
     // keyframes on segment boundaries; with -copyts, t is the source timestamp
@@ -60,6 +64,10 @@ export function buildHlsArgs(o: HlsArgs): string[] {
   if (o.mode === 'live') args.push('-hls_list_size', '8', '-hls_flags', 'delete_segments+independent_segments');
   else args.push('-hls_list_size', '0', '-hls_playlist_type', 'event', '-hls_flags', 'independent_segments');
   args.push(`${o.dir}/${runPlaylist(o.run)}`);
+  // more outputs of the same run (one input, so no extra provider connection): each text subtitle
+  // track as WebVTT, flushed per cue so it can be read while the run goes on; source timestamps
+  // like the segments (-copyts is global)
+  for (const s of o.subtitles ?? []) args.push('-map', `0:s:${s.index}`, '-c:s', 'webvtt', '-flush_packets', '1', '-f', 'webvtt', s.file);
   return args;
 }
 

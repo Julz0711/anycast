@@ -51,6 +51,13 @@ describe('live', () => {
     expect(streamCodecs(writeTemp('ac3.ts', ac3.body)).map((s) => s.codec_name)).toContain('ac3');
   });
 
+  it('has channels with a second (German) audio track after the English one', async () => {
+    const r = await readFor(`${mock.url}/live/test/test/${liveEntry('live_h264_aac_multi').ids[0]}.ts`, 3000);
+    const streams = streamCodecs(writeTemp('multi.ts', r.body));
+    expect(streams.map((s) => s.codec_name)).toEqual(['h264', 'aac', 'aac']);
+    expect(streams.filter((s) => s.codec_type === 'audio').map((s) => s.language)).toEqual(['eng', 'deu']);
+  });
+
   it('accepts /{u}/{p}/{id} without extension and rejects bad credentials', async () => {
     const r = await readFor(`${mock.url}/test/test/1`, 1500);
     expect(r.status).toBe(200);

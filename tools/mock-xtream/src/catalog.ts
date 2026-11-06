@@ -16,7 +16,7 @@ import {
 } from './formats.js';
 import { hashString, intBetween, pick, rngFor, type Rng } from './random.js';
 
-export type CatalogSize = 'full' | 'small' | 'huge';
+export type CatalogSize = 'full' | 'small' | 'huge' | 'real';
 
 export interface Tags {
   /** ISO-3166 alpha-2, lowercase ("gb" for UK), null when the name does not tell. */
@@ -129,6 +129,8 @@ export const SIZES: Record<CatalogSize, { live: number; movies: number; series: 
   small: { live: 60, movies: 100, series: 20 },
   // the shape of a large real panel: ~195k items, few archives, sparse EPG
   huge: { live: 19810, movies: 139250, series: 35663 },
+  // huge with a full guide: every one of the ~4k epg ids is its own channel and has programmes
+  real: { live: 19810, movies: 139250, series: 35663 },
 };
 
 /**
@@ -146,6 +148,10 @@ interface Shape {
   noEpg: number;
   /** epg ids are unique per channel group instead of shared by every variant of a base name */
   uniqueEpg: boolean;
+  /** uniqueEpg: variants of a base share an id in groups of this many */
+  epgGroup: number;
+  /** uniqueEpg: about a fifth of the ids have no programmes */
+  epgGaps: boolean;
 }
 
 const SHAPES: Record<CatalogSize, Shape> = {
@@ -155,6 +161,8 @@ const SHAPES: Record<CatalogSize, Shape> = {
     archiveDays: (roll, rng) => (roll < 0.4 ? intBetween(rng, 1, 7) : 0),
     noEpg: 0.1,
     uniqueEpg: false,
+    epgGroup: 1,
+    epgGaps: false,
   },
   small: {
     categories: null,
@@ -162,6 +170,8 @@ const SHAPES: Record<CatalogSize, Shape> = {
     archiveDays: (roll, rng) => (roll < 0.4 ? intBetween(rng, 1, 7) : 0),
     noEpg: 0.1,
     uniqueEpg: false,
+    epgGroup: 1,
+    epgGaps: false,
   },
   huge: {
     categories: { live: 522, vod: 145, series: 128 },
@@ -170,6 +180,17 @@ const SHAPES: Record<CatalogSize, Shape> = {
     archiveDays: (roll) => (roll < 0.0292 ? 1 : roll < 0.0319 ? 3 : 0),
     noEpg: 0.794,
     uniqueEpg: true,
+    epgGroup: 4,
+    epgGaps: true,
+  },
+  real: {
+    categories: { live: 522, vod: 145, series: 128 },
+    firstCategoryId: { live: 1, vod: 1000, series: 2000 },
+    archiveDays: (roll) => (roll < 0.0292 ? 1 : roll < 0.0319 ? 3 : 0),
+    noEpg: 0.794,
+    uniqueEpg: true,
+    epgGroup: 1,
+    epgGaps: false,
   },
 };
 
@@ -540,8 +561,8 @@ function buildLive(seed: number, count: number, tags: Map<string, Tags>, shape: 
     const t = tagsOf(o.region);
     tags.set(name, t);
     const epgRoll = rng();
-    // huge: variants of a base share an id in groups of four ("ard.de", "ard-2.de", ...)
-    const group = shape.uniqueEpg && o.round >= 4 ? `-${Math.floor(o.round / 4) + 1}` : '';
+    // huge: variants of a base share an id in groups of four ("ard.de", "ard-2.de", ...); real: one id per channel
+    const group = shape.uniqueEpg && o.round >= shape.epgGroup ? `-${Math.floor(o.round / shape.epgGroup) + 1}` : '';
     const epgChannelId =
       epgRoll < shape.noEpg * 0.6 ? null : epgRoll < shape.noEpg ? '' : `${slug(o.base)}${group}.${o.region.epgSuffix}`;
     const archiveRoll = rng();
@@ -561,7 +582,7 @@ function buildLive(seed: number, count: number, tags: Map<string, Tags>, shape: 
       icon,
       epgChannelId,
       // huge: about a fifth of the epg ids have no programmes, like real guides
-      epgListed: !shape.uniqueEpg || !epgChannelId || hashString(epgChannelId) % 5 !== 0,
+      epgListed: !shape.epgGaps || !epgChannelId || hashString(epgChannelId) % 5 !== 0,
       archive,
       archiveDays,
       added: ADDED_BASE + Math.floor(rng() * 60_000_000),

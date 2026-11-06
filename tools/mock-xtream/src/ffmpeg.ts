@@ -140,17 +140,27 @@ export async function liveArgs(input: LiveArgsInput): Promise<string[]> {
   const profile = PROFILES[input.profile];
   const re = input.realtime ? ['-re'] : [];
   const vf = await videoFilter(input.cacheDir, input.label, { kind: 'wall', epoch: input.epoch });
-  const audio = profile.audio[0]?.codec ?? 'aac';
+  const tracks = profile.audio.length ? profile.audio : [{ codec: 'aac' }];
   const args = [
     '-hide_banner', '-loglevel', 'error', '-nostdin',
     ...re, '-f', 'lavfi', '-i', `color=c=${colorFor(input.label)}:s=${WIDTH}x${HEIGHT}:r=${FPS}`,
-    ...re, '-f', 'lavfi', '-i', 'sine=f=440:beep_factor=4:sample_rate=48000',
-    '-filter_complex', vf, '-map', '[v]', '-map', '1:a',
-    ...videoCodecArgs(profile.video),
-    ...audioCodecArgs(audio), '-ac', '2',
+  ];
+  // one tone per audio track (440 Hz, 660 Hz, ...), like the VOD fixtures
+  tracks.forEach((_, i) => args.push(...re, '-f', 'lavfi', '-i', `sine=f=${440 + i * 220}:beep_factor=4:sample_rate=48000`));
+  args.push('-filter_complex', vf, '-map', '[v]');
+  tracks.forEach((_, i) => args.push('-map', `${i + 1}:a`));
+  args.push(...videoCodecArgs(profile.video));
+  if (tracks.length === 1) args.push(...audioCodecArgs(tracks[0]!.codec), '-ac', '2');
+  else {
+    tracks.forEach((a, i) => {
+      args.push(...audioCodecArgs(a.codec, i), `-ac:a:${i}`, '2');
+      if (a.language) args.push(`-metadata:s:a:${i}`, `language=${a.language}`);
+    });
+  }
+  args.push(
     ...(input.durationSec !== undefined ? ['-t', String(input.durationSec)] : []),
     '-output_ts_offset', input.ptsOffset.toFixed(3),
-  ];
+  );
   if (input.output.kind === 'pipe') {
     args.push(
       '-f', 'mpegts', '-muxdelay', '0', '-muxpreload', '0',

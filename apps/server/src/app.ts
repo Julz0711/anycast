@@ -11,6 +11,7 @@ import { openDb } from './db';
 import { EventBus } from './events';
 import { HlsError } from './playback/hls';
 import { ConnectionBusyError, TakenOverError } from './playback/claims';
+import type { CommandRunner } from './diagnostics';
 import { ProbeCache } from './playback/probe';
 import { Parental, ParentalError } from './parental';
 import { NotFoundError, PlaybackService } from './playback/service';
@@ -22,6 +23,7 @@ import { artRoutes } from './routes/art';
 import { authRoutes, registerAuthHook } from './routes/auth';
 import { bufferRoutes } from './routes/buffer';
 import { catalogRoutes } from './routes/catalog';
+import { diagnosticsRoutes } from './routes/diagnostics';
 import { eventRoutes } from './routes/events';
 import { listRoutes } from './routes/lists';
 import { parentalRoutes } from './routes/parental';
@@ -36,6 +38,8 @@ export interface BuildOptions {
   logger?: boolean;
   /** log destination (default stdout); tests capture logs here */
   logStream?: NodeJS.WritableStream;
+  /** runs ffmpeg/ffprobe for GET /api/diagnostics (tests pass a fake) */
+  runCommand?: CommandRunner;
 }
 
 export interface BuiltApp {
@@ -125,6 +129,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   listRoutes(app, services);
   playbackRoutes(app, services);
   bufferRoutes(app, services);
+  diagnosticsRoutes(app, services, opts.runCommand);
   parentalRoutes(app, services);
   thumbRoutes(app, services);
   eventRoutes(app, services);

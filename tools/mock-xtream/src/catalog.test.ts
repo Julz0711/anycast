@@ -105,6 +105,15 @@ describe('catalog', () => {
     for (const c of huge.liveCategories) expect(expectedTags(c.category_name)).toEqual(c.tags);
     expect(huge.live.slice(0, 60).map((c) => [c.id, c.profile])).toEqual(small.live.map((c) => [c.id, c.profile]));
   });
+
+  it('real is huge with a full guide: one listed epg id per channel that has one', () => {
+    const real = buildCatalog('real');
+    expect([real.live.length, real.movies.length, real.series.length]).toEqual([19810, 139250, 35663]);
+    const withEpg = real.live.filter((c) => c.epgChannelId);
+    expect(withEpg.length).toBeGreaterThan(3800);
+    expect(withEpg.every((c) => c.epgListed)).toBe(true);
+    expect(new Set(withEpg.map((c) => c.epgChannelId)).size).toBe(withEpg.length);
+  });
 });
 
 describe('FORMAT_MATRIX', () => {
@@ -114,7 +123,7 @@ describe('FORMAT_MATRIX', () => {
       expect(covered.has(`movie:${p}`), p).toBe(true);
       expect(covered.has(`episode:${p}`), p).toBe(true);
     }
-    for (const p of ['live_h264_aac', 'live_hevc_aac', 'live_h264_ac3']) expect(covered.has(`live:${p}`), p).toBe(true);
+    for (const p of ['live_h264_aac', 'live_hevc_aac', 'live_h264_ac3', 'live_h264_aac_multi']) expect(covered.has(`live:${p}`), p).toBe(true);
     for (const e of FORMAT_MATRIX) {
       expect(e).toMatchObject(PROFILES[e.id]);
       for (const id of e.ids) {

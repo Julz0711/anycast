@@ -314,6 +314,11 @@ export class BufferManager {
     }
   }
 
+  /** Disk use and active recorders, cheap enough for diagnostics. */
+  usage(): { bytes: number; maxBytes: number; recording: number } {
+    return { bytes: this.totalBytes(), maxBytes: this.cfg.maxBytes, recording: this.recorders.size };
+  }
+
   private totalBytes(): number {
     return (this.db.prepare('SELECT COALESCE(SUM(bytes), 0) AS n FROM buffer_segments').get() as { n: number }).n;
   }
