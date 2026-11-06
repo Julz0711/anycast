@@ -1,6 +1,6 @@
 import type { PlaybackTracks } from '@anycast/shared';
 import { describe, expect, test } from 'vitest';
-import { audioLabel, hasTrackChoice, renditionOf, subtitleAction, subtitleLabel } from './tracks';
+import { audioLabel, hasTrackChoice, playingTracks, reloadTracks, renditionOf, subtitleAction, subtitleLabel } from './tracks';
 
 const tracks = (over: Partial<PlaybackTracks> = {}): PlaybackTracks => ({
   audio: [
@@ -51,5 +51,22 @@ describe('subtitle switching', () => {
     expect(hasTrackChoice(tracks())).toBe(true);
     expect(hasTrackChoice(tracks({ audio: tracks().audio.slice(0, 1), subtitles: [] }))).toBe(false);
     expect(hasTrackChoice(undefined)).toBe(false);
+  });
+});
+
+describe('reloads keep the tracks', () => {
+  test('what is playing: the audio track and the subtitle shown (off when none)', () => {
+    expect(playingTracks(tracks({ audioIndex: 1 }), 2)).toEqual({ audio: 1, sub: 2 });
+    expect(playingTracks(tracks(), null)).toEqual({ audio: 0, sub: 'off' });
+    expect(playingTracks(tracks({ audio: [], audioIndex: null }), null)).toEqual({ sub: 'off' });
+    expect(playingTracks(undefined, 1)).toEqual({});
+  });
+  test('a reload asks for the playing tracks unless it names others (a switch)', () => {
+    const playing = { audio: 1, sub: 2 as const };
+    expect(reloadTracks({}, playing)).toEqual({ audio: 1, sub: 2 });
+    expect(reloadTracks({ audio: 0 }, playing)).toEqual({ audio: 0, sub: 2 });
+    expect(reloadTracks({ sub: 'off' }, playing)).toEqual({ audio: 1, sub: 'off' });
+    // nothing played yet (the first load failed): the server decides
+    expect(reloadTracks({}, {})).toEqual({});
   });
 });

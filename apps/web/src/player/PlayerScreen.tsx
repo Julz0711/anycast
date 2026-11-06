@@ -20,7 +20,7 @@ import { fromApiError, fromPlaybackFailure, type PlayerErr } from './errors';
 import { absolutePosition, computeWindow, mediaTimeFor, programAt, resolveSeek, type Win } from './timelineMath';
 import { Ribbon, VodBar } from './Timeline';
 import { useThumbIndex } from './thumbs';
-import { hasTrackChoice, renditionOf, subtitleAction } from './tracks';
+import { hasTrackChoice, playingTracks, reloadTracks as keepTracks, renditionOf, subtitleAction, type TrackRequest } from './tracks';
 import { TracksMenu } from './TracksMenu';
 import { IconBack, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock } from '../components/Icons';
 import { openAddToList } from '../store/lists';
@@ -104,6 +104,8 @@ export default function PlayerScreen() {
   const stopped = useApp((s) => s.playbackStopped);
   const loadStarted = useRef(0);
   const lastLoad = useRef<{ at: number | null; opts: LoadOpts }>({ at: null, opts: {} });
+  /** the tracks playing now (for which item), so every reload asks for them again (PB-3) */
+  const playing = useRef<{ item: string; tracks: TrackRequest }>({ item: '', tracks: {} });
   const progressBodyRef = useRef<() => ProgressBody | null>(() => null);
   const stats = useStatsToggle();
 
@@ -173,7 +175,9 @@ export default function PlayerScreen() {
       engineRef.current?.destroy();
       engineRef.current = null;
       let pi: PlaybackInfo;
-      const { audio, sub } = opts;
+      // retry, resume, go live, a seek into the archive or buffer: the same audio and subtitles
+      const item = `${kind}:${id}`;
+      const { audio, sub } = keepTracks(opts, playing.current.item === item ? playing.current.tracks : {});
       try {
         pi = isLive
           ? at !== null
@@ -199,6 +203,7 @@ export default function PlayerScreen() {
       streamRef.current = { info: pi, liveEdge: at === null, seekTo };
       setInfo(pi);
       setSubIdx(pi.tracks?.subtitleIndex ?? null);
+      playing.current = { item, tracks: playingTracks(pi.tracks, pi.tracks?.subtitleIndex ?? null) };
       const video = videoRef.current!;
       try {
         const engine = await createEngine(video, pi, { live: isLive, onFatal, onTracks: () => setTracksVer((x) => x + 1) });
@@ -686,10 +691,12 @@ export default function PlayerScreen() {
     e.setSubtitle(pos);
   }, [info, subIdx, tracksVer]);
 
+  // kept per movie or episode, and per live channel (audio only: it also plays in its archive and buffer)
   const saveTracks = useCallback(
     (choice: TrackChoice) => {
-      if (isLive) return; // live: the profile's preferences decide per channel
-      void call('PUT /api/tracks/:kind/:id', { params: { kind: vodKind, id }, body: choice }).catch(() => undefined);
+      if (isLive && choice.audio === undefined) return;
+      const body = isLive ? { audio: choice.audio } : choice;
+      void call('PUT /api/tracks/:kind/:id', { params: { kind: isLive ? 'live' : vodKind, id }, body }).catch(() => undefined);
     },
     [isLive, vodKind, id],
   );
@@ -713,6 +720,7 @@ export default function PlayerScreen() {
     const action = subtitleAction(t, n);
     if (action === 'none') return;
     setSubIdx(n);
+    playing.current.tracks = { ...playing.current.tracks, sub: n ?? 'off' };
     saveTracks({ subtitle: n });
     if (action === 'reload') reloadTracks(t.audioIndex ?? undefined, n);
   };

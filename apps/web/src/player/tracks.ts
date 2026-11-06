@@ -53,3 +53,23 @@ export function subtitleAction(tracks: PlaybackTracks, index: number | null): 's
 
 /** The tracks button is worth showing: a choice of audio, or any subtitles (even ones listed as unavailable). */
 export const hasTrackChoice = (t: PlaybackTracks | undefined) => !!t && (t.audio.length > 1 || t.subtitles.length > 0);
+
+/** The tracks a stream plays, asked for again by every reload of it (retry, resume, go live, a seek into the archive). */
+export interface TrackRequest {
+  audio?: number;
+  /** VOD only */
+  sub?: number | 'off';
+}
+
+/** What is playing now: the stream's audio track and the subtitle track shown (`shown`, null = off). */
+export function playingTracks(tracks: PlaybackTracks | undefined, shown: number | null): TrackRequest {
+  if (!tracks) return {};
+  return { ...(tracks.audioIndex !== null ? { audio: tracks.audioIndex } : {}), sub: shown ?? 'off' };
+}
+
+/** A reload's tracks: the ones it names, else the ones playing now. */
+export function reloadTracks(asked: TrackRequest, playing: TrackRequest): TrackRequest {
+  const audio = asked.audio ?? playing.audio;
+  const sub = asked.sub ?? playing.sub;
+  return { ...(audio !== undefined ? { audio } : {}), ...(sub !== undefined ? { sub } : {}) };
+}
