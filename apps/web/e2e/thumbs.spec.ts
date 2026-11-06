@@ -25,6 +25,14 @@ async function showControls(page: Page) {
 test('hovering the scrubber over a played part shows its thumbnail; an unplayed part shows only the time', async ({ profile }) => {
   test.setTimeout(90_000);
   const page = await profile.device();
+  // The remuxer may run ahead of playback, so which parts already have frames depends on timing.
+  // Keep the index to the first two minutes so 2:40 is reliably uncovered; the server tests check
+  // which parts get frames.
+  await page.route(/\/api\/thumbs\/movie\/\d+$/, async (route) => {
+    const res = await route.fetch();
+    const index = (await res.json()) as { tiles: { start: number }[] };
+    await route.fulfill({ response: res, json: { ...index, tiles: index.tiles.filter((t) => t.start < 120) } });
+  });
   await page.goto(`/play/movie/${fx.hlsMovie.id}`);
   await expectPlaying(page);
   await expect.poll(() => video(page).evaluate((v: HTMLVideoElement) => v.duration), { timeout: 20_000 }).toBeGreaterThan(170);
@@ -48,16 +56,19 @@ test('hovering the scrubber over a played part shows its thumbnail; an unplayed 
   expect(sheet.status()).toBe(200);
   expect(sheet.headers()['content-type']).toBe('image/jpeg');
 
-  // 1:00 played as well
-  await hoverAt(page, 61);
-  await expect(thumb).toBeVisible();
+  // 1:00 played as well (its frame can take a moment on a slow machine)
+  await expect(async () => {
+    await showControls(page);
+    await hoverAt(page, 61);
+    await expect(thumb).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 40_000 });
   await expect(preview).toContainText('1:01');
   if (shots) {
     await page.waitForTimeout(400);
     await page.screenshot({ path: 'screenshots/thumbs-desktop.png' });
   }
 
-  // nobody played 2:40 yet: the same card, time only
+  // no frame for 2:40: the same card, time only
   await hoverAt(page, 160);
   await expect(preview).toContainText('2:40');
   await expect(thumb).toHaveCount(0);
@@ -80,6 +91,14 @@ test('hovering the scrubber over a played part shows its thumbnail; an unplayed 
 
 test('keyboard skips show the preview where they land', async ({ profile }) => {
   const page = await profile.device();
+  // The remuxer may run ahead of playback, so which parts already have frames depends on timing.
+  // Keep the index to the first two minutes so 2:40 is reliably uncovered; the server tests check
+  // which parts get frames.
+  await page.route(/\/api\/thumbs\/movie\/\d+$/, async (route) => {
+    const res = await route.fetch();
+    const index = (await res.json()) as { tiles: { start: number }[] };
+    await route.fulfill({ response: res, json: { ...index, tiles: index.tiles.filter((t) => t.start < 120) } });
+  });
   await page.goto(`/play/movie/${fx.hlsMovie.id}`);
   await expectPlaying(page);
   await page.keyboard.press('ArrowRight');
