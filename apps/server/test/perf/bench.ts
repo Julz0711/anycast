@@ -229,6 +229,20 @@ function printTable(): void {
     p();
   }
   if (report.web) p(`Web: initial JS ${report.web.initialJsGzipKb} KB gzipped (${report.web.files.map((f) => `${f.file} ${f.gzipKb}`).join(', ')}); all JS ${report.web.totalJsGzipKb} KB.\n`);
+  // PRD targets (sized for 50k items; this runs ~4x that)
+  const searchP95 = Math.max(...Object.values(report.scenarios ?? {}).map((s) => s['search: all queries']?.p95 ?? 0));
+  const checks: [string, number | null | undefined, number, string][] = [
+    ['catalog sync', report.sync?.catalogMs, 120_000, 'ms'],
+    ['idle RSS', report.memory?.idleMb, 300, 'MB'],
+    ['search p95', searchP95, 150, 'ms'],
+    ['initial JS gzipped', report.web?.initialJsGzipKb, 300, 'KB'],
+  ];
+  p('| PRD target | measured | limit | |\n|---|---:|---:|---|');
+  for (const [name, v, limit, unit] of checks) {
+    if (v === undefined || v === null) continue;
+    p(`| ${name} | ${v} ${unit} | ${limit} ${unit} | ${v < limit ? 'ok' : 'MISSED'} |`);
+  }
+  p();
   process.stdout.write(lines.join('\n'));
 }
 
