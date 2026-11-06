@@ -120,6 +120,14 @@ export class CatalogSync {
     const client = this.requireClient();
     const started = Date.now();
     try {
+      // ms per phase, logged with the result (the perf benchmark reads them)
+      const phases: Record<string, number> = {};
+      let mark = started;
+      const phase = (name: string) => {
+        const now = Date.now();
+        phases[name] = now - mark;
+        mark = now;
+      };
       this.source.saveAccount(await client.authenticate());
       const gen = started;
       const [liveCats, vodCats, seriesCats] = await Promise.all([client.liveCategories(), client.vodCategories(), client.seriesCategories()]);
@@ -127,14 +135,19 @@ export class CatalogSync {
       await this.writeCategories('live', liveCats, gen, catTags);
       await this.writeCategories('movie', vodCats, gen, catTags);
       await this.writeCategories('series', seriesCats, gen, catTags);
+      phase('categories');
       // streamed: the movie list of a big panel is 100+ MB of JSON
       await this.writeLive(client.liveStreamsIter(), gen, catTags);
+      phase('live');
       await this.writeMovies(client.vodStreamsIter(), gen, catTags);
+      phase('movies');
       await this.writeSeries(client.seriesIter(), gen, catTags);
+      phase('series');
       this.prune(gen);
       refreshHasEpg(this.db);
+      phase('prune');
       kvSet(this.db, 'lastCatalogSync', String(Date.now()));
-      this.log.info({ ms: Date.now() - started }, 'catalog sync finished');
+      this.log.info({ ms: Date.now() - started, phases }, 'catalog sync finished');
       this.bus.emit({ type: 'catalog-updated' });
     } catch (err) {
       this.log.error({ err }, 'catalog sync failed');
@@ -279,6 +292,7 @@ export class CatalogSync {
         }
         flush(batch);
         count += batch.length;
+        const streamed = Date.now();
         this.db.transaction(() => {
           // replace the old schedule where the new guide covers it; keep older history
           this.db
@@ -290,7 +304,8 @@ export class CatalogSync {
           refreshHasEpg(this.db);
         })();
         kvSet(this.db, 'lastEpgSync', String(Date.now()));
-        this.log.info({ ms: Date.now() - started, programs: count }, 'epg sync finished');
+        const phases = { stream: streamed - started, cleanup: Date.now() - streamed };
+        this.log.info({ ms: Date.now() - started, programs: count, phases }, 'epg sync finished');
       } catch (err) {
         this.log.error({ err }, 'epg sync failed');
         throw err;

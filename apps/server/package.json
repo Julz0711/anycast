@@ -10,7 +10,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:perf": "vitest run -c vitest.perf.config.ts"
+    "test:perf": "vitest run -c vitest.perf.config.ts",
+    "perf": "tsx test/perf/bench.ts"
   },
   "dependencies": {
     "@anycast/shared": "workspace:*",
