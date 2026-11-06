@@ -253,6 +253,13 @@ export function applyEvent(ev: SyncEvent) {
       // mode, PIN or duration changed on another device: reload the lock state and the lists
       void loadAdult({ refresh: true });
       break;
+    case 'restored':
+      // an admin restored a backup: everything of this profile may have changed
+      clearApiCache();
+      set((s) => ({ catalogVersion: s.catalogVersion + 1 }));
+      void loadProfileData();
+      void loadAdult({ refresh: true });
+      break;
     case 'catalog-updated':
       clearApiCache();
       set((s) => ({ catalogVersion: s.catalogVersion + 1 }));

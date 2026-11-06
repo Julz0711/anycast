@@ -20,6 +20,7 @@ import { ListsManager } from '../components/ListEditor';
 import type { DeviceOverride, FormFactor } from '../lib/device';
 import { ParentalLock } from './ParentalLock';
 import { DiagnosticsSection } from './Diagnostics';
+import { BackupSection } from './Backup';
 import '../theme/settings.css';
 
 type P = Preferences;
@@ -48,6 +49,7 @@ export default function SettingsScreen() {
         { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
         { id: 'profiles', title: 'Profiles', body: <Profiles /> },
         { id: 'source', title: 'Source & account', body: <Source /> },
+        ...(isAdmin ? [{ id: 'backup', title: 'Backup & restore', body: <BackupSection Row={Row} /> }] : []),
         {
           id: 'diagnostics',
           title: 'Diagnostics',
