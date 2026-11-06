@@ -224,6 +224,46 @@ describe('one provider connection', () => {
     expect(await until(() => built.services.playback.pool.active === 0, 2000)).toBe(true);
   });
 
+  test('switching the audio track of an archive stream reuses the one connection', async () => {
+    const ch = mock.catalog.live.find((c) => c.profile === 'live_h264_aac_multi' && c.archive)!;
+    const a = A();
+    const at = Date.now() - 5 * 60_000;
+    // the first track plays directly (raw TS straight from the provider)
+    const p0 = await play(a, `/api/play/live/${ch.id}/at?at=${at}`);
+    expect(p0.status, JSON.stringify(p0.body)).toBe(200);
+    expect(p0.body.type).toBe('mpegts');
+    const s0 = await watch(a, p0.body.url);
+    expect(await until(() => s0.bytes() > 50_000)).toBe(true);
+    // the second goes through FFmpeg: the direct stream is stopped before it opens its own
+    const p1 = await play(a, `/api/play/live/${ch.id}/at?at=${at}&audio=1`);
+    expect(p1.status, JSON.stringify(p1.body)).toBe(200);
+    expect(p1.body.url).toMatch(/\/remux\/a1\/index\.m3u8$/);
+    // at once (the archive stream itself would run for a while)
+    expect(await Promise.race([s0.ended.then(() => 'ended'), new Promise((r) => setTimeout(() => r('still open'), 3000))])).toBe('ended');
+    const res = await req(a, p1.body.url);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.text()).toContain('#EXTINF');
+    expect(mock.state().peakConnections).toBe(1);
+  });
+
+  test('switching the audio track of a movie reuses the one connection', async () => {
+    const movie = mock.catalog.movies.find((m) => m.profile === 'mkv_h264_eac3_multi')!;
+    const a = A();
+    const segOf = async (url: string, n: number) => {
+      const dir = url.replace(/[^/]+$/, '');
+      const res = await req(a, `${dir}seg/${n}.m4s`);
+      expect(res.status, `${dir}seg/${n}.m4s ${res.status === 200 ? '' : await res.clone().text()}`).toBe(200);
+      return (await res.arrayBuffer()).byteLength;
+    };
+    for (const [audio, n] of [[1, 0], [0, 3], [1, 5], [0, 0]] as const) {
+      const p = await play(a, `/api/play/movie/${movie.id}?audio=${audio}`);
+      expect(p.status, JSON.stringify(p.body)).toBe(200);
+      expect(p.body.tracks!.audioIndex).toBe(audio);
+      expect(await segOf(p.body.url, n)).toBeGreaterThan(1000);
+    }
+    expect(mock.state().peakConnections).toBe(1);
+  });
+
   test('no channel can be pinned: the one connection stays free for watching', async () => {
     const pins = (await (await req(null, '/api/buffer/pins')).json()) as { maxPins: number };
     expect(pins.maxPins).toBe(0);

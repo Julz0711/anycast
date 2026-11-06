@@ -303,9 +303,17 @@ export class PlaybackService {
     return { audio, subtitles, audioIndex, subtitleIndex };
   }
 
-  /** Switching tracks: stop this item's sessions that play another track (each reads the source on its own). */
-  private closeOtherTracks(prefix: string, keep: string | null): void {
-    this.sessions.closeWhere((k) => k.startsWith(prefix) && k !== keep);
+  /**
+   * A play request that names its tracks (a switch, or a reload keeping them): stop what `key`
+   * still serves with other tracks, so the new stream does not need a second provider connection
+   * (one-connection providers): its other HLS sessions (each reads the source, or the live fan-out,
+   * on its own) and its direct streams (a file or raw TS the old player may still hold open).
+   * Left alone while another client watches the same item, which may be playing them.
+   */
+  private switchTracks(key: string, keep: string | null, viewer: Viewer | null): void {
+    if (viewer && this.claims.holders(key, viewer.clientId).length) return;
+    this.sessions.closeWhere((k) => k.startsWith(`${key}:`) && k !== keep);
+    for (const stop of [...(this.direct.get(key) ?? [])]) stop();
   }
 
   async liveInfo(id: string, caps: ClientCaps, viewer: Viewer | null = null, req: TrackRequest = NO_TRACK_REQUEST): Promise<PlaybackInfo> {
@@ -315,6 +323,9 @@ export class PlaybackService {
     const probe = await this.probe(key, () => this.client().liveUrl(id), ASSUMED_LIVE);
     const tracks = this.tracksFor(probe, 'live', req);
     const choice = choosePipeline({ ...probe, container: 'ts' }, caps, 'live', { audio: tracks.audioIndex });
+    if (req.audio !== undefined) {
+      this.switchTracks(key, choice.pipeline === 'passthrough' ? null : `${key}:${choice.pipeline}${sessionAudio(tracks.audioIndex ?? 0)}`, viewer);
+    }
     const base = `/api/stream/live/${encodeURIComponent(id)}`;
     return {
       url: choice.pipeline === 'passthrough' ? `${base}.ts` : `${base}/${choice.pipeline}/${audioPrefix(tracks.audioIndex)}index.m3u8`,
@@ -357,12 +368,14 @@ export class PlaybackService {
     const durMin = Math.min(MAX_TIMESHIFT_MIN, Math.ceil((now - startMin * 60_000) / 60_000));
     const key = `ts:${id}:${startMin}`;
     this.begin(viewer, key, channel.name);
-    const probe = this.probes.cached(`live:${id}`) ?? ASSUMED_LIVE;
+    // the archive has the live stream's tracks: probe the channel if it never played live here
+    // (before the archive stream opens, so one connection is enough)
+    const probe = await this.probe(`live:${id}`, () => this.client().liveUrl(id), ASSUMED_LIVE);
     const tracks = this.tracksFor(probe, 'live', req);
     const choice = choosePipeline({ ...probe, container: 'ts' }, caps, 'live', { audio: tracks.audioIndex });
     if (req.audio !== undefined) {
       const keep = choice.pipeline === 'passthrough' ? null : `${key}:${durMin}:${choice.pipeline}${sessionAudio(tracks.audioIndex ?? 0)}`;
-      this.closeOtherTracks(`${key}:`, keep);
+      this.switchTracks(key, keep, viewer);
     }
     const base = `/api/stream/timeshift/${encodeURIComponent(id)}/${startMin}/${durMin}`;
     return {
@@ -431,7 +444,7 @@ export class PlaybackService {
     const choice = choosePipeline(probe, caps, 'vod', { audio: tracks.audioIndex, subtitles: tracks.subtitleIndex !== null });
     const hls = choice.pipeline !== 'passthrough';
     if (req.audio !== undefined || req.sub !== undefined) {
-      this.closeOtherTracks(`${key}:`, hls ? `${key}:${choice.pipeline}${sessionAudio(tracks.audioIndex ?? 0)}` : null);
+      this.switchTracks(key, hls ? `${key}:${choice.pipeline}${sessionAudio(tracks.audioIndex ?? 0)}` : null, viewer);
     }
     const subtitlesInStream = hls && subtitleRenditions(probe).length > 0;
     const base = `/api/stream/${kind}/${encodeURIComponent(id)}`;

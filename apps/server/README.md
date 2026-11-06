@@ -88,9 +88,10 @@ EPG sync, the server's peak and idle memory, search p95 over a set of queries (d
 prefixes), list pages (also deep ones and with most of the catalog hidden), categories and the
 guide. The default suite keeps a smaller version of these checks on the 50k item fixture panel.
 
-Measured on a 4-core container (huge mock): catalog sync 22 s, EPG sync 19 s, server peak 286 MB
-during the sync and 264 MB idle after it, search p95 17 ms (19 ms with everything but English
-hidden), every list page, category list and guide window under 50 ms p95.
+`pnpm run perf` (at the root) is the fuller benchmark: the mock's `real` size (the `huge` catalog
+plus a ~4,000 channel guide), sync time per phase, memory, request latency with hide rules and the
+adult lock, latency during a re-sync and the web bundle. Results and what was tuned:
+[docs/performance.md](../../docs/performance.md).
 
 What keeps it there:
 
@@ -101,6 +102,8 @@ What keeps it there:
 - The list indexes carry the hide-rule columns (country, language, category, has-guide), and
   pages order by exactly those columns, so filtered pages and counts are index walks.
 - `channels.has_epg` is kept up to date after each sync, for `GET /api/live?hasEpg=1`.
+- A sync writes in transactions of about 20 ms and lets requests run between them; search rows
+  are written apart, a few thousand per transaction.
 
 ## Layout
 

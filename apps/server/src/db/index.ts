@@ -12,6 +12,13 @@ export function openDb(file: string): Db {
   db.pragma('synchronous = NORMAL');
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
+  // A sync commits every few ms (to keep requests flowing) and touches index pages all over:
+  // checkpointing every 4 MB of WAL (the default) wrote the same pages to the database file again
+  // and again. 16 MB between checkpoints makes a 195k item catalog sync ~20% faster; a checkpoint
+  // then holds the event loop ~90 ms (40 MB: ~30% faster, but ~140 ms). The WAL file is cut
+  // back to 64 MB after a checkpoint.
+  db.pragma('wal_autocheckpoint = 4000');
+  db.pragma(`journal_size_limit = ${64 * 1024 * 1024}`);
   migrate(db);
   return db;
 }

@@ -1,6 +1,7 @@
 /**
  * Settings › All › Diagnostics (admins): server version and uptime, FFmpeg tools, provider
  * connections in use, and disk use of the rewind buffer and thumbnails. Refreshes every 10 s.
+ * Other users see a note that admins can see them.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import type { ServerDiagnostics } from '@anycast/shared';
@@ -30,6 +31,16 @@ export function connectionsHint(byKind: Record<string, number>): string {
 
 function Tool({ t }: { t: ServerDiagnostics['ffmpeg'] }) {
   return t.available ? <span className="status-ok tabnum">{t.version ?? 'Available'}</span> : <span className="status-bad">Not found</span>;
+}
+
+/** The Diagnostics section: the server's diagnostics for admins, a one-line note for everyone else. */
+export function DiagnosticsSection({ isAdmin, Row }: { isAdmin: boolean; Row: RowComp }) {
+  if (isAdmin) return <Diagnostics Row={Row} />;
+  return (
+    <p className="muted" data-testid="diagnostics-admin-only">
+      Server diagnostics (FFmpeg, provider connections, disk use) are visible to admins.
+    </p>
+  );
 }
 
 export function Diagnostics({ Row }: { Row: RowComp }) {

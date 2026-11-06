@@ -4,7 +4,8 @@
  *
  * VOD seeking: the playlist is generated up front (fixed SEGMENT_SECONDS slots over the probed
  * duration) so players see the full timeline. Requesting a slot that the current FFmpeg run
- * will not reach soon restarts FFmpeg with input seeking at slot * SEGMENT_SECONDS and
+ * will not reach soon restarts FFmpeg with input seeking at slot * SEGMENT_SECONDS (a slot earlier
+ * when it also writes subtitles, see SUB_LEAD) and
  * -start_number slot. Source timestamps are kept (-copyts), so segments carry their true media
  * time and players place them correctly even though stream-copied cuts land on the nearest
  * keyframe. Runs ahead of playback are paused (SIGSTOP) to bound disk and upstream usage.
@@ -67,6 +68,13 @@ export interface SubtitleRendition {
 
 /** Slots on either side of a subtitle segment whose cues it also carries (cuts land on keyframes, so players' slot times are approximate). */
 const SUB_MARGIN = 1;
+/**
+ * With subtitles, a run that starts at a seek begins this many slots earlier. Input seeking skips
+ * every packet before the seek point, and a subtitle cue is one packet at its start time: a cue
+ * that began a few seconds before the slot (and is still on screen) would never be read. One slot
+ * (6 s) of lead keeps those; it costs one extra segment of work before the requested one.
+ */
+const SUB_LEAD = 1;
 
 abstract class Session {
   lastAccess = Date.now();
@@ -253,6 +261,11 @@ export class VodHlsSession extends Session {
     return formatVtt([...(this.cues.get(k)?.values() ?? [])].filter((c) => c.end > from && c.start < to));
   }
 
+  /** Where a run that has to deliver slot n starts: a little earlier when it also writes subtitles (SUB_LEAD). */
+  private runStartFor(n: number): number {
+    return this.tracks.subtitles.length && !this.subsFailed ? Math.max(0, n - SUB_LEAD) : n;
+  }
+
   private startRun(start: number): Run {
     this.stopRun();
     const lease = this.acquire();
@@ -361,7 +374,7 @@ export class VodHlsSession extends Session {
 
   async init(): Promise<string[]> {
     this.touch();
-    let run = this.run ?? this.startRun(this.lastRequested);
+    let run = this.run ?? this.startRun(this.runStartFor(this.lastRequested));
     const deadline = Date.now() + WAIT_MS;
     for (;;) {
       await this.refresh(run);
@@ -387,7 +400,7 @@ export class VodHlsSession extends Session {
     let run = this.run;
     if (run) await this.refresh(run);
     const reachable = run && !run.exited && n >= run.start && n <= this.maxCompleted(run) + 1 + LOOKAHEAD;
-    if (!run || (!run.completed.has(n) && !reachable)) run = this.startRun(n);
+    if (!run || (!run.completed.has(n) && !reachable)) run = this.startRun(this.runStartFor(n));
     this.setPaused(run, false);
     const deadline = Date.now() + WAIT_MS;
     for (;;) {
@@ -425,6 +438,8 @@ export class VodHlsSession extends Session {
 export class HlsSessions {
   private readonly sessions = new Map<string, Session>();
   private readonly pending = new Map<string, Promise<Session>>();
+  /** sessions being created when closeWhere() matched them: closed as soon as they exist */
+  private readonly cancelled = new Set<string>();
   private readonly reaper: NodeJS.Timeout;
   private readonly root: Promise<string>;
 
@@ -459,25 +474,34 @@ export class HlsSessions {
         const dir = await mkdtemp(path.join(await this.root, 'session-'));
         try {
           const s = await make(dir);
+          if (this.cancelled.has(key)) {
+            // stopped (a track switch, zapping) while it started: it must not keep the provider connection
+            s.close();
+            throw new HlsError(409, 'Playback moved elsewhere');
+          }
           this.sessions.set(key, s);
           return s;
         } catch (err) {
           void rm(dir, { recursive: true, force: true });
           throw err;
         }
-      })().finally(() => this.pending.delete(key));
+      })().finally(() => {
+        this.pending.delete(key);
+        this.cancelled.delete(key);
+      });
       this.pending.set(key, pending);
     }
     return pending;
   }
 
-  /** Closes every session whose key matches (e.g. all sessions of one provider connection). */
+  /** Closes every session whose key matches (e.g. all sessions of one provider connection), also ones still starting. */
   closeWhere(match: (key: string) => boolean): void {
     for (const [key, s] of this.sessions) {
       if (!match(key)) continue;
       s.close();
       this.sessions.delete(key);
     }
+    for (const key of this.pending.keys()) if (match(key)) this.cancelled.add(key);
   }
 
   private reap(): void {

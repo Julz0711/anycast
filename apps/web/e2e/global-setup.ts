@@ -172,14 +172,19 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
       { stream_id?: number; series_id?: number }[]
     >;
   const live = (await get<{ items: Ch[] }>('/api/live?limit=500')).items;
-  // mock live profile by catalog position: index % 10 == 3 is HEVC, == 7 is AC-3; the rest is H.264/AAC
-  const h264 = (c: Ch) => ![3, 7].includes((c.number - 1) % 10);
+  // mock live profile by catalog position: index % 10 == 3 is HEVC, == 7 is AC-3, index % 20 == 5 has
+  // English and German audio; the rest is H.264/AAC with one audio track
+  const multiAudio = (c: Ch) => (c.number - 1) % 20 === 5;
+  const h264 = (c: Ch) => ![3, 7].includes((c.number - 1) % 10) && !multiAudio(c);
   const now = Date.now();
   const epg = await get<Record<string, Program[]>>(`/api/epg?channelIds=${live.map((c) => c.id).join(',')}&from=${now - 4 * 3600_000}&to=${now}`);
   const archive = live.find(
     (c) => h264(c) && c.archiveDays > 0 && c.epgChannelId && (epg[c.id] ?? []).some((p) => p.end <= now - 5 * 60_000 && p.start >= now - 3 * 3600_000),
   );
   if (!archive) throw new Error('no H.264 archive channel with a recent past programme in the mock catalog');
+  // not the first of them (zapChannels), so no other spec plays it
+  const tracksChannel = live.find((c) => multiAudio(c) && c.number > 20 && c.archiveDays > 0);
+  if (!tracksChannel) throw new Error('no live channel with two audio tracks and an archive in the mock catalog');
 
   // movies: mock profile by position in get_vod_streams; index % 5 == 0 is MP4 H.264/AAC (direct play)
   const vod = await api('get_vod_streams');
@@ -236,6 +241,7 @@ async function fixtures(get: <T>(url: string) => Promise<T>, mockUrl: string, us
     movie: { id: movie.id, name: movie.name },
     hlsMovie: { id: hlsMovie.id, name: hlsMovie.name },
     tracksMovie: { id: tracksMovie.id, name: tracksMovie.name },
+    tracksChannel: { id: tracksChannel.id, name: tracksChannel.name },
     series: { id: String(binge.series_id), name: detail.name, ep1: ep1!.id, ep2: ep2!.id, ep2Title: ep2!.title },
     declutter: {
       liveCat: { de: pick(liveCats, 'de', 'live category').name, en: pick(liveCats, 'en', 'live category').name },

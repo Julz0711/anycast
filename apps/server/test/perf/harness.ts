@@ -29,18 +29,32 @@ export function freePort(): Promise<number> {
 }
 
 /** One node process running a package's src/main.ts through tsx (no tsx wrapper process, so the pid is the app). */
-function startNode(cwd: string, env: Record<string, string>): { child: ChildProcess; log: string[] } {
+function startNode(
+  cwd: string,
+  env: Record<string, string>,
+  onLine?: (line: string) => void,
+  nodeFlags: string[] = [],
+): { child: ChildProcess; log: string[] } {
   const log: string[] = [];
-  const child = spawn(process.execPath, ['--import', 'tsx', 'src/main.ts'], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, [...nodeFlags, '--import', 'tsx', 'src/main.ts'], { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let partial = '';
   const keep = (b: Buffer) => {
     log.push(String(b));
     if (log.length > 100) log.shift();
     if (process.env.PERF_DEBUG) process.stderr.write(b);
+    if (onLine) {
+      const lines = (partial + String(b)).split('\n');
+      partial = lines.pop()!;
+      lines.forEach(onLine);
+    }
   };
   child.stdout!.on('data', keep);
   child.stderr!.on('data', keep);
   return { child, log };
 }
+
+/** A sync result line from the server log ("catalog sync finished" / "epg sync finished"). */
+export interface SyncLog { msg: string; ms: number; phases?: Record<string, number>; programs?: number }
 
 /** Resident set size (current and peak) in MB, from /proc (Linux); null elsewhere. */
 export function rssOf(pid: number): { rss: number; peak: number } | null {
@@ -55,6 +69,9 @@ export function rssOf(pid: number): { rss: number; peak: number } | null {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** The node flags of the Docker image's CMD, so the numbers match production. */
+const SERVER_NODE_FLAGS = ['--max-semi-space-size=4'];
+
 export interface Timing { p50: number; p95: number; max: number }
 export function timing(samples: number[]): Timing {
   const s = [...samples].sort((a, b) => a - b);
@@ -65,6 +82,9 @@ export function timing(samples: number[]): Timing {
 export interface Stack {
   base: string;
   serverPid: number;
+  dataDir: string;
+  /** sync results logged by the server so far, oldest first */
+  syncLogs: SyncLog[];
   cookie: string;
   catalogSyncMs: number;
   epgSyncMs: number;
@@ -77,7 +97,15 @@ export interface Stack {
 }
 
 /** Starts mock + server, waits for the first catalog and EPG sync. */
-export async function startStack(opts: { size: 'small' | 'full' | 'huge'; timezone?: string; syncTimeoutMs?: number }): Promise<Stack> {
+export async function startStack(opts: {
+  size: 'small' | 'full' | 'huge' | 'real';
+  timezone?: string;
+  syncTimeoutMs?: number;
+  /** server LOG_LEVEL; sync timings are logged at info */
+  logLevel?: string;
+  /** called about every 200 ms while the first sync runs */
+  onSyncTick?: () => void;
+}): Promise<Stack> {
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'anycast-perf-'));
   const [mockPort, serverPort] = await Promise.all([freePort(), freePort()]);
   const mockUrl = `http://127.0.0.1:${mockPort}`;
@@ -118,17 +146,28 @@ export async function startStack(opts: { size: 'small' | 'full' | 'huge'; timezo
   try {
     await until('the mock', async () => (await fetch(`${mockUrl}/__mock/state`)).ok, 120_000);
     const started = Date.now();
+    const syncLogs: SyncLog[] = [];
+    const onLine = (line: string) => {
+      if (!line.includes('sync finished')) return;
+      try {
+        const j = JSON.parse(line) as SyncLog;
+        if (j.msg === 'catalog sync finished' || j.msg === 'epg sync finished') syncLogs.push(j);
+      } catch {
+        /* not a log line */
+      }
+    };
     server = startNode(path.join(repo, 'apps/server'), {
       PORT: String(serverPort), HOST: '127.0.0.1', DATA_DIR: path.join(tmp, 'data'), BUFFER_ENABLED: '0', WEB_DIST: path.join(tmp, 'no-web'),
       XTREAM_URL: mockUrl, XTREAM_USERNAME: MOCK.username, XTREAM_PASSWORD: MOCK.password,
       ANYCAST_SECRET: 'perf-secret-0123456789abcdef', ANYCAST_ADMIN_USER: ADMIN.username, ANYCAST_ADMIN_PASSWORD: ADMIN.password,
-      LOG_LEVEL: 'warn',
-    });
+      LOG_LEVEL: opts.logLevel ?? 'warn',
+    }, onLine, SERVER_NODE_FLAGS);
     const pid = server.child.pid!;
     let peak = 0;
     const sample = () => {
       const r = rssOf(pid);
       if (r) peak = Math.max(peak, r.peak);
+      opts.onSyncTick?.();
     };
     await until('the server', async () => (await fetch(`${base}/api/health`)).ok, 60_000);
     const login = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(ADMIN) });
@@ -147,7 +186,7 @@ export async function startStack(opts: { size: 'small' | 'full' | 'huge'; timezo
     }, opts.syncTimeoutMs ?? 600_000, sample);
     sample();
     return {
-      base, serverPid: pid, cookie, catalogSyncMs, epgSyncMs: done.lastSync.epg! - cat, peakRssDuringSync: peak, counts: done.counts, get,
+      base, serverPid: pid, dataDir: path.join(tmp, 'data'), syncLogs, cookie, catalogSyncMs, epgSyncMs: done.lastSync.epg! - cat, peakRssDuringSync: peak, counts: done.counts, get,
       time: async (url, n = 7) => {
         const out: number[] = [];
         for (let i = 0; i < n; i++) {

@@ -20,13 +20,13 @@ import { fromApiError, fromPlaybackFailure, type PlayerErr } from './errors';
 import { absolutePosition, computeWindow, mediaTimeFor, programAt, resolveSeek, type Win } from './timelineMath';
 import { Ribbon, VodBar } from './Timeline';
 import { useThumbIndex } from './thumbs';
-import { hasTrackChoice, renditionOf, subtitleAction } from './tracks';
+import { hasTrackChoice, playingTracks, reloadTracks as keepTracks, renditionOf, subtitleAction, type TrackRequest } from './tracks';
 import { TracksMenu } from './TracksMenu';
 import { IconBack, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock } from '../components/Icons';
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
 import { useMediaSession } from './mediaSession';
-import { PipButton } from './PipButton';
+import { PipButton, usePictureInPicture } from './PipButton';
 import { StatsButton, StatsOverlay, useStatsToggle } from './stats/Stats';
 import '../theme/player.css';
 
@@ -48,6 +48,8 @@ interface Stream {
   liveEdge: boolean;
   /** media time to jump to once metadata is known */
   seekTo?: number;
+  /** the load that got it */
+  seq: number;
 }
 
 export default function PlayerScreen() {
@@ -103,7 +105,13 @@ export default function PlayerScreen() {
   movedRef.current = !!moved;
   const stopped = useApp((s) => s.playbackStopped);
   const loadStarted = useRef(0);
-  const lastLoad = useRef<{ at: number | null; opts: LoadOpts }>({ at: null, opts: {} });
+  /** the live position (epoch ms) as of the last render */
+  const positionRef = useRef(0);
+  const lastLoad = useRef<{ at: number | null; opts: LoadOpts; seq: number }>({ at: null, opts: {}, seq: 0 });
+  /** the tracks playing now (for which item), so every reload asks for them again (PB-3) */
+  const playing = useRef<{ item: string; tracks: TrackRequest }>({ item: '', tracks: {} });
+  const pip = usePictureInPicture(videoRef);
+  const { supported: pipSupported, toggle: togglePip } = pip;
   const progressBodyRef = useRef<() => ProgressBody | null>(() => null);
   const stats = useStatsToggle();
 
@@ -163,7 +171,7 @@ export default function PlayerScreen() {
   const load = useCallback(
     async (at: number | null, opts: LoadOpts = {}) => {
       const seq = ++loadSeq.current;
-      lastLoad.current = { at, opts };
+      lastLoad.current = { at, opts, seq };
       loadStarted.current = Date.now();
       setMoved(null);
       if (useApp.getState().playbackStopped) useApp.setState({ playbackStopped: null });
@@ -173,7 +181,9 @@ export default function PlayerScreen() {
       engineRef.current?.destroy();
       engineRef.current = null;
       let pi: PlaybackInfo;
-      const { audio, sub } = opts;
+      // retry, resume, go live, a seek into the archive or buffer: the same audio and subtitles
+      const item = `${kind}:${id}`;
+      const { audio, sub } = keepTracks(opts, playing.current.item === item ? playing.current.tracks : {});
       try {
         pi = isLive
           ? at !== null
@@ -196,9 +206,10 @@ export default function PlayerScreen() {
           : opts.fromStart
             ? 0
             : pi.resumeAt;
-      streamRef.current = { info: pi, liveEdge: at === null, seekTo };
+      streamRef.current = { info: pi, liveEdge: at === null, seekTo, seq };
       setInfo(pi);
       setSubIdx(pi.tracks?.subtitleIndex ?? null);
+      playing.current = { item, tracks: playingTracks(pi.tracks, pi.tracks?.subtitleIndex ?? null) };
       const video = videoRef.current!;
       try {
         const engine = await createEngine(video, pi, { live: isLive, onFatal, onTracks: () => setTracksVer((x) => x + 1) });
@@ -225,6 +236,16 @@ export default function PlayerScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, id]);
+
+  /**
+   * Try again / Resume: the stream again from where it got to (live: the same time behind live),
+   * or, when the last request never got a stream (a seek into the archive failed, say), that request again.
+   */
+  const reload = useCallback(() => {
+    const s = streamRef.current;
+    if (!s || s.seq !== lastLoad.current.seq) return void load(lastLoad.current.at, lastLoad.current.opts);
+    void load(isLive && !s.liveEdge ? positionRef.current : null);
+  }, [isLive, load]);
 
   /* ---------------- one connection: taken over, take over, release ---------------- */
   useEffect(() => {
@@ -275,6 +296,7 @@ export default function PlayerScreen() {
   const seekEnd = video && video.seekable.length ? video.seekable.end(video.seekable.length - 1) : video?.duration && Number.isFinite(video.duration) ? video.duration : 0;
   const startsAt = info?.startsAt;
   const position = isLive ? (engineRef.current?.positionDate() ?? (info ? absolutePosition(startsAt, ct, seekEnd, now) : now)) : ct;
+  positionRef.current = position;
   // Streams play a little behind real time (HLS latency). Measure that once at the live edge and
   // report "behind live" relative to it, so a 10 s skip back shows as 0:10, not 0:28.
   const rawBehind = isLive ? Math.max(0, now - position) : 0;
@@ -494,6 +516,12 @@ export default function PlayerScreen() {
           handled();
           setMenu('jump');
           break;
+        case 'p':
+        case 'P':
+          if (!pipSupported) return;
+          handled();
+          void togglePip();
+          break;
         case 'Escape':
         case 'Backspace':
         case 'GoBack':
@@ -512,7 +540,7 @@ export default function PlayerScreen() {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds]);
+  }, [form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds, pipSupported, togglePip]);
 
   /* ---------------- progress (VOD) ---------------- */
   const progressBody = useCallback(() => {
@@ -686,10 +714,12 @@ export default function PlayerScreen() {
     e.setSubtitle(pos);
   }, [info, subIdx, tracksVer]);
 
+  // kept per movie or episode, and per live channel (audio only: it also plays in its archive and buffer)
   const saveTracks = useCallback(
     (choice: TrackChoice) => {
-      if (isLive) return; // live: the profile's preferences decide per channel
-      void call('PUT /api/tracks/:kind/:id', { params: { kind: vodKind, id }, body: choice }).catch(() => undefined);
+      if (isLive && choice.audio === undefined) return;
+      const body = isLive ? { audio: choice.audio } : choice;
+      void call('PUT /api/tracks/:kind/:id', { params: { kind: isLive ? 'live' : vodKind, id }, body }).catch(() => undefined);
     },
     [isLive, vodKind, id],
   );
@@ -713,6 +743,7 @@ export default function PlayerScreen() {
     const action = subtitleAction(t, n);
     if (action === 'none') return;
     setSubIdx(n);
+    playing.current.tracks = { ...playing.current.tracks, sub: n ?? 'off' };
     saveTracks({ subtitle: n });
     if (action === 'reload') reloadTracks(t.audioIndex ?? undefined, n);
   };
@@ -835,7 +866,7 @@ export default function PlayerScreen() {
               {moved.profileName} started watching{moved.device ? ` on ${moved.device}` : ''}. Your subscription plays one stream at a time.
             </p>
             <div className="actions">
-              <button type="button" className="btn btn-primary" autoFocus onClick={() => void load(isLive && streamRef.current && !streamRef.current.liveEdge ? position : null)}>
+              <button type="button" className="btn btn-primary" autoFocus onClick={reload}>
                 Resume
               </button>
               <button type="button" className="btn" onClick={back}>
@@ -862,7 +893,7 @@ export default function PlayerScreen() {
                 </button>
               )}
               {error.actions.includes('retry') && (
-                <button type="button" className="btn btn-primary" autoFocus onClick={() => void load(isLive && streamRef.current && !streamRef.current.liveEdge ? position : null)}>
+                <button type="button" className="btn btn-primary" autoFocus onClick={reload}>
                   Try again
                 </button>
               )}
@@ -1021,7 +1052,7 @@ export default function PlayerScreen() {
               </button>
             </>
           )}
-          <PipButton videoRef={videoRef} />
+          <PipButton pip={pip} />
           <StatsButton open={stats.open} onToggle={stats.toggle} />
           {form === 'tv' && <span className="pl-hint">◀ ▶ seek · ▲▼ channels · Back to close</span>}
         </div>

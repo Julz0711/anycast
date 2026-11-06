@@ -80,7 +80,15 @@ export function listCategories(db: Db, kind: MediaKind, rules: HideRules): Categ
 
 export interface PageQuery { categoryId?: string; offset: number; limit: number; hasEpg?: boolean }
 
-function page<R, T>(db: Db, table: string, order: string, rules: HideRules, q: PageQuery, map: (r: R) => T) {
+/**
+ * Page totals by query. Counting the visible rows of a 140k movie list with hidden categories
+ * walks most of an index (~15 ms), and the answer only changes with a sync, so callers can pass
+ * a cache that they drop when one runs or finishes.
+ */
+export type CountCache = Map<string, number>;
+const COUNT_CACHE_MAX = 5000;
+
+function page<R, T>(db: Db, table: string, order: string, rules: HideRules, q: PageQuery, map: (r: R) => T, counts?: CountCache) {
   const hide = hideClause(rules, 't');
   const where = [hide.sql];
   const params: (string | number)[] = [...hide.params];
@@ -91,7 +99,16 @@ function page<R, T>(db: Db, table: string, order: string, rules: HideRules, q: P
   // "+ 0": an equality on an index column makes SQLite sort the ties itself instead of walking the index in order
   if (q.hasEpg && table === 'channels') where.push('t.has_epg + 0 = 1');
   const w = where.join(' AND ');
-  const total = (db.prepare(`SELECT count(*) AS n FROM ${table} t WHERE ${w}`).get(...params) as { n: number }).n;
+  const countSql = `SELECT count(*) AS n FROM ${table} t WHERE ${w}`;
+  const key = counts && `${countSql}\n${JSON.stringify(params)}`;
+  let total = key ? counts.get(key) : undefined;
+  if (total === undefined) {
+    total = (db.prepare(countSql).get(...params) as { n: number }).n;
+    if (key) {
+      if (counts.size >= COUNT_CACHE_MAX) counts.clear();
+      counts.set(key, total);
+    }
+  }
   const rows = db.prepare(`SELECT t.* FROM ${table} t WHERE ${w} ORDER BY ${order} LIMIT ? OFFSET ?`).all(...params, q.limit, q.offset) as R[];
   return { items: rows.map(map), total };
 }
@@ -100,9 +117,10 @@ function page<R, T>(db: Db, table: string, order: string, rules: HideRules, q: P
 // even deep into a 140k item list; the trailing rowid makes the order total.
 const CHANNEL_ORDER = 't.number, t.country, t.language, t.category_id, t.has_epg, t.rowid';
 const ADDED_ORDER = 't.added DESC, t.country, t.language, t.category_id, t.rowid';
-export const pageChannels = (db: Db, rules: HideRules, q: PageQuery) => page(db, 'channels', CHANNEL_ORDER, rules, q, toChannel);
-export const pageMovies = (db: Db, rules: HideRules, q: PageQuery) => page(db, 'movies', ADDED_ORDER, rules, q, toMovie);
-export const pageSeries = (db: Db, rules: HideRules, q: PageQuery) => page(db, 'series', ADDED_ORDER, rules, q, toSeries);
+export const pageChannels = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) =>
+  page(db, 'channels', CHANNEL_ORDER, rules, q, toChannel, counts);
+export const pageMovies = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) => page(db, 'movies', ADDED_ORDER, rules, q, toMovie, counts);
+export const pageSeries = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) => page(db, 'series', ADDED_ORDER, rules, q, toSeries, counts);
 
 export const getChannel = (db: Db, id: string) => db.prepare('SELECT * FROM channels WHERE id = ?').get(id) as ChannelRow | undefined;
 export const getMovie = (db: Db, id: string) => db.prepare('SELECT * FROM movies WHERE id = ?').get(id) as MovieRow | undefined;

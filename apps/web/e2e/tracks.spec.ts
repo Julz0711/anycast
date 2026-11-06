@@ -3,6 +3,9 @@
  * subtitles): English audio and no subtitles by default, then, with the keyboard, German audio
  * (the server restarts the stream with that track, playback goes on where it was) and English
  * subtitles on, shown at the right times. The choice is remembered for the movie.
+ *
+ * And on a live channel with English and German audio: the track picked is kept by every reload
+ * (a seek into the archive, Try again, Go live) and saved for the channel (zapping away and back).
  */
 import type { Page } from '@playwright/test';
 import { currentTime, expect, expectPlaying, fx, test, video } from './fixtures';
@@ -14,6 +17,70 @@ const showing = (page: Page) =>
     const cue = t?.activeCues?.[0] as VTTCue | undefined;
     return { track: t ? t.language || t.label : null, text: cue?.text ?? null, start: cue?.startTime ?? null, now: v.currentTime };
   });
+
+test('a live channel keeps the audio track picked: through the archive, a failed seek and Try again, and zapping away and back', async ({ profile }) => {
+  test.setTimeout(120_000);
+  const page = await profile.device();
+  const id = fx.tracksChannel.id;
+  const plays: URL[] = [];
+  const streams: string[] = [];
+  page.on('request', (r) => {
+    const u = new URL(r.url());
+    if (u.pathname.startsWith(`/api/play/live/${id}`)) plays.push(u);
+    if (/\/api\/stream\/(?:live|timeshift)\/.+\.(?:m3u8|ts)$/.test(u.pathname)) streams.push(u.pathname);
+  });
+  await page.goto(`/play/live/${id}`);
+  await expectPlaying(page);
+  // English (the first track) by default, played directly
+  expect(streams.at(-1)).toBe(`/api/stream/live/${id}.ts`);
+
+  const button = page.getByRole('button', { name: 'Audio & subtitles' });
+  await button.click();
+  const menu = page.getByRole('dialog', { name: 'Audio and subtitles' });
+  const audio = menu.getByRole('radiogroup', { name: 'Audio' });
+  await expect(audio.getByRole('radio', { name: /English/ })).toHaveAttribute('aria-checked', 'true');
+  const saved = page.waitForResponse((r) => r.url().endsWith(`/api/tracks/live/${id}`) && r.request().method() === 'PUT');
+  await audio.getByRole('radio', { name: /German/ }).click();
+  expect((await saved).status()).toBe(200);
+  await expect.poll(() => streams.at(-1)).toBe(`/api/stream/live/${id}/remux/a1/index.m3u8`);
+  await expectPlaying(page);
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+
+  // a seek into the archive that fails once: Try again asks for the same time with the same track
+  let failed = 0;
+  await page.route(`**/api/play/live/${id}/at?**`, (route) => {
+    if (failed++) return route.continue();
+    return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'upstream', message: 'The provider did not answer' }) });
+  });
+  await page.getByRole('button', { name: 'Jump to time…' }).click();
+  await page.getByRole('textbox', { name: /Jump to a time/ }).fill('-3m');
+  await page.getByRole('button', { name: 'Go', exact: true }).click();
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect.poll(() => failed).toBe(2);
+  const [first, retried] = plays.filter((u) => u.pathname.endsWith('/at'));
+  expect(first!.searchParams.get('audio')).toBe('1');
+  expect(retried!.searchParams.get('audio')).toBe('1');
+  expect(retried!.searchParams.get('at')).toBe(first!.searchParams.get('at'));
+  await expect.poll(() => streams.at(-1)).toMatch(new RegExp(`^/api/stream/timeshift/${id}/\\d+/\\d+/remux/a1/index\\.m3u8$`));
+  await expectPlaying(page);
+
+  // Go live keeps it too
+  await page.getByRole('button', { name: /^Go live/ }).click();
+  await expect.poll(() => streams.at(-1)).toBe(`/api/stream/live/${id}/remux/a1/index.m3u8`);
+  expect(plays.at(-1)!.searchParams.get('audio')).toBe('1');
+  await expectPlaying(page);
+
+  // zap away and back: the channel's saved track plays again
+  await page.keyboard.press('ArrowDown');
+  await expect(page).not.toHaveURL(new RegExp(`/play/live/${id}$`));
+  await page.keyboard.press('ArrowUp');
+  await expect(page).toHaveURL(new RegExp(`/play/live/${id}$`));
+  await expect.poll(() => streams.at(-1)).toBe(`/api/stream/live/${id}/remux/a1/index.m3u8`);
+  await expectPlaying(page);
+  await button.click();
+  await expect(audio.getByRole('radio', { name: /German/ })).toHaveAttribute('aria-checked', 'true');
+});
 
 test('switch the audio track and turn subtitles on with the keyboard; the choice is kept for the movie', async ({ profile }) => {
   test.setTimeout(120_000);
