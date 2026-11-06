@@ -4,6 +4,9 @@ import {
   type TrackChoice,
 } from '@anycast/shared';
 import { EMPTY_RULES } from './catalog/store';
+
+/** What a track choice is saved for: a movie or episode, or a live channel (audio only; also its archive and buffer). */
+export type TrackKind = 'movie' | 'episode' | 'live';
 import type { Db } from './db';
 import type { EventBus } from './events';
 import { isFinished } from './progress';
@@ -71,8 +74,8 @@ export class UserData {
     return progress;
   }
 
-  /** The audio and subtitle track picked for a movie or episode (PB-3); null when nothing was picked. */
-  trackChoice(profileId: string, kind: 'movie' | 'episode', id: string): { audio: number | null; subtitle: number | null | undefined } | null {
+  /** The audio and subtitle track picked for a movie, episode or live channel (PB-3); null when nothing was picked. */
+  trackChoice(profileId: string, kind: TrackKind, id: string): { audio: number | null; subtitle: number | null | undefined } | null {
     const r = this.db.prepare('SELECT audio, subtitle FROM track_choices WHERE profile_id = ? AND kind = ? AND item_id = ?').get(profileId, kind, id) as
       | { audio: number | null; subtitle: number | null }
       | undefined;
@@ -81,7 +84,7 @@ export class UserData {
   }
 
   /** Fields left out keep their saved value; subtitle null = off. */
-  saveTrackChoice(profileId: string, kind: 'movie' | 'episode', id: string, choice: TrackChoice): void {
+  saveTrackChoice(profileId: string, kind: TrackKind, id: string, choice: TrackChoice): void {
     const sub = choice.subtitle === undefined ? undefined : choice.subtitle === null ? -1 : choice.subtitle;
     this.db
       .prepare(

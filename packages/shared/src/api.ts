@@ -221,7 +221,8 @@ export interface Api {
   /**
    * Saves the audio and subtitle track picked for a movie or episode (kind: movie | episode) for
    * this profile; the next play of the item starts with them. subtitle null = off. Fields left out
-   * keep their saved value.
+   * keep their saved value. kind live: the audio track of a channel (subtitle is ignored), used
+   * for its live stream, archive and buffer alike.
    */
   'PUT /api/tracks/:kind/:id': { body: TrackChoice; res: { ok: true } };
   /**

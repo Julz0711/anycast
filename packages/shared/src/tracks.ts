@@ -52,7 +52,7 @@ export interface PlaybackTracks {
   subtitlesInStream: boolean;
 }
 
-/** Per-item choice saved by PUT /api/tracks/:kind/:id. subtitle null = turned off. */
+/** Per-item (or per-channel: audio only) choice saved by PUT /api/tracks/:kind/:id. subtitle null = turned off. */
 export interface TrackChoice {
   audio?: number;
   subtitle?: number | null;

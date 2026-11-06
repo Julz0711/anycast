@@ -205,10 +205,23 @@ async function file(url: string): Promise<Buffer> {
 
 /** Which of the mock's tones an fMP4 init + segment carries: its audio tracks beep at 440 Hz (German) and 660 Hz (English). */
 async function toneOf(dir: string, n: number): Promise<440 | 660> {
-  const f = path.join(scratch, `seg-${Math.random().toString(36).slice(2)}.mp4`);
   // the segment first: it starts the FFmpeg run there, whose init segment goes with it
   const seg = await file(`${dir}seg/${n}.m4s`);
-  writeFileSync(f, Buffer.concat([await file(`${dir}init.mp4`), seg]));
+  return toneOfMedia(Buffer.concat([await file(`${dir}init.mp4`), seg]));
+}
+
+/** The tone of a live (or archive) HLS stream's first segment. Live channels: 440 Hz first track (English), 660 Hz second (German). */
+async function liveToneOf(url: string): Promise<440 | 660> {
+  const playlist = (await file(url)).toString();
+  const init = /#EXT-X-MAP:URI="([^"]+)"/.exec(playlist)![1]!;
+  const seg = playlist.split('\n').find((l) => l && !l.startsWith('#'))!;
+  const dir = dirOf(url);
+  return toneOfMedia(Buffer.concat([await file(dir + init), await file(dir + seg)]));
+}
+
+async function toneOfMedia(media: Buffer): Promise<440 | 660> {
+  const f = path.join(scratch, `seg-${Math.random().toString(36).slice(2)}.mp4`);
+  writeFileSync(f, media);
   const pcm = execFileSync('ffmpeg', ['-v', 'error', '-i', f, '-map', '0:a:0', '-ac', '1', '-ar', '48000', '-f', 's16le', '-'], { maxBuffer: 1 << 24 });
   const x = new Int16Array(pcm.buffer, pcm.byteOffset, Math.floor(pcm.byteLength / 2));
   // Goertzel: signal power at one frequency
@@ -221,6 +234,12 @@ async function toneOf(dir: string, n: number): Promise<440 | 660> {
   };
   expect(x.length).toBeGreaterThan(48000);
   return power(440) > power(660) ? 440 : 660;
+}
+
+let profile: { id: string } | null = null;
+async function me(): Promise<{ id: string }> {
+  profile ??= ((await (await get('/api/profiles')).json()) as { id: string }[])[0]!;
+  return profile;
 }
 
 const multi = FORMAT_MATRIX.find((f) => f.id === 'mkv_h264_eac3_multi' && f.kind === 'movie')!;
@@ -335,6 +354,68 @@ describe('multi-track MKV from the mock', () => {
     } finally {
       await get('/api/preferences', { method: 'PUT', body: JSON.stringify({ player: DEFAULT_PREFERENCES.player }), headers: { 'content-type': 'application/json' } });
     }
+  });
+});
+
+describe('live channels with two audio tracks', () => {
+  const ml = FORMAT_MATRIX.find((f) => f.id === 'live_h264_aac_multi' && f.kind === 'live')!;
+  const json = { 'content-type': 'application/json' };
+
+  test('the audio track picked is saved per channel and profile, and used for its live stream and archive', async () => {
+    // a channel with an archive (the mock decides which)
+    const id = String(mock.catalog.live.find((c) => c.profile === 'live_h264_aac_multi' && c.archive)!.id);
+    try {
+      const first = await info(`/api/play/live/${id}`);
+      expect(first.tracks).toMatchObject({ audio: [{ index: 0, language: 'en' }, { index: 1, language: 'de' }], audioIndex: 0 });
+      expect(first).toMatchObject({ pipeline: 'passthrough', url: `/api/stream/live/${id}.ts` });
+
+      const put = await get(`/api/tracks/live/${id}`, { method: 'PUT', body: JSON.stringify({ audio: 1, subtitle: 0 }), headers: json });
+      expect(put.status).toBe(200);
+      const again = await info(`/api/play/live/${id}`);
+      expect(again.tracks!.audioIndex).toBe(1);
+      expect(again.url).toBe(`/api/stream/live/${id}/remux/a1/index.m3u8`);
+      expect(await liveToneOf(again.url)).toBe(660);
+      // live channels keep no subtitle choice
+      expect(built.services.userData.trackChoice((await me()).id, 'live', id)).toEqual({ audio: 1, subtitle: undefined });
+
+      // the archive of the channel plays the same track
+      const at = await info(`/api/play/live/${id}/at?at=${Date.now() - 5 * 60_000}`);
+      expect(at.tracks!.audioIndex).toBe(1);
+      expect(at.url).toMatch(new RegExp(`^/api/stream/timeshift/${id}/\\d+/\\d+/remux/a1/index\\.m3u8$`));
+      // ?audio still wins
+      expect((await info(`/api/play/live/${id}?audio=0`)).tracks!.audioIndex).toBe(0);
+
+      // another profile has its own choice
+      const kid = (await (await get('/api/profiles', { method: 'POST', body: JSON.stringify({ name: 'Live kid' }), headers: json })).json()) as { id: string };
+      const theirs = await get(`/api/play/live/${id}`, { headers: { 'x-anycast-profile': kid.id } });
+      expect(((await theirs.json()) as PlaybackInfo).tracks!.audioIndex).toBe(0);
+    } finally {
+      await get('/api/play/stop', { method: 'POST' });
+    }
+  });
+
+  test('switching back and forth leaves one conversion running for the channel', async () => {
+    const id = String(ml.ids[1] ?? ml.ids[0]);
+    const hls = { 'x-anycast-caps': JSON.stringify({ hls: true, mse: false, codecs: ['avc1', 'mp4a'] }) };
+    try {
+      const a0 = (await (await get(`/api/play/live/${id}?audio=0`, { headers: hls })).json()) as PlaybackInfo;
+      expect(a0.url).toBe(`/api/stream/live/${id}/remux/index.m3u8`);
+      expect(await liveToneOf(a0.url)).toBe(440);
+      const a1 = (await (await get(`/api/play/live/${id}?audio=1`, { headers: hls })).json()) as PlaybackInfo;
+      expect(await liveToneOf(a1.url)).toBe(660);
+      // the first track's conversion was stopped, not left running until it idles out
+      expect(built.services.playback.sessions.size).toBe(1);
+      // nothing saved for this channel: without ?audio it is back on the preferred (English) track
+      expect((await info(`/api/play/live/${id}`)).tracks!.audioIndex).toBe(0);
+    } finally {
+      await get('/api/play/stop', { method: 'POST' });
+    }
+  });
+
+  test('saving a choice: unknown channels and kinds are 404', async () => {
+    const put = { method: 'PUT', body: JSON.stringify({ audio: 1 }), headers: json };
+    expect((await get('/api/tracks/live/nope-404', put)).status).toBe(404);
+    expect((await get(`/api/tracks/series/${ml.ids[0]}`, put)).status).toBe(404);
   });
 });
 
