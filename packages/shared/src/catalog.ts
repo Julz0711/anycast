@@ -1,4 +1,5 @@
 /** Catalog types shared by server and web. All ids are AnyCast ids (strings), never provider URLs. */
+import type { PlaybackTracks } from './tracks';
 
 export type MediaKind = 'live' | 'movie' | 'series';
 
@@ -213,4 +214,6 @@ export interface PlaybackInfo {
   resumeAt?: number;
   /** For episodes: the parent series */
   seriesId?: string;
+  /** Audio and subtitle tracks of the source and which ones this stream uses (PB-3) */
+  tracks?: PlaybackTracks;
 }
