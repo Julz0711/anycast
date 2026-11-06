@@ -49,12 +49,30 @@ test('stats panel: I toggles it, it names the pipeline and codecs; Media Session
   await expect.poll(() => page.evaluate(() => navigator.mediaSession.metadata)).toBeNull();
 });
 
-test('picture in picture button follows browser support', async ({ profile }) => {
+test('picture in picture button follows browser support; P toggles it, not while typing', async ({ profile }) => {
   const page = await profile.device();
   await page.goto(`/play/movie/${fx.movie.id}`);
   await expectPlaying(page);
   const supported = await page.evaluate(() => document.pictureInPictureEnabled);
-  await expect(page.getByRole('button', { name: 'Picture in picture' })).toHaveCount(supported ? 1 : 0);
+  const button = page.getByRole('button', { name: 'Picture in picture' });
+  await expect(button).toHaveCount(supported ? 1 : 0);
+  const inPip = () => page.evaluate(() => document.pictureInPictureElement?.tagName ?? null);
+
+  // typing a P in the jump box is just a letter
+  await page.getByRole('button', { name: 'Jump to time…' }).click();
+  const box = page.getByRole('textbox', { name: /Jump to a time/ });
+  await box.press('p');
+  await expect(box).toHaveValue('p');
+  expect(await inPip()).toBeNull();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  if (!supported) return;
+
+  await expect(button).toHaveAttribute('aria-keyshortcuts', 'P');
+  await page.keyboard.press('p');
+  await expect.poll(inPip).toBe('VIDEO');
+  await expect(page.getByRole('button', { name: 'Exit picture in picture' })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('P');
+  await expect.poll(inPip).toBeNull();
 });
 
 test.describe(() => {
