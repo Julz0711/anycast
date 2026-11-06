@@ -2,6 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { connectionsHint, DiagnosticsSection, fmtUptime } from './Diagnostics';
+import { probeSummary } from './HwEncoding';
 
 afterEach(cleanup);
 
@@ -25,4 +26,11 @@ test('non-admins see a one-line note instead of the server diagnostics, and noth
   expect(screen.queryByTestId('diagnostics')).toBeNull();
   expect(fetchSpy).not.toHaveBeenCalled();
   fetchSpy.mockRestore();
+});
+
+test('hardware encoder test summary', () => {
+  expect(probeSummary({ probes: [] })).toBeNull();
+  expect(probeSummary({ probes: [{ method: 'nvenc', ok: false, error: 'Cannot load libcuda.so.1' }, { method: 'vaapi', ok: true, error: null }] })).toBe(
+    'Tested: NVENC failed (Cannot load libcuda.so.1); VAAPI works.',
+  );
 });

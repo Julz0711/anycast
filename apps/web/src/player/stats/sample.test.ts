@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { PlaybackInfo } from '@anycast/shared';
-import { audioLine, bufferAhead, fmtBitrate, frameCounts, RateMeter, sourceOf, streamBytes, videoLine } from './sample';
+import { audioLine, bufferAhead, fmtBitrate, frameCounts, pipelineLine, RateMeter, sourceOf, streamBytes, videoLine } from './sample';
 
 const ranges = (...r: [number, number][]) => ({ length: r.length, start: (i: number) => r[i]![0], end: (i: number) => r[i]![1] }) as TimeRanges;
 
@@ -60,5 +60,15 @@ describe('stats sampling', () => {
     expect(sourceOf(pi('/api/stream/episode/1/video.mp4'), 'episode')).toBe('episode');
     const probe = { container: 'ts', duration: null, video: null, audio: [], subtitles: [] };
     expect(sourceOf(pi('/x', { diagnostics: { source: 'buffer', reason: '', probe, assumed: false } }), 'live')).toBe('buffer');
+  });
+
+  test('the pipeline line names the encoder of a full transcode', () => {
+    const probe = { container: 'mkv', duration: 60, video: null, audio: [], subtitles: [] };
+    const d = { source: 'movie' as const, reason: '', probe, assumed: false };
+    expect(pipelineLine({ pipeline: 'transcode', diagnostics: { ...d, videoEncoder: { active: 'h264_vaapi', method: 'vaapi', label: 'VAAPI' } } })).toBe('Full transcode (to H.264 + AAC) · VAAPI encoder');
+    expect(pipelineLine({ pipeline: 'transcode', diagnostics: { ...d, videoEncoder: { active: 'libx264', method: 'software', label: 'Software' } } })).toBe('Full transcode (to H.264 + AAC) · Software encoder');
+    // older servers do not say
+    expect(pipelineLine({ pipeline: 'transcode', diagnostics: d })).toBe('Full transcode (to H.264 + AAC)');
+    expect(pipelineLine({ pipeline: 'remux' })).toBe('Remux (no re-encoding)');
   });
 });

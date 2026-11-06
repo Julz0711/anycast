@@ -20,6 +20,7 @@ import { ListsManager } from '../components/ListEditor';
 import type { DeviceOverride, FormFactor } from '../lib/device';
 import { ParentalLock } from './ParentalLock';
 import { DiagnosticsSection } from './Diagnostics';
+import { HwEncoding } from './HwEncoding';
 import '../theme/settings.css';
 
 type P = Preferences;
@@ -268,6 +269,7 @@ const SUBTITLE_HINT: Record<P['player']['subtitlesDefault'], string> = {
 
 function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
   const p = prefs.player;
+  const isAdmin = useApp((s) => s.me?.user.isAdmin ?? false);
   return (
     <>
       <Row label="Audio language" hint="Played when a movie or channel has several. A track you pick in the player is remembered for that title.">
@@ -303,6 +305,7 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
           <Row label="Timeline" hint="What appears under the video on live channels.">
             <Segmented label="Timeline style" value={p.timelineStyle} options={opts<P['player']['timelineStyle']>(['ribbon', 'With programme blocks'], ['bar', 'Bar only'])} onChange={(v) => setPref('player', { timelineStyle: v })} />
           </Row>
+          {isAdmin && !isDemo() && <HwEncoding Row={Row} />}
         </>
       )}
     </>
