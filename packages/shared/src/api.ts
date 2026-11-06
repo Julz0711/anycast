@@ -74,6 +74,34 @@ export interface ThumbIndex {
   tiles: ThumbTile[];
 }
 
+/**
+ * Server diagnostics for Settings (admin only). Contains no provider URL, hostname or credentials,
+ * and no file system paths.
+ */
+export interface ServerDiagnostics {
+  version: string;
+  /** seconds since the server started */
+  uptimeSeconds: number;
+  node: string;
+  platform: string;
+  ffmpeg: { available: boolean; version: string | null };
+  ffprobe: { available: boolean; version: string | null };
+  /** H.264/HEVC hardware encoders this ffmpeg build lists (e.g. h264_nvenc, h264_vaapi). Detected only; AnyCast encodes with libx264. */
+  hwEncoders: string[];
+  connections: {
+    /** provider connections AnyCast holds right now */
+    active: number;
+    /** the provider's limit, null when unknown or unlimited */
+    max: number | null;
+    /** what holds them, e.g. "live", "movie", "timeshift" */
+    byKind: Record<string, number>;
+  };
+  /** HLS conversions (FFmpeg sessions) running now */
+  hlsSessions: number;
+  buffer: { enabled: boolean; bytes: number; maxBytes: number | null; recording: number };
+  thumbnails: { bytes: number } | null;
+}
+
 export interface Page<T> { items: T[]; total: number; }
 
 export interface LiveChannelWithNow extends Channel {
@@ -135,6 +163,8 @@ export type SyncEvent =
 /** Route table (method + path -> request/response). Documentation as code. */
 export interface Api {
   'GET /api/health': { res: { ok: true; version: string } };
+  /** Admin only (403 {error:'forbidden'} otherwise). */
+  'GET /api/diagnostics': { res: ServerDiagnostics };
   'POST /api/auth/login': { body: { username: string; password: string }; res: Me };
   'POST /api/auth/logout': { res: { ok: true } };
   'GET /api/me': { res: Me };

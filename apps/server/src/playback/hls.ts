@@ -306,6 +306,11 @@ export class HlsSessions {
     this.reaper.unref();
   }
 
+  /** sessions (FFmpeg conversions) open now */
+  get size(): number {
+    return this.sessions.size;
+  }
+
   get<T extends Session>(key: string): T | undefined {
     const s = this.sessions.get(key);
     if (s?.closed) {
