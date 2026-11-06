@@ -198,6 +198,34 @@ export interface TimelineInfo {
 
 export type Pipeline = 'passthrough' | 'remux' | 'transcode-audio' | 'transcode';
 
+/** Where a stream comes from: the live channel, the provider archive, the server's rolling buffer, or VOD. */
+export type StreamSource = 'live' | 'timeshift' | 'buffer' | 'movie' | 'episode';
+
+/** What the server's ffprobe saw in the source (codec names as ffprobe reports them: h264, hevc, aac, ac3, ...). */
+export interface StreamProbe {
+  /** normalized: mp4 | mkv | ts | webm | avi | ... */
+  container: string | null;
+  /** seconds, VOD only */
+  duration: number | null;
+  video: { codec: string; width: number | null; height: number | null; fps: number | null } | null;
+  audio: { codec: string; channels: number | null; language: string | null }[];
+  subtitles: { codec: string; language: string | null }[];
+}
+
+/**
+ * Why a stream is served the way it is (player "Stats" panel). Never contains provider URLs,
+ * hostnames or credentials: only codec facts and AnyCast's own decision.
+ */
+export interface PlaybackDiagnostics {
+  source: StreamSource;
+  /** one sentence: why this pipeline was chosen */
+  reason: string;
+  /** what ffprobe saw; when `assumed`, the typical codecs (or catalog facts) used instead */
+  probe: StreamProbe;
+  /** true when the probe failed (or was skipped) and the server assumed typical codecs */
+  assumed: boolean;
+}
+
 export interface PlaybackInfo {
   /** URL relative to the server origin, e.g. /api/stream/live/123/index.m3u8 */
   url: string;
@@ -213,4 +241,6 @@ export interface PlaybackInfo {
   resumeAt?: number;
   /** For episodes: the parent series */
   seriesId?: string;
+  /** How the server reached this decision (source, probe, reason), for the player's Stats panel */
+  diagnostics?: PlaybackDiagnostics;
 }

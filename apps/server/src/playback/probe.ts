@@ -6,13 +6,15 @@ export interface ProbeResult {
   /** normalized: mp4 | mkv | ts | webm | avi | hls | ... */
   container: string | null;
   duration: number | null;
-  video: { codec: string; width: number | null; height: number | null } | null;
+  /** fps: frames per second when ffprobe reports a frame rate (older cached probes have none) */
+  video: { codec: string; width: number | null; height: number | null; fps?: number } | null;
   audio: { codec: string; language: string | null; channels: number | null }[];
   subtitles: { codec: string; language: string | null }[];
 }
 
 interface FfprobeStream {
   codec_type?: string; codec_name?: string; width?: number; height?: number; channels?: number;
+  avg_frame_rate?: string; r_frame_rate?: string;
   tags?: Record<string, string>; disposition?: { attached_pic?: number };
 }
 interface FfprobeOutput { format?: { format_name?: string; duration?: string }; streams?: FfprobeStream[] }
@@ -25,14 +27,23 @@ function normalizeContainer(formatName: string | undefined): string | null {
   return formatName.split(',')[0] ?? null;
 }
 
+/** "30000/1001" -> 29.97; null for 0/0 and nonsense */
+export function parseFrameRate(raw: string | undefined): number | null {
+  if (!raw) return null;
+  const [n, d = '1'] = raw.split('/');
+  const fps = Number(n) / Number(d);
+  return Number.isFinite(fps) && fps > 0 && fps < 1000 ? Math.round(fps * 100) / 100 : null;
+}
+
 export function parseFfprobe(json: FfprobeOutput): ProbeResult {
   const streams = json.streams ?? [];
   const v = streams.find((s) => s.codec_type === 'video' && !s.disposition?.attached_pic);
   const duration = Number(json.format?.duration);
+  const fps = parseFrameRate(v?.avg_frame_rate) ?? parseFrameRate(v?.r_frame_rate);
   return {
     container: normalizeContainer(json.format?.format_name),
     duration: Number.isFinite(duration) && duration > 0 ? duration : null,
-    video: v?.codec_name ? { codec: v.codec_name, width: v.width ?? null, height: v.height ?? null } : null,
+    video: v?.codec_name ? { codec: v.codec_name, width: v.width ?? null, height: v.height ?? null, ...(fps ? { fps } : {}) } : null,
     audio: streams
       .filter((s) => s.codec_type === 'audio' && s.codec_name)
       .map((s) => ({ codec: s.codec_name!, language: s.tags?.language ?? null, channels: s.channels ?? null })),

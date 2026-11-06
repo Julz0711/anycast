@@ -1,5 +1,5 @@
 /** Playback orchestration: PlaybackInfo decisions and the stream endpoints behind them. */
-import type { PlaybackInfo, TimelineInfo } from '@anycast/shared';
+import type { PlaybackDiagnostics, PlaybackInfo, StreamProbe, StreamSource, TimelineInfo } from '@anycast/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import { Readable } from 'node:stream';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
@@ -11,7 +11,7 @@ import type { ClientCaps } from './caps';
 import type { HlsPipeline } from './ffmpeg';
 import { LiveFanouts } from './fanout';
 import { HlsError, HlsSessions, StreamHlsSession, VodHlsSession } from './hls';
-import { choosePipeline } from './pipeline';
+import { choosePipeline, explainPipeline, type PipelineChoice } from './pipeline';
 import { ProbeCache, type ProbeResult } from './probe';
 import { BufferManager } from './buffer';
 import { buildTimeline, gapAt, sourceAt, type TimelineSource } from './timeline';
@@ -27,6 +27,22 @@ const MAX_TIMESHIFT_MIN = 240;
 const REVOKE_MS = 10 * 60_000;
 
 const ASSUMED_LIVE: ProbeResult = { container: 'ts', duration: null, video: { codec: 'h264', width: null, height: null }, audio: [{ codec: 'aac', language: null, channels: 2 }], subtitles: [] };
+
+/** The probe as the client sees it (codec facts only). */
+export function toStreamProbe(p: ProbeResult): StreamProbe {
+  return {
+    container: p.container,
+    duration: p.duration,
+    video: p.video ? { codec: p.video.codec, width: p.video.width, height: p.video.height, fps: p.video.fps ?? null } : null,
+    audio: p.audio.map((a) => ({ codec: a.codec, channels: a.channels, language: a.language })),
+    subtitles: p.subtitles.map((t) => ({ codec: t.codec, language: t.language })),
+  };
+}
+
+function diagnose(source: StreamSource, probe: ProbeResult, assumed: boolean, caps: ClientCaps, choice: PipelineChoice): PlaybackDiagnostics {
+  const mode = source === 'movie' || source === 'episode' ? 'vod' : 'live';
+  return { source, reason: explainPipeline(probe, caps, mode, choice, assumed), probe: toStreamProbe(probe), assumed };
+}
 
 export class NotFoundError extends Error {
   readonly statusCode = 404;
@@ -244,6 +260,7 @@ export class PlaybackService {
       type: choice.type,
       pipeline: choice.pipeline,
       startsAt: Date.now(),
+      diagnostics: diagnose('live', probe, probe === ASSUMED_LIVE, caps, choice),
     };
   }
 
@@ -286,6 +303,7 @@ export class PlaybackService {
       type: choice.type,
       pipeline: choice.pipeline,
       startsAt: startMin * 60_000,
+      diagnostics: diagnose('timeshift', probe, probe === ASSUMED_LIVE, caps, choice),
     };
   }
 
@@ -294,10 +312,12 @@ export class PlaybackService {
     const probe = this.probes.cached(`live:${id}`) ?? ASSUMED_LIVE;
     const choice = choosePipeline({ ...probe, container: 'ts' }, caps, 'live');
     const base = `/api/stream/buffer/${encodeURIComponent(id)}/${run}/${seq}`;
+    const assumed = probe === ASSUMED_LIVE;
     if (choice.pipeline === 'transcode' || choice.pipeline === 'transcode-audio') {
-      return { url: `${base}/${choice.pipeline}/index.m3u8`, type: 'hls', pipeline: choice.pipeline, startsAt };
+      return { url: `${base}/${choice.pipeline}/index.m3u8`, type: 'hls', pipeline: choice.pipeline, startsAt, diagnostics: diagnose('buffer', probe, assumed, caps, choice) };
     }
-    return { url: `${base}/index.m3u8`, type: 'hls', pipeline: 'passthrough', startsAt };
+    const served: PipelineChoice = { pipeline: 'passthrough', type: 'hls' };
+    return { url: `${base}/index.m3u8`, type: 'hls', pipeline: 'passthrough', startsAt, diagnostics: diagnose('buffer', probe, assumed, caps, served) };
   }
 
   private requireBuffer(): BufferManager {
@@ -340,6 +360,7 @@ export class PlaybackService {
       pipeline: choice.pipeline,
       ...(resumeAt ? { resumeAt } : {}),
       ...(item.seriesId ? { seriesId: item.seriesId } : {}),
+      diagnostics: diagnose(kind, probe, probe === fallback, caps, choice),
     };
   }
 
