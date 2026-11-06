@@ -19,6 +19,14 @@ import type { Preferences } from './settings';
 
 export interface Profile { id: string; name: string; }
 
+/**
+ * A profile's own named, ordered list of live channels ("News", "Sport", "Kids"), LB-3.
+ * `channelIds` is in the user's order. Lists ignore hide rules: a channel the user put in a list
+ * stays in it (and visible there) even when its country, language or group is hidden.
+ */
+export interface ChannelList { id: string; name: string; channelIds: string[] }
+export const CHANNEL_LIST_LIMITS = { lists: 100, channels: 2000, name: 60 } as const;
+
 export interface Me {
   user: { id: string; username: string; isAdmin: boolean };
   profiles: Profile[];
@@ -95,6 +103,8 @@ export type SyncEvent =
   | { type: 'progress'; profileId: string; progress: Progress }
   | { type: 'preferences'; profileId: string; preferences: Preferences }
   | { type: 'hide-rules'; profileId: string; rules: HideRules }
+  /** the profile's channel lists, all of them in order, after any change */
+  | { type: 'lists'; profileId: string; lists: ChannelList[] }
   | { type: 'catalog-updated' }
   /**
    * Sent to the profile whose playback was stopped by another client taking over the connection.
@@ -125,6 +135,7 @@ export interface Api {
 
   /** hidden items already filtered out for the current profile; hasEpg=1: only channels with guide data */
   'GET /api/live': { query: { categoryId?: string; offset?: number; limit?: number; hasEpg?: '1' }; res: Page<LiveChannelWithNow> };
+  /** hidden channels are left out, except channels in one of the profile's lists */
   'GET /api/epg': { query: { channelIds: string; from: number; to: number }; res: Record<string, EpgProgram[]> };
   'GET /api/movies': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Movie> };
   'GET /api/series': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Series> };
@@ -173,6 +184,20 @@ export interface Api {
   /** includes `setupDone`, the per-profile first-run flag */
   'GET /api/preferences': { res: Preferences };
   'PUT /api/preferences': { body: Partial<Preferences>; res: Preferences };
+  /**
+   * Channel lists (LB-3), per profile, in the user's order. Errors: 404 not_found, 400 bad_request,
+   * 409 list_limit (more than CHANNEL_LIST_LIMITS). Every change sends a 'lists' SyncEvent.
+   */
+  'GET /api/lists': { res: ChannelList[] };
+  'POST /api/lists': { body: { name: string; channelIds?: string[] }; res: ChannelList };
+  'PATCH /api/lists/:id': { body: { name: string }; res: ChannelList };
+  'DELETE /api/lists/:id': { res: { ok: true } };
+  /** the whole new channel order (duplicates dropped); ids of unknown channels are kept, see GET channels */
+  'PUT /api/lists/:id/channels': { body: { channelIds: string[] }; res: ChannelList };
+  /** the new order of the lists; lists left out keep their relative order after the named ones */
+  'PUT /api/lists/order': { body: { ids: string[] }; res: ChannelList[] };
+  /** the list's channels with now/next, in list order; hide rules don't apply, channels gone from the catalog are left out */
+  'GET /api/lists/:id/channels': { res: LiveChannelWithNow[] };
   'GET /api/hide-rules': { res: HideRules };
   'PUT /api/hide-rules': { body: HideRules; res: HideRules };
 }

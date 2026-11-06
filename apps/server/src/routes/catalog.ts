@@ -6,6 +6,7 @@ import {
   toChannel, toEpisode, toMovie, toSeries, visibleChannels,
 } from '../catalog/store';
 import { auth, type Services } from '../context';
+import { listedChannelIds } from '../lists';
 import { search } from '../search';
 
 const PageQuery = z.object({
@@ -109,7 +110,11 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
     if (!q.success || q.data.to <= q.data.from) return reply.code(400).send({ error: 'bad_request', message: 'channelIds, from and to are required' });
     const ids = q.data.channelIds.split(',').map((x) => x.trim()).filter(Boolean).slice(0, 500);
     const to = Math.min(q.data.to, q.data.from + MAX_EPG_SPAN_MS);
-    return epgFor(s.db, visibleChannels(s.db, ids, rules(req)), q.data.from, to);
+    // channels in one of the profile's lists show their guide even when hide rules would hide them
+    const listed = listedChannelIds(s.db, auth(req).profileId);
+    const inLists = ids.filter((id) => listed.has(id));
+    const rows = [...visibleChannels(s.db, ids.filter((id) => !listed.has(id)), rules(req)), ...itemsByIds(s.db, 'live', inLists, EMPTY_RULES)];
+    return epgFor(s.db, rows, q.data.from, to);
   });
 
   app.get('/api/movies', async (req) => pageMovies(s.db, rules(req), PageQuery.parse(req.query)));

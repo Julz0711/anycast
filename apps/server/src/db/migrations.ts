@@ -207,4 +207,22 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX series_added ON series(added DESC, country, language, category_id);
   CREATE INDEX series_cat ON series(category_id, added DESC, country, language);
   `,
+  `
+  -- custom ordered channel lists per profile (LB-3); items keep channel ids even when a sync drops
+  -- the channel, so it comes back in place if the provider brings it back
+  CREATE TABLE channel_lists (
+    id TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX channel_lists_profile ON channel_lists(profile_id, position);
+  CREATE TABLE channel_list_items (
+    list_id TEXT NOT NULL REFERENCES channel_lists(id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (list_id, channel_id)
+  ) WITHOUT ROWID;
+  `,
 ];

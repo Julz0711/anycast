@@ -21,6 +21,7 @@ import { authRoutes, registerAuthHook } from './routes/auth';
 import { bufferRoutes } from './routes/buffer';
 import { catalogRoutes } from './routes/catalog';
 import { eventRoutes } from './routes/events';
+import { listRoutes } from './routes/lists';
 import { playbackRoutes } from './routes/playback';
 import { userDataRoutes } from './routes/userdata';
 import { SourceService } from './source';
@@ -111,6 +112,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   authRoutes(app, services);
   catalogRoutes(app, services);
   userDataRoutes(app, services);
+  listRoutes(app, services);
   playbackRoutes(app, services);
   bufferRoutes(app, services);
   eventRoutes(app, services);
