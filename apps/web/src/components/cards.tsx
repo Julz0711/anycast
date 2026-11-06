@@ -5,7 +5,8 @@ import type { LiveChannelWithNow, Movie, Series } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
 import { toneFor } from '../lib/misc';
 import { fmtClock, fmtDuration } from '../lib/time';
-import { IconStar } from './Icons';
+import { IconMore, IconStar } from './Icons';
+import { useChannelMenu } from './lists';
 import { LogoTile, ProgressBar } from './ui';
 import { prefetch } from '../api/client';
 import { prefetchPlayer } from '../player/prefetch';
@@ -69,16 +70,20 @@ export const ChannelRow = memo(function ChannelRow(props: {
   category?: string;
   /** the caller shows its own star */
   noFavMark?: boolean;
+  /** channel menu ("Add to list"): a ⋯ button next to the row, right-click and long-press on it */
+  onMenu?: (ch: LiveChannelWithNow) => void;
 }) {
-  const { ch, now } = props;
+  const { ch, now, onMenu } = props;
   const live = useApp((s) => s.prefs.live);
+  const menu = useChannelMenu(onMenu ? () => onMenu(ch) : undefined);
   const fav = useIsFavorite('live', ch.id);
   const p = ch.now;
   const pct = p ? (now - p.start) / (p.end - p.start) : 0;
-  return (
+  const row = (
     <button
       type="button"
       className="ch-row"
+      {...menu}
       onClick={() => props.onOpen(ch.id)}
       onMouseEnter={prefetchPlayer}
       onFocus={prefetchPlayer}
@@ -107,5 +112,14 @@ export const ChannelRow = memo(function ChannelRow(props: {
         )}
       </div>
     </button>
+  );
+  if (!onMenu) return row;
+  return (
+    <>
+      {row}
+      <button type="button" className="ch-more" aria-label={`More for ${ch.name}`} title="Add to list…" onClick={() => onMenu(ch)}>
+        <IconMore />
+      </button>
+    </>
   );
 });

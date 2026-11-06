@@ -67,6 +67,12 @@ export const IconDrag = (p: SVGProps<SVGSVGElement>) => (
 export const IconRefresh = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M20 11a8 8 0 10-2.3 5.7M20 5v6h-6" /></svg>
 );
+export const IconMore = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M6 12h.01M12 12h.01M18 12h.01" strokeWidth={3.2} /></svg>
+);
+export const IconListAdd = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 6h11M4 12h11M4 18h7M17 15v6M14 18h6" /></svg>
+);
 
 /** The AnyCast mark: a rounded screen with a thin ribbon under it. */
 export const BrandMark = () => (

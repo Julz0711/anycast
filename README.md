@@ -8,7 +8,8 @@ installable PWA) to every device in the house: phone, laptop, tablet and TV brow
 - **Rewind and catch-up:** a timeline per channel built from the provider's archive and a rolling
   buffer the server records while you watch. Pinned channels keep a buffer all the time.
 - **Movies and series** with resume, continue watching and autoplay of the next episode.
-- **Profiles** with their own favorites, progress, settings and language filters, synced live
+- **Channel lists:** your own ordered lists ("News", "Sport") as chips in Live TV; zapping follows the list.
+- **Profiles** with their own favorites, channel lists, progress, settings and language filters, synced live
   across devices.
 - **Plays anywhere:** the server remuxes or transcodes with FFmpeg only what a device can't play.
 - **Your login stays on your server.** The provider URL, username and password are stored
@@ -117,7 +118,7 @@ The end-to-end suite starts the mock (small catalog) and the server on free port
 temporary data and buffer directory, and drives Chromium through the main scenarios: rewinding to
 a missed start, resuming a movie on another device, binge-watching with the next-episode countdown,
 filtering languages in the first-run setup, zapping with the keyboard, playing a past programme
-from the guide, and realtime sync of favorites and accent color. A second mock and server with a
+from the guide, realtime sync of favorites and accent color, and building a channel list that shows up in order on a second device. A second mock and server with a
 single provider connection cover zapping without ever holding two streams and taking playback
 over from another device. It needs Playwright's Chromium
 (`pnpm --filter @anycast/web exec playwright install chromium` once). Set `E2E_DEBUG=1` to see the

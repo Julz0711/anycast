@@ -26,13 +26,23 @@ const shots = [
   ['favorites-live', '/favorites/live', { live: { layoutPhone: 'simple' } }],
   ['favorites-movies', '/favorites/movies', {}],
   ['favorites-series-az', '/favorites/series', {}, 700, { 'anycast.favSort': 'az' }],
+  // channel lists (LB-3): a list chip selected, the add-to-list sheet, the list editor, Settings
+  ['lists-live', '/live', { live: { layoutPhone: 'simple', layoutLarge: 'simple', layoutTv: 'simple' } }, 700, { 'anycast.liveCat': 'list:l1' }],
+  ['lists-live-extended', '/live', { live: { layoutPhone: 'extended', layoutLarge: 'extended', layoutTv: 'extended' } }, 900, { 'anycast.liveCat': 'list:l2' }],
+  ['lists-add-sheet', '/live', { live: { layoutPhone: 'simple', layoutLarge: 'simple', layoutTv: 'simple' } }, 700, { 'anycast.liveCat': 'list:l1' },
+    (page) => page.locator('.ch-more').nth(1).click()],
+  ['lists-editor', '/live', { live: { layoutPhone: 'simple', layoutLarge: 'simple', layoutTv: 'simple' } }, 700, { 'anycast.liveCat': 'list:l1' },
+    (page) => page.getByRole('button', { name: 'Edit list News' }).click()],
+  ['lists-settings', '/settings', { settingsMode: 'all' }, 700, {},
+    (page) => page.locator('#set-lists').evaluate((el) => el.scrollIntoView({ block: 'start' }))],
+  ['lists-player', '/play/live/ch131', {}, 1500, {}, (page) => page.getByRole('button', { name: 'Add to list' }).first().click()],
 ];
 
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const problems = [];
 for (const [dev, cfg] of Object.entries(devices)) {
-  for (const [name, path, prefs, extraWait = 700, local = {}] of shots) {
-    const file = name.startsWith('favorites') ? `${name}-${dev}.png` : `${dev}-${name}.png`;
+  for (const [name, path, prefs, extraWait = 700, local = {}, action] of shots) {
+    const file = /^(favorites|lists)/.test(name) ? `${name}-${dev}.png` : `${dev}-${name}.png`;
     if (filter && !file.includes(filter)) continue;
     const ctx = await browser.newContext({ viewport: cfg.viewport, deviceScaleFactor: cfg.deviceScaleFactor, isMobile: cfg.isMobile, hasTouch: cfg.hasTouch });
     const p = { ...prefs, appearance: { accent: cfg.accent } };
@@ -49,6 +59,10 @@ for (const [dev, cfg] of Object.entries(devices)) {
     const sep = cfg.q ? (path.includes('?') ? '&' + cfg.q.slice(1) : cfg.q) : '';
     await page.goto(BASE + path + sep, { waitUntil: 'networkidle' });
     await page.waitForTimeout(extraWait);
+    if (action) {
+      await action(page);
+      await page.waitForTimeout(600);
+    }
     // horizontal overflow check
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     if (overflow > 0) problems.push(`${file}: horizontal overflow ${overflow}px`);

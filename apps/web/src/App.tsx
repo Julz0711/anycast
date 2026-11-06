@@ -18,6 +18,7 @@ import { markSetupDone } from './store/actions';
 import { call } from './api/client';
 import { readLocal } from './lib/storage';
 import { Skeleton } from './components/ui';
+import { AddToListHost } from './components/lists';
 
 const SettingsScreen = lazy(() => import('./screens/Settings'));
 const PlayerScreen = lazy(() => import('./player/PlayerScreen'));
@@ -133,6 +134,7 @@ export function App() {
       <ThemeSync />
       <SpatialNav />
       {auth === 'unknown' ? <Splash /> : auth === 'anon' ? <LoginScreen /> : <AuthedRoutes />}
+      {auth === 'authed' && <AddToListHost />}
       <Toasts />
     </BrowserRouter>
   );

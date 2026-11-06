@@ -1,5 +1,5 @@
 /** Live TV: Simple (virtualized channel list) or Extended (guide grid), per-form-factor layout preference. */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Category, EpgProgram, LiveChannelWithNow } from '@anycast/shared';
@@ -14,9 +14,14 @@ import { ChannelRow } from '../components/cards';
 import { Empty, LogoTile, ProgressBar, Segmented, Skeleton } from '../components/ui';
 import { CategoryChips } from '../components/CategoryChips';
 import { GuideGrid, type ChannelSource } from '../components/GuideGrid';
-import { IconSearch, IconStar } from '../components/Icons';
+import { IconListAdd, IconSearch, IconStar } from '../components/Icons';
+import { openAddToList } from '../store/lists';
 import type { FormFactor } from '../lib/device';
 import { prefetchPlayer } from '../player/prefetch';
+
+const ListEditorSheet = lazy(() => import('../components/ListEditor').then((m) => ({ default: m.ListEditorSheet })));
+const LIST_PREFIX = 'list:';
+const menuFor = (ch: LiveChannelWithNow) => openAddToList(ch);
 
 const LAYOUT_KEY = { phone: 'layoutPhone', large: 'layoutLarge', tv: 'layoutTv' } as const;
 export const catLabel = (c: Category) => c.name.replace(/\s*\|\s*/, ' · ');
@@ -31,6 +36,13 @@ export function LiveScreen() {
   const hiddenSearch = useApp((s) => s.prefs.start.hiddenTabs.includes('search'));
   const navigate = useNavigate();
   const [cat, setCat] = useState(() => readLocal('anycast.liveCat') ?? 'all');
+  const lists = useApp((s) => s.lists);
+  const listsLoaded = useApp((s) => s.listsLoaded);
+  const list = cat.startsWith(LIST_PREFIX) ? lists.find((l) => l.id === cat.slice(LIST_PREFIX.length)) : undefined;
+  const listKey = list ? `${list.id}:${list.channelIds.join(',')}` : '';
+  const [editing, setEditing] = useState(false);
+  // every channel of the open list (lists load whole), for zapping in the list's order
+  const listChannels = useRef<LiveChannelWithNow[]>([]);
   const cats = useAsync(() => visibleCategories('live', rules), [rules, version]);
 
   const favs = useAsync(
@@ -40,21 +52,40 @@ export function LiveScreen() {
   const favChannels = ((favs.data ?? []) as LiveChannelWithNow[]).filter((c) => !live.guideOnlyWithEpg || c.hasEpg);
 
   const onlyEpg = live.guideOnlyWithEpg;
-  const lead = useMemo(() => [{ id: 'all', label: 'All' }, ...(favIds ? [{ id: 'fav', label: 'Favorites' }] : [])], [favIds]);
+  const listChips = lists.map((l) => `${l.id}\u0000${l.name}`).join('\u0001');
+  const lead = useMemo(
+    () => [
+      { id: 'all', label: 'All' },
+      ...(favIds ? [{ id: 'fav', label: 'Favorites' }] : []),
+      // the user's own lists, right after Favorites and before the provider's groups
+      ...lists.map((l) => ({ id: LIST_PREFIX + l.id, label: l.name })),
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [favIds, listChips],
+  );
   const catChips = useMemo(() => (cats.data ?? []).map((c) => ({ id: c.id, label: catLabel(c) })), [cats.data]);
   const chips = useMemo(() => [...lead, ...catChips], [lead, catChips]);
   const catNames = useMemo(() => new Map(catChips.map((c) => [c.id, c.label])), [catChips]);
   useEffect(() => {
-    if (cats.data && !chips.some((c) => c.id === cat)) setCat('all');
-  }, [chips, cat, cats.data]);
+    if (cats.data && listsLoaded && !chips.some((c) => c.id === cat)) setCat('all');
+  }, [chips, cat, cats.data, listsLoaded]);
   const pick = (id: string) => {
     setCat(id);
     writeLocal('anycast.liveCat', id);
   };
 
   const paged = usePagedList<LiveChannelWithNow>(
-    `${cat}|${version}|${cat === 'fav' ? favIds : ''}|${onlyEpg ? 'epg' : ''}`,
+    `${cat}|${version}|${cat === 'fav' ? favIds : ''}|${listKey}|${onlyEpg ? 'epg' : ''}`,
     async (offset, limit, signal) => {
+      if (cat.startsWith(LIST_PREFIX)) {
+        const id = cat.slice(LIST_PREFIX.length);
+        if (!useApp.getState().lists.some((l) => l.id === id)) return { items: [], total: 0 };
+        const all = await call('GET /api/lists/:id/channels', { params: { id }, signal });
+        remember('live', all);
+        const items = onlyEpg ? all.filter((c) => c.hasEpg) : all;
+        listChannels.current = items;
+        return { items: items.slice(offset, offset + limit), total: items.length };
+      }
       if (cat === 'fav') {
         const all = (await resolveItems('live', favIds ? favIds.split(',') : [], { signal, fresh: true })) as LiveChannelWithNow[];
         const items = onlyEpg ? all.filter((c) => c.hasEpg) : all;
@@ -71,11 +102,12 @@ export function LiveScreen() {
   const open = useCallback(
     (ch: LiveChannelWithNow | string, at?: number) => {
       const id = typeof ch === 'string' ? ch : ch.id;
-      setZapList(source.loaded().map((c) => c.id));
+      // zapping follows what the channel was opened from: the open list in its order, or the loaded group
+      setZapList((cat.startsWith(LIST_PREFIX) ? listChannels.current : source.loaded()).map((c) => c.id));
       writeLocal('anycast.lastChannel', id);
       navigate(at ? `/play/live/${id}?at=${at}` : `/play/live/${id}`);
     },
-    [navigate, source],
+    [navigate, source, cat],
   );
 
   return (
@@ -110,7 +142,7 @@ export function LiveScreen() {
             )}
           </div>
         </div>
-        {layout === 'extended' && form !== 'phone' && <Hero source={source} favChannels={favChannels} onPlay={open} />}
+        {layout === 'extended' && form !== 'phone' && <Hero source={source} favChannels={list ? [] : favChannels} onPlay={open} />}
         {cats.loading && !cats.data ? (
           <div className="chips" aria-hidden="true">
             {[4, 5, 4, 6, 5].map((w, i) => (
@@ -120,15 +152,32 @@ export function LiveScreen() {
         ) : (
           <CategoryChips label="Channel groups" noun="groups" lead={lead} categories={catChips} value={cat} onChange={pick} />
         )}
+        {list && (
+          <div className="list-bar">
+            <span className="lb-count tabnum">
+              {list.channelIds.length} {list.channelIds.length === 1 ? 'channel' : 'channels'} · your order
+            </span>
+            <button type="button" className="btn btn-quiet" onClick={() => setEditing(true)} aria-label={`Edit list ${list.name}`}>
+              Edit
+            </button>
+          </div>
+        )}
+        {editing && list && (
+          <Suspense fallback={null}>
+            <ListEditorSheet listId={list.id} onClose={() => setEditing(false)} />
+          </Suspense>
+        )}
       </div>
       {source.error ? (
         <Empty title="Couldn't load channels">
           <p>{errorMessage(source.error)}</p>
         </Empty>
       ) : source.total === 0 ? (
-        <Empty title={cat === 'fav' ? 'No favorite channels yet' : 'No channels here'}>
+        <Empty title={cat === 'fav' ? 'No favorite channels yet' : list && !list.channelIds.length ? `${list.name} is empty` : 'No channels here'}>
           <p>
-            {onlyEpg
+            {list && !list.channelIds.length
+              ? 'Add channels with the ⋯ button on a channel (or right-click / long-press it), or from the player.'
+              : onlyEpg
               ? 'No channel here has guide data. Turn off "Only channels with a guide" to see them all.'
               : cat === 'fav'
                 ? 'Open a channel and tap the star to add it.'
@@ -136,7 +185,7 @@ export function LiveScreen() {
           </p>
         </Empty>
       ) : layout === 'extended' ? (
-        <GuideGrid source={source as ChannelSource} form={form} onPlay={open} onSelect={heroSelect} />
+        <GuideGrid source={source as ChannelSource} form={form} onPlay={open} onSelect={heroSelect} onMenu={menuFor} />
       ) : (
         <SimpleList source={source} favorites={cat === 'all' ? favChannels : []} form={form} onOpen={open} catNames={catNames} />
       )}
@@ -213,6 +262,9 @@ function Hero(props: { source: ChannelSource & { total: number | null }; favChan
           )}
           <button type="button" className={`btn${fav ? ' on' : ''}`} onClick={() => void toggleFavorite('live', ch.id)} aria-pressed={fav}>
             <IconStar filled={fav} /> {fav ? 'Favorite' : 'Add favorite'}
+          </button>
+          <button type="button" className="btn" onClick={() => openAddToList(ch)}>
+            <IconListAdd /> Add to list
           </button>
         </div>
       </div>
@@ -295,8 +347,8 @@ function SimpleList(props: { source: PagedList<LiveChannelWithNow>; favorites: L
                 if (source.total !== null && i >= source.total) return <div key={c} />;
                 const ch = source.get(i);
                 return ch ? (
-                  <div role="listitem" key={c}>
-                    <ChannelRow ch={ch} now={now} onOpen={props.onOpen} showNext={form !== 'phone'} category={props.catNames.get(ch.categoryId)} />
+                  <div role="listitem" key={c} className="ch-cell">
+                    <ChannelRow ch={ch} now={now} onOpen={props.onOpen} showNext={form !== 'phone'} category={props.catNames.get(ch.categoryId)} onMenu={menuFor} />
                   </div>
                 ) : (
                   <RowSkeleton key={c} />

@@ -4,7 +4,7 @@
  */
 import {
   DEFAULT_PREFERENCES, FINISHED_THRESHOLD, mergePreferences,
-  type Channel, type Favorite, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
+  type Channel, type ChannelList, type Favorite, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
   type Preferences, type Profile, type Progress, type Series, type SourceStatus, type SyncEvent, type TagSummary, type TimelineInfo,
 } from '@anycast/shared';
 import { ApiError } from '../api/client';
@@ -19,6 +19,7 @@ interface ProfileState {
   progress: Map<string, Progress>;
   prefs: Preferences;
   rules: HideRules;
+  lists: ChannelList[];
 }
 
 let signedIn = true;
@@ -44,6 +45,11 @@ function state(pid: string | null): ProfileState {
       progress: new Map(),
       prefs: mergePreferences(loadSession(`prefs.${id}`) ?? DEFAULT_PREFERENCES),
       rules: { countries: [], languages: ['tr', 'ar'], categoryIds: [] },
+      lists: [
+        { id: 'l1', name: 'News', channelIds: [ch(131), ch(134), ch(132), ch(133), ch(136)] },
+        { id: 'l2', name: 'Sport', channelIds: [ch(111), ch(113), ch(112), ch(115)] },
+        { id: 'l3', name: 'Kids', channelIds: [ch(141), ch(143)] },
+      ].filter(() => id === 'p1'),
     };
     const seed: Progress[] = [
       { kind: 'movie', id: 'm1', position: 4360, duration: 7080, finished: false, updatedAt: now - 3600_000 },
@@ -337,6 +343,44 @@ const routes: [string, RegExp, Handler][] = [
     emit({ type: 'preferences', profileId: currentPid, preferences: st.prefs });
     return st.prefs;
   }],
+  ['GET', /^\/api\/lists$/, (_m, _q, _b, st) => st.lists],
+  ['POST', /^\/api\/lists$/, (_m, _q, body, st) => {
+    const b = body as { name: string; channelIds?: string[] };
+    const l: ChannelList = { id: `l${Date.now()}`, name: b.name.trim(), channelIds: [...new Set(b.channelIds ?? [])] };
+    st.lists.push(l);
+    emitLists(st);
+    return l;
+  }],
+  ['PUT', /^\/api\/lists\/order$/, (_m, _q, body, st) => {
+    const ids = (body as { ids: string[] }).ids;
+    const named = ids.flatMap((id) => st.lists.filter((l) => l.id === id));
+    st.lists = [...named, ...st.lists.filter((l) => !named.includes(l))];
+    emitLists(st);
+    return st.lists;
+  }],
+  ['PATCH', /^\/api\/lists\/([^/]+)$/, (m, _q, body, st) => {
+    const l = findList(st, m[1]!);
+    l.name = (body as { name: string }).name.trim();
+    emitLists(st);
+    return l;
+  }],
+  ['DELETE', /^\/api\/lists\/([^/]+)$/, (m, _q, _b, st) => {
+    findList(st, m[1]!);
+    st.lists = st.lists.filter((l) => l.id !== m[1]);
+    emitLists(st);
+    return { ok: true };
+  }],
+  ['PUT', /^\/api\/lists\/([^/]+)\/channels$/, (m, _q, body, st) => {
+    const l = findList(st, m[1]!);
+    l.channelIds = [...new Set((body as { channelIds: string[] }).channelIds)];
+    emitLists(st);
+    return l;
+  }],
+  // like the server, lists ignore hide rules
+  ['GET', /^\/api\/lists\/([^/]+)\/channels$/, (m, _q, _b, st) => {
+    const now = Date.now();
+    return findList(st, m[1]!).channelIds.flatMap((id) => fx.channels.filter((c) => c.id === id)).map((c) => withNow(c, now));
+  }],
   ['GET', /^\/api\/hide-rules$/, (_m, _q, _b, st) => st.rules],
   ['PUT', /^\/api\/hide-rules$/, (_m, _q, body, st) => {
     st.rules = body as HideRules;
@@ -344,6 +388,13 @@ const routes: [string, RegExp, Handler][] = [
     return st.rules;
   }],
 ];
+
+function findList(st: ProfileState, id: string) {
+  const l = st.lists.find((x) => x.id === id);
+  if (!l) throw new ApiError(404, 'List not found');
+  return l;
+}
+const emitLists = (st: ProfileState) => emit({ type: 'lists', profileId: currentPid, lists: structuredClone(st.lists) });
 
 let syncingUntil = 0;
 const pins = new Set<string>();

@@ -114,6 +114,7 @@ src/
   search.ts               FTS5 search (prefix tokens, folds diacritics)
   progress.ts             finished threshold, continue watching
   userdata.ts, events.ts  per-profile favorites/progress/preferences/hide rules, SSE bus
+  lists.ts                per-profile ordered channel lists (they ignore hide rules on purpose)
   auth/users.ts           users (argon2), sessions (sha256 of token), profiles
   playback/               caps, ffprobe cache, pipeline choice, connection pool, live fan-out,
                           HLS sessions, timeline sources, PlaybackService

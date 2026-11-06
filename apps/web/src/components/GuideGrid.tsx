@@ -65,6 +65,8 @@ export function GuideGrid(props: {
   source: ChannelSource;
   form: FormFactor;
   onPlay: (ch: LiveChannelWithNow, at?: number) => void;
+  /** channel menu (Add to list): right-click / long-press on the channel cell */
+  onMenu?: (ch: LiveChannelWithNow) => void;
   onSelect?: (ch: LiveChannelWithNow, p: EpgProgram | null) => void;
 }) {
   const { source, form } = props;
@@ -193,7 +195,13 @@ export function GuideGrid(props: {
               <div key={v.key} className="guide-row" role="row" style={{ top: v.start, height: rowH, width: totalW }} data-nav-row={`g${v.index}`}>
                 {ch ? (
                   <>
-                    <button type="button" className="guide-ch" style={{ width: chW }} onClick={() => props.onPlay(ch)} aria-label={`${ch.number} ${ch.name}, watch live`}>
+                    <button
+                      type="button"
+                      className="guide-ch"
+                      style={{ width: chW }}
+                      onClick={() => props.onPlay(ch)}
+                      onContextMenu={props.onMenu ? (e) => (e.preventDefault(), props.onMenu!(ch)) : undefined}
+                      aria-label={`${ch.number} ${ch.name}, watch live`}>
                       {showNumbers && form !== 'phone' && <span className="guide-ch-num tabnum">{ch.number}</span>}
                       {showLogos && <LogoTile name={ch.name} logo={ch.logo} small />}
                       <span className="guide-ch-text">
@@ -249,6 +257,8 @@ const Programs = memo(function Programs(props: {
   /** width of the visible time area */
   viewW: number;
   onPlay: (ch: LiveChannelWithNow, at?: number) => void;
+  /** channel menu (Add to list): right-click / long-press on the channel cell */
+  onMenu?: (ch: LiveChannelWithNow) => void;
   onSelect?: (ch: LiveChannelWithNow, p: EpgProgram | null) => void;
 }) {
   const { ch, programs, now, x } = props;

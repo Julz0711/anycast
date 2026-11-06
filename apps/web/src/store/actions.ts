@@ -7,6 +7,7 @@ import type { DeviceOverride } from '../lib/device';
 import { EMPTY_RULES, progressKey, useApp } from './app';
 import { isDemo } from '../demo/flag';
 import { clientId } from '../lib/client-id';
+import { applyListsEvent } from './lists';
 
 const get = useApp.getState;
 const set = useApp.setState;
@@ -75,6 +76,8 @@ export function selectProfile(id: string) {
     progress: {},
     hideRules: EMPTY_RULES,
     hideRulesLoaded: false,
+    lists: [],
+    listsLoaded: false,
     catalogVersion: get().catalogVersion + 1,
   });
   void loadProfileData();
@@ -88,11 +91,12 @@ export function clearProfile() {
 
 export async function loadProfileData() {
   const pid = get().profileId;
-  const [prefs, favs, progress, rules] = await Promise.allSettled([
+  const [prefs, favs, progress, rules, lists] = await Promise.allSettled([
     call('GET /api/preferences'),
     call('GET /api/favorites'),
     call('GET /api/progress'),
     call('GET /api/hide-rules'),
+    call('GET /api/lists'),
   ]);
   if (get().profileId !== pid) return;
   if (prefs.status === 'fulfilled' && !pendingPrefs) setPrefsFromServer(prefs.value);
@@ -102,6 +106,8 @@ export async function loadProfileData() {
   if (progress.status === 'fulfilled') set({ progress: Object.fromEntries(progress.value.map((p) => [progressKey(p.kind, p.id), p])) });
   if (rules.status === 'fulfilled') set({ hideRules: rules.value, hideRulesLoaded: true });
   else set({ hideRulesLoaded: true });
+  if (lists.status === 'fulfilled') set({ lists: lists.value, listsLoaded: true });
+  else set({ listsLoaded: true });
 }
 
 function setPrefsFromServer(p: Preferences) {
@@ -237,6 +243,9 @@ export function applyEvent(ev: SyncEvent) {
     case 'hide-rules':
       clearApiCache();
       set((s) => ({ hideRules: ev.rules, catalogVersion: s.catalogVersion + 1 }));
+      break;
+    case 'lists':
+      applyListsEvent(ev.lists);
       break;
     case 'catalog-updated':
       clearApiCache();
