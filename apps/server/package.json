@@ -9,7 +9,8 @@
     "doctor": "tsx src/doctor/cli.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:perf": "vitest run -c vitest.perf.config.ts"
   },
   "dependencies": {
     "@anycast/shared": "workspace:*",
@@ -20,13 +21,13 @@
     "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.7",
     "fastify": "^5.1.0",
+    "tsx": "^4.19.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@anycast/mock-xtream": "workspace:*",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
   }

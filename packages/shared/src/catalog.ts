@@ -10,6 +10,8 @@ export interface Category {
   country: string | null;
   /** ISO 639-1, lower-case (e.g. "de", "en"); null if unknown */
   language: string | null;
+  /** XXX / adult / 18+ categories (PIN lock later) */
+  adult: boolean;
 }
 
 export interface Channel {
@@ -25,6 +27,8 @@ export interface Channel {
   /** Days of provider catchup; 0 = no archive */
   archiveDays: number;
   epgChannelId: string | null;
+  /** The guide has programmes for this channel (many panels have guide data for few channels) */
+  hasEpg: boolean;
 }
 
 export interface EpgProgram {
@@ -119,13 +123,66 @@ export interface TimelineRange {
   source: 'archive' | 'buffer' | 'live';
 }
 
+/**
+ * Why a stretch of the timeline cannot be played. Clients format `at` (epoch ms) in the viewer's
+ * time zone with `describeGap`; `TimelineGap.reason` is the same text formatted on the server.
+ */
+export type GapCode =
+  /** the channel has no provider archive (with `at`: and the rolling buffer starts at `at`) */
+  | 'no_archive'
+  /** nothing covers this time */
+  | 'not_recorded'
+  /** the buffer stopped: nobody was watching */
+  | 'idle'
+  /** the buffer stopped: the channel was unpinned */
+  | 'unpinned'
+  /** the buffer stopped: the server was stopped */
+  | 'stopped'
+  /** the buffer stopped: the server restarted */
+  | 'restarted'
+  /** the upstream stream dropped */
+  | 'dropped'
+  /** the recording has a hole (upstream hiccup) */
+  | 'interrupted';
+
+export interface GapCause {
+  code: GapCode;
+  /** epoch ms, for codes that mention a time */
+  at?: number;
+}
+
+export interface TimelineGap {
+  start: number;
+  end: number;
+  /** human text (server time zone); prefer `describeGap(cause, fmt)` on clients */
+  reason: string;
+  cause: GapCause;
+}
+
+const GAP_TEXT: Record<GapCode, string> = {
+  no_archive: 'This channel has no archive',
+  not_recorded: 'Not recorded',
+  idle: 'Not recorded: nobody was watching',
+  unpinned: 'Not recorded: the channel was unpinned',
+  stopped: 'Not recorded: the server was stopped',
+  restarted: 'Not recorded: the server restarted',
+  dropped: 'Stream dropped',
+  interrupted: 'Stream interrupted',
+};
+
+/** Human text for a gap cause; `clock` formats an epoch ms as a time of day (e.g. "21:03"). */
+export function describeGap(cause: GapCause, clock: (ms: number) => string): string {
+  const base = GAP_TEXT[cause.code] ?? GAP_TEXT.not_recorded;
+  return cause.at !== undefined && cause.code === 'no_archive' ? `${base} before ${clock(cause.at)}` : base;
+}
+
 export interface TimelineInfo {
   channelId: string;
   now: number;
   /** ranges that can be played, sorted ascending, non-overlapping */
   ranges: TimelineRange[];
-  /** gaps that cannot be played, with a human reason */
-  gaps: { start: number; end: number; reason: string }[];
+  /** gaps that cannot be played, with a reason */
+  gaps: TimelineGap[];
   programs: EpgProgram[];
 }
 
@@ -137,8 +194,13 @@ export interface PlaybackInfo {
   /** 'hls' for .m3u8, 'mpegts' for raw TS, 'file' for progressive mp4 */
   type: 'hls' | 'mpegts' | 'file';
   pipeline: Pipeline;
-  /** For live/timeshift: the epoch ms the stream starts at */
+  /**
+   * Live, archive and buffer streams: the wall-clock time (epoch ms) at media time 0, so
+   * wall time = startsAt + currentTime * 1000 (for streams whose media time starts at 0).
+   */
   startsAt?: number;
   /** For VOD: resume position in seconds */
   resumeAt?: number;
+  /** For episodes: the parent series */
+  seriesId?: string;
 }

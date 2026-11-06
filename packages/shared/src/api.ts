@@ -4,7 +4,12 @@
  * Every route except /api/auth/login and /api/health requires the session cookie.
  * Profile: requests carry header "x-anycast-profile: <profileId>" (defaults to the user's first profile).
  *
- * Realtime: GET /api/events is a Server-Sent Events stream. Events are SyncEvent JSON in `data:`.
+ * Artwork: logo/poster fields are /api/art/{kind}/{id} paths (provider hosts never reach the client).
+ * Realtime: GET /api/events?profile=<id> is a Server-Sent Events stream (EventSource cannot send headers). Events are SyncEvent JSON in `data:`.
+ *
+ * Playback clients: requests to /api/play/* carry "x-anycast-client: <id>" (one id per app instance, e.g. per tab) and
+ * "x-anycast-device: <label>" (e.g. "Chrome on Mac"). The server uses them to release a client's previous stream as soon as
+ * it asks for the next one (zapping never holds two provider connections) and to say who holds a busy connection.
  */
 import type {
   Category, Channel, EpgProgram, Episode, Favorite, HideRules, ItemRef, Movie, PlaybackInfo,
@@ -33,11 +38,28 @@ export interface SourceStatus {
   counts: { live: number; movie: number; series: number };
 }
 
+export interface BufferPins { channelIds: string[]; maxPins: number | null }
+export interface BufferChannelStatus {
+  channelId: string; name: string | null; pinned: boolean; recording: boolean;
+  ranges: { start: number; end: number }[]; durationMs: number; bytes: number;
+}
+export interface BufferStatus {
+  enabled: boolean; channels: BufferChannelStatus[]; totalBytes: number;
+  caps: { maxHoursPerChannel: number; maxBytes: number; maxPins: number | null };
+}
+
 export interface Page<T> { items: T[]; total: number; }
 
 export interface LiveChannelWithNow extends Channel {
   now: EpgProgram | null;
   next: EpgProgram | null;
+}
+
+/** Items by id, in the order asked for; unknown and hidden ids are left out. */
+export interface ItemsById {
+  live: LiveChannelWithNow[];
+  movies: Movie[];
+  series: Series[];
 }
 
 export interface SearchResults {
@@ -48,12 +70,37 @@ export interface SearchResults {
 
 export interface TagSummary { country: string | null; language: string | null; count: number; }
 
+/** Who is using the provider connection another client wants (409 on /api/play/*). */
+export interface ConnectionHolder {
+  profileName: string;
+  /** channel, movie or episode name */
+  channelName: string;
+  /** the holder's x-anycast-device label, if it sent one */
+  device?: string;
+}
+
+/**
+ * 409 body when every provider connection is used by other clients watching something else.
+ * POST /api/play/takeover stops that playback; then ask for the stream again.
+ */
+export interface ConnectionBusyError {
+  error: 'connection_busy';
+  message: string;
+  holder: ConnectionHolder;
+  canTakeOver: true;
+}
+
 export type SyncEvent =
   | { type: 'favorites'; profileId: string; favorites: Favorite[] }
   | { type: 'progress'; profileId: string; progress: Progress }
   | { type: 'preferences'; profileId: string; preferences: Preferences }
   | { type: 'hide-rules'; profileId: string; rules: HideRules }
-  | { type: 'catalog-updated' };
+  | { type: 'catalog-updated' }
+  /**
+   * Sent to the profile whose playback was stopped by another client taking over the connection.
+   * `clientId` is the stopped client's x-anycast-client id; other clients of the profile ignore it.
+   */
+  | { type: 'playback-stopped'; profileId: string; clientId: string; reason: 'taken-over'; by: { profileName: string; device?: string } };
 
 /** Route table (method + path -> request/response). Documentation as code. */
 export interface Api {
@@ -72,29 +119,58 @@ export interface Api {
   'GET /api/source': { res: SourceStatus };
   'POST /api/source/sync': { res: { ok: true } };
 
-  'GET /api/categories': { query: { kind: 'live' | 'movie' | 'series' }; res: Category[] };
+  /** all=1 includes categories hidden by the profile's rules (for Settings) */
+  'GET /api/categories': { query: { kind: 'live' | 'movie' | 'series'; all?: '1' }; res: Category[] };
   'GET /api/tags': { res: { countries: TagSummary[]; languages: TagSummary[] } };
 
-  /** hidden items already filtered out for the current profile */
-  'GET /api/live': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<LiveChannelWithNow> };
+  /** hidden items already filtered out for the current profile; hasEpg=1: only channels with guide data */
+  'GET /api/live': { query: { categoryId?: string; offset?: number; limit?: number; hasEpg?: '1' }; res: Page<LiveChannelWithNow> };
   'GET /api/epg': { query: { channelIds: string; from: number; to: number }; res: Record<string, EpgProgram[]> };
   'GET /api/movies': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Movie> };
   'GET /api/series': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Series> };
   'GET /api/series/:id': { res: SeriesDetail };
+  /** Hydrate items by id (favorites, deep links): comma-separated ids per kind, at most 500 each. Hidden items are left out. */
+  'GET /api/items': { query: { live?: string; movie?: string; series?: string }; res: ItemsById };
   'GET /api/search': { query: { q: string }; res: SearchResults };
 
+  /**
+   * Every /api/play/* route: 409 ConnectionBusyError when other clients hold every provider connection
+   * (same channel or title = shared, no conflict); 429 {error:'connection_limit', message} when the
+   * connections are in use and nobody can be named.
+   */
   'GET /api/play/live/:id': { res: PlaybackInfo };
-  /** at = epoch ms; returns a stream starting at that time (archive or buffer) */
+  /**
+   * at = epoch ms; returns a stream starting at that time (archive or buffer).
+   * When nothing covers `at`: 422 {error:'gap', message, cause: GapCause}.
+   */
   'GET /api/play/live/:id/at': { query: { at: number }; res: PlaybackInfo };
   'GET /api/timeline/:channelId': { res: TimelineInfo };
   'GET /api/play/movie/:id': { res: PlaybackInfo };
   'GET /api/play/episode/:id': { res: PlaybackInfo };
+  /**
+   * Stops the playback that holds the connection this client was refused (the holder named in the
+   * 409). The stopped client gets a 'playback-stopped' event. Streams of the stopped playback then
+   * answer 409 {error:'taken_over'} until someone asks for them again through /api/play/*.
+   */
+  'POST /api/play/takeover': { res: { ok: true; stopped: boolean } };
+  /** This client stopped watching (player closed): its provider connection is released now. */
+  'POST /api/play/stop': { res: { ok: true } };
+
+  /** Rolling buffer: pinned channels record continuously (TL-4) */
+  'GET /api/buffer/pins': { res: BufferPins };
+  /**
+   * Admin only (403 {error:'forbidden'} otherwise). 409 {error:'pin_limit', message} when every
+   * pinnable provider connection is taken; show the message as is.
+   */
+  'PUT /api/buffer/pins': { body: { channelId: string; pinned: boolean }; res: BufferPins };
+  'GET /api/buffer/status': { res: BufferStatus };
 
   'GET /api/favorites': { res: Favorite[] };
   'PUT /api/favorites': { body: { kind: Favorite['kind']; id: string; favorite: boolean }; res: Favorite[] };
   'GET /api/progress': { res: Progress[] };
   'PUT /api/progress': { body: Omit<Progress, 'updatedAt' | 'finished'>; res: Progress };
   'GET /api/continue': { res: { movies: (Movie & { progress: Progress })[]; episodes: (Episode & { progress: Progress; series: Series })[] } };
+  /** includes `setupDone`, the per-profile first-run flag */
   'GET /api/preferences': { res: Preferences };
   'PUT /api/preferences': { body: Partial<Preferences>; res: Preferences };
   'GET /api/hide-rules': { res: HideRules };

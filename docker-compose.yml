@@ -1,0 +1,21 @@
+services:
+  anycast:
+    build: .
+    image: anycast:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      BUFFER_DIR: /buffer
+    ports:
+      - "8787:8787"
+    volumes:
+      - anycast-data:/data
+      - anycast-buffer:/buffer
+    # Hardware transcoding (Intel/AMD): uncomment if your server has /dev/dri
+    # devices:
+    #   - /dev/dri:/dev/dri
+
+volumes:
+  anycast-data:
+  anycast-buffer:

@@ -4,12 +4,15 @@
   "type": "module",
   "packageManager": "pnpm@10.28.0",
   "scripts": {
-    "dev": "pnpm -r --parallel dev",
+    "dev": "pnpm --parallel --filter @anycast/server --filter @anycast/web dev",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "mock": "pnpm --filter @anycast/mock-xtream start",
-    "doctor": "pnpm --filter @anycast/server doctor"
+    "doctor": "pnpm --filter @anycast/server run doctor",
+    "e2e": "pnpm --filter @anycast/web e2e"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }

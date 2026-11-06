@@ -1,0 +1,53 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm --filter @anycast/web build
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @anycast/web exec playwright install --with-deps chromium
+      - run: pnpm e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            apps/web/e2e-report
+            apps/web/e2e-results
+          retention-days: 7
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t anycast:ci .
+      - name: Smoke test the image
+        run: |
+          docker run -d --name anycast -p 8787:8787 -e ANYCAST_SECRET=ci-secret-0123456789abcdef -e ANYCAST_ADMIN_USER=admin -e ANYCAST_ADMIN_PASSWORD=admin anycast:ci
+          for i in $(seq 1 30); do curl -fs http://localhost:8787/api/health && exit 0; sleep 2; done
+          docker logs anycast; exit 1
