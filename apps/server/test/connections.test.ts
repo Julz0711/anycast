@@ -246,6 +246,24 @@ describe('one provider connection', () => {
     expect(mock.state().peakConnections).toBe(1);
   });
 
+  test('switching the audio track of a movie reuses the one connection', async () => {
+    const movie = mock.catalog.movies.find((m) => m.profile === 'mkv_h264_eac3_multi')!;
+    const a = A();
+    const segOf = async (url: string, n: number) => {
+      const dir = url.replace(/[^/]+$/, '');
+      const res = await req(a, `${dir}seg/${n}.m4s`);
+      expect(res.status, `${dir}seg/${n}.m4s ${res.status === 200 ? '' : await res.clone().text()}`).toBe(200);
+      return (await res.arrayBuffer()).byteLength;
+    };
+    for (const [audio, n] of [[1, 0], [0, 3], [1, 5], [0, 0]] as const) {
+      const p = await play(a, `/api/play/movie/${movie.id}?audio=${audio}`);
+      expect(p.status, JSON.stringify(p.body)).toBe(200);
+      expect(p.body.tracks!.audioIndex).toBe(audio);
+      expect(await segOf(p.body.url, n)).toBeGreaterThan(1000);
+    }
+    expect(mock.state().peakConnections).toBe(1);
+  });
+
   test('no channel can be pinned: the one connection stays free for watching', async () => {
     const pins = (await (await req(null, '/api/buffer/pins')).json()) as { maxPins: number };
     expect(pins.maxPins).toBe(0);
