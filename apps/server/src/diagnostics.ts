@@ -88,12 +88,14 @@ export class Diagnostics {
       byKind[name] = (byKind[name] ?? 0) + 1;
     }
     const usage = p.buffer?.usage();
+    await p.hw.settled();
     return {
       version: VERSION,
       uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),
       node: process.versions.node,
       platform: `${process.platform}-${process.arch}`,
       ...(await this.toolInfo()),
+      videoEncoder: p.hw.status(),
       connections: { active: p.pool.active, max: this.s.source.maxConnections(), byKind },
       hlsSessions: p.sessions.size,
       buffer: usage ? { enabled: true, ...usage } : { enabled: false, bytes: 0, maxBytes: null, recording: 0 },

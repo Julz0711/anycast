@@ -13,7 +13,7 @@
  */
 import type {
   Category, Channel, EpgProgram, Episode, Favorite, HideRules, ItemRef, Movie, PlaybackInfo,
-  Progress, Series, SeriesDetail, TimelineInfo,
+  Progress, Series, SeriesDetail, TimelineInfo, HwAccelMethod, HwAccelSetting, VideoEncoderInfo,
 } from './catalog';
 import type { AdultMode, AdultStatus, UnlockMinutes } from './parental';
 import type { Preferences } from './settings';
@@ -87,8 +87,10 @@ export interface ServerDiagnostics {
   platform: string;
   ffmpeg: { available: boolean; version: string | null };
   ffprobe: { available: boolean; version: string | null };
-  /** H.264/HEVC hardware encoders this ffmpeg build lists (e.g. h264_nvenc, h264_vaapi). Detected only; AnyCast encodes with libx264. */
+  /** H.264/HEVC hardware encoders this ffmpeg build lists (e.g. h264_nvenc, h264_vaapi); listed is not the same as usable, see videoEncoder */
   hwEncoders: string[];
+  /** the encoder full transcodes use now, and why */
+  videoEncoder: VideoEncoderStatus;
   connections: {
     /** provider connections AnyCast holds right now */
     active: number;
@@ -101,6 +103,31 @@ export interface ServerDiagnostics {
   hlsSessions: number;
   buffer: { enabled: boolean; bytes: number; maxBytes: number | null; recording: number };
   thumbnails: { bytes: number } | null;
+}
+
+/** One hardware encoder test (a one second test encode through the same filter chain playback uses). */
+export interface HwAccelProbe {
+  method: HwAccelMethod;
+  ok: boolean;
+  /** why it failed: the first FFmpeg error line, without file system paths */
+  error: string | null;
+}
+
+/** Hardware encoding state (GET /api/diagnostics videoEncoder, GET/PUT /api/hwaccel). */
+export interface VideoEncoderStatus extends VideoEncoderInfo {
+  /** one sentence: why this encoder */
+  reason: string;
+  /** the setting in effect, and where it comes from (the ANYCAST_HWACCEL environment variable, or an admin's choice in Settings) */
+  setting: HwAccelSetting;
+  source: 'env' | 'admin';
+  /** ANYCAST_HWACCEL (default auto) */
+  envSetting: HwAccelSetting;
+  /** the test encodes of the last check, in the order tried */
+  probes: HwAccelProbe[];
+  /** epoch ms of the last check; null before the first */
+  checkedAt: number | null;
+  /** the hardware encoder failed during playback: software is used until then (epoch ms) */
+  unhealthyUntil: number | null;
 }
 
 export interface Page<T> { items: T[]; total: number; }
@@ -166,6 +193,10 @@ export interface Api {
   'GET /api/health': { res: { ok: true; version: string } };
   /** Admin only (403 {error:'forbidden'} otherwise). */
   'GET /api/diagnostics': { res: ServerDiagnostics };
+  /** Admin only. Hardware encoding status; PUT sets an override (null = follow ANYCAST_HWACCEL) and checks again; POST /check only checks again. */
+  'GET /api/hwaccel': { res: VideoEncoderStatus };
+  'PUT /api/hwaccel': { body: { setting: HwAccelSetting | null }; res: VideoEncoderStatus };
+  'POST /api/hwaccel/check': { res: VideoEncoderStatus };
   'POST /api/auth/login': { body: { username: string; password: string }; res: Me };
   'POST /api/auth/logout': { res: { ok: true } };
   'GET /api/me': { res: Me };

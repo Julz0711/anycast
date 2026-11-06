@@ -10,7 +10,8 @@ import type { XtreamClient } from '../xtream/client';
 import type { ClientCaps } from './caps';
 import type { HlsPipeline } from './ffmpeg';
 import { LiveFanouts } from './fanout';
-import { HlsError, HlsSessions, StreamHlsSession, VodHlsSession, type SubtitleRendition } from './hls';
+import { HlsError, HlsSessions, StreamHlsSession, VodHlsSession, type SessionEncoder, type SubtitleRendition } from './hls';
+import { encoderInfo, HwAccel } from './hwaccel';
 import { choosePipeline, explainPipeline, type PipelineChoice } from './pipeline';
 import { ProbeCache, type ProbeResult } from './probe';
 import { BufferManager } from './buffer';
@@ -40,9 +41,11 @@ export function toStreamProbe(p: ProbeResult): StreamProbe {
   };
 }
 
-function diagnose(source: StreamSource, probe: ProbeResult, assumed: boolean, caps: ClientCaps, choice: PipelineChoice): PlaybackDiagnostics {
+function diagnose(source: StreamSource, probe: ProbeResult, assumed: boolean, caps: ClientCaps, choice: PipelineChoice, hw: HwAccel): PlaybackDiagnostics {
   const mode = source === 'movie' || source === 'episode' ? 'vod' : 'live';
-  return { source, reason: explainPipeline(probe, caps, mode, choice, assumed), probe: toStreamProbe(probe), assumed };
+  const d: PlaybackDiagnostics = { source, reason: explainPipeline(probe, caps, mode, choice, assumed), probe: toStreamProbe(probe), assumed };
+  if (choice.pipeline === 'transcode') d.videoEncoder = encoderInfo(hw.current());
+  return d;
 }
 
 export class NotFoundError extends Error {
@@ -115,6 +118,8 @@ export class PlaybackService {
   private lastRelease = 0;
   /** scrub thumbnails, fed from VOD HLS segments as they are written (no provider connection of their own) */
   thumbs: Thumbnails | null = null;
+  /** picks the H.264 encoder of full transcodes (hardware when it works, see hwaccel.ts) */
+  hw: HwAccel = new HwAccel();
   /** a client's playback was stopped because `by` took its connection over */
   onTakenOver: (victim: Claim, by: Viewer) => void = () => undefined;
 
@@ -150,6 +155,12 @@ export class PlaybackService {
   }
 
   private ffmpegError = (msg: string) => this.log.warn({ ffmpeg: this.redact()(msg) }, 'ffmpeg failed');
+
+  /** Full transcodes: the encoder a new session uses (null: the pipeline copies video). */
+  private async sessionEncoder(pipeline: HlsPipeline): Promise<SessionEncoder | null> {
+    if (pipeline !== 'transcode') return null;
+    return { video: await this.hw.encoder(), failed: (video, error) => this.hw.markFailed(video, this.redact()(error)) };
+  }
 
   private channel(id: string): ChannelRow {
     const c = getChannel(this.db, id);
@@ -332,7 +343,7 @@ export class PlaybackService {
       type: choice.type,
       pipeline: choice.pipeline,
       startsAt: Date.now(),
-      diagnostics: diagnose('live', probe, probe === ASSUMED_LIVE, caps, choice),
+      diagnostics: diagnose('live', probe, probe === ASSUMED_LIVE, caps, choice, this.hw),
       tracks: { ...tracks, subtitlesInStream: false },
     };
   }
@@ -383,7 +394,7 @@ export class PlaybackService {
       type: choice.type,
       pipeline: choice.pipeline,
       startsAt: startMin * 60_000,
-      diagnostics: diagnose('timeshift', probe, probe === ASSUMED_LIVE, caps, choice),
+      diagnostics: diagnose('timeshift', probe, probe === ASSUMED_LIVE, caps, choice, this.hw),
       tracks: { ...tracks, subtitlesInStream: false },
     };
   }
@@ -399,10 +410,10 @@ export class PlaybackService {
     const base = `/api/stream/buffer/${encodeURIComponent(id)}/${run}/${seq}`;
     const assumed = probe === ASSUMED_LIVE;
     if (choice.pipeline !== 'passthrough' && (choice.pipeline !== 'remux' || tracks.audioIndex)) {
-      return { url: `${base}/${choice.pipeline}/${audioPrefix(tracks.audioIndex)}index.m3u8`, type: 'hls', pipeline: choice.pipeline, startsAt, tracks, diagnostics: diagnose('buffer', probe, assumed, caps, choice) };
+      return { url: `${base}/${choice.pipeline}/${audioPrefix(tracks.audioIndex)}index.m3u8`, type: 'hls', pipeline: choice.pipeline, startsAt, tracks, diagnostics: diagnose('buffer', probe, assumed, caps, choice, this.hw) };
     }
     const served: PipelineChoice = { pipeline: 'passthrough', type: 'hls' };
-    return { url: `${base}/index.m3u8`, type: 'hls', pipeline: 'passthrough', startsAt, tracks, diagnostics: diagnose('buffer', probe, assumed, caps, served) };
+    return { url: `${base}/index.m3u8`, type: 'hls', pipeline: 'passthrough', startsAt, tracks, diagnostics: diagnose('buffer', probe, assumed, caps, served, this.hw) };
   }
 
   private requireBuffer(): BufferManager {
@@ -426,8 +437,9 @@ export class PlaybackService {
     const buffer = this.requireBuffer();
     const { audio, file } = this.liveTrackFile(id, path);
     if (!buffer.playlist(id, run, from)) throw new NotFoundError('This part of the buffer is no longer available');
-    const session = await this.sessions.getOrCreate(`buf:${id}:${run}:${from}:${pipeline}${sessionAudio(audio)}`, (dir) => {
-      return new StreamHlsSession(dir, { stream: buffer.reader(id, run, from) }, pipeline, 'event', null, this.ffmpegError, this.liveAudio(id, audio), audio);
+    const session = await this.sessions.getOrCreate(`buf:${id}:${run}:${from}:${pipeline}${sessionAudio(audio)}`, async (dir) => {
+      const encoder = await this.sessionEncoder(pipeline);
+      return new StreamHlsSession(dir, { stream: buffer.reader(id, run, from) }, pipeline, 'event', null, this.ffmpegError, this.liveAudio(id, audio), audio, encoder);
     });
     return file === 'index.m3u8' ? { text: await session.playlist() } : { files: await session.file(file) };
   }
@@ -455,7 +467,7 @@ export class PlaybackService {
       tracks: { ...tracks, subtitlesInStream },
       ...(resumeAt ? { resumeAt } : {}),
       ...(item.seriesId ? { seriesId: item.seriesId } : {}),
-      diagnostics: diagnose(kind, probe, probe === fallback, caps, choice),
+      diagnostics: diagnose(kind, probe, probe === fallback, caps, choice, this.hw),
     };
   }
 
@@ -480,9 +492,10 @@ export class PlaybackService {
     const { audio, file } = this.liveTrackFile(id, path);
     const key = `live:${id}:${pipeline}${sessionAudio(audio)}`;
     const session = await this.sessions.getOrCreate(key, async (dir) => {
+      const encoder = await this.sessionEncoder(pipeline);
       this.guard(`live:${id}`);
       const stream = await this.fanouts.subscribe(`live:${id}`, () => this.client().liveUrl(id));
-      return new StreamHlsSession(dir, { stream }, pipeline, 'live', null, this.ffmpegError, this.liveAudio(id, audio), audio);
+      return new StreamHlsSession(dir, { stream }, pipeline, 'live', null, this.ffmpegError, this.liveAudio(id, audio), audio, encoder);
     });
     return file === 'index.m3u8' ? { text: await session.playlist() } : { files: await session.file(file) };
   }
@@ -540,10 +553,11 @@ export class PlaybackService {
     const { audio, file } = this.liveTrackFile(id, path);
     const key = `ts:${id}:${startMin}`;
     const sessionKey = `${key}:${durMin}:${pipeline}${sessionAudio(audio)}`;
-    const session = await this.sessions.getOrCreate(sessionKey, (dir) => {
+    const session = await this.sessions.getOrCreate(sessionKey, async (dir) => {
+      const encoder = await this.sessionEncoder(pipeline);
       this.guard(key);
       const lease = this.pool.acquire(key);
-      return new StreamHlsSession(dir, { url: this.timeshiftUrl(id, startMin, durMin) }, pipeline, 'event', lease, this.ffmpegError, this.liveAudio(id, audio), audio);
+      return new StreamHlsSession(dir, { url: this.timeshiftUrl(id, startMin, durMin) }, pipeline, 'event', lease, this.ffmpegError, this.liveAudio(id, audio), audio, encoder);
     });
     return file === 'index.m3u8' ? { text: await session.playlist() } : { files: await session.file(file) };
   }
@@ -578,7 +592,8 @@ export class PlaybackService {
     const key = `${kind}:${id}`;
     const { audio, file } = splitAudio(path);
     const sessionKey = `${key}:${pipeline}${sessionAudio(audio)}`;
-    const session = await this.sessions.getOrCreate(sessionKey, (dir) => {
+    const session = await this.sessions.getOrCreate(sessionKey, async (dir) => {
+      const encoder = await this.sessionEncoder(pipeline);
       this.guard(key);
       this.pool.check(key);
       const probe = this.probes.cached(key);
@@ -595,7 +610,7 @@ export class PlaybackService {
       const thumbs = this.thumbs;
       const onSegment = thumbs ? (seg: Parameters<Thumbnails['ingest']>[2]) => thumbs.ingest(kind, id, seg) : undefined;
       const tracks = { audio, subtitles: probe ? subtitleRenditions(probe) : [] };
-      return new VodHlsSession(dir, item.url, pipeline, duration, acquire, this.ffmpegError, probe?.audio[audio]?.codec ?? null, onSegment, tracks);
+      return new VodHlsSession(dir, item.url, pipeline, duration, acquire, this.ffmpegError, probe?.audio[audio]?.codec ?? null, onSegment, tracks, encoder);
     });
     if (file === 'master.m3u8') return { text: session.masterPlaylist() };
     if (file === 'index.m3u8') return { text: session.playlist() };

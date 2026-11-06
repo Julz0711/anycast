@@ -17,6 +17,7 @@ import { Parental, ParentalError } from './parental';
 import { NotFoundError, PlaybackService } from './playback/service';
 import { archiveSource } from './playback/timeline';
 import { DEFAULT_THUMBS, Thumbnails } from './playback/thumbs';
+import { HwAccel, type EncodeRunner } from './playback/hwaccel';
 import { ConnectionLimitError, GapError, UpstreamError } from './playback/upstream';
 import { createRedactor, redactDeep, type Redactor } from './redact';
 import { artRoutes } from './routes/art';
@@ -40,6 +41,10 @@ export interface BuildOptions {
   logStream?: NodeJS.WritableStream;
   /** runs ffmpeg/ffprobe for GET /api/diagnostics (tests pass a fake) */
   runCommand?: CommandRunner;
+  /** runs the hardware encoder test encodes (tests pass a fake) */
+  runEncodeTest?: EncodeRunner;
+  /** whether a render device exists (tests pass a fake) */
+  deviceExists?: (path: string) => boolean;
 }
 
 export interface BuiltApp {
@@ -92,6 +97,14 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
     { ...DEFAULT_THUMBS, ...(config.thumbsMaxBytes !== undefined ? { maxBytes: config.thumbsMaxBytes } : {}) },
     (msg) => app.log.warn({ thumbs: redact()(msg) }, 'thumbnail problem'),
   );
+  playback.hw = new HwAccel({
+    setting: config.hwaccel?.setting ?? 'off',
+    device: config.hwaccel?.device,
+    db,
+    run: opts.runEncodeTest,
+    deviceExists: opts.deviceExists,
+    log: (level, obj, msg) => app.log[level](obj, msg),
+  });
   playback.onTakenOver = (victim, by) =>
     bus.emit({
       type: 'playback-stopped', profileId: victim.profileId, clientId: victim.clientId, reason: 'taken-over',

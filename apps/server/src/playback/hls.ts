@@ -15,14 +15,18 @@
  * (master.m3u8 -> subs/{k}.m3u8 -> subs/{k}/{slot}.vtt). Cue times are source timestamps, like
  * the segments, so players place them on the same timeline (no X-TIMESTAMP-MAP: cue time 0 is
  * media time 0).
+ *
+ * Hardware encoding (full transcodes, see hwaccel.ts): a run on a hardware encoder that fails
+ * before writing a segment is started again on libx264, the session stays on libx264, and the
+ * encoder is reported as failed (software for every new session for a while).
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, stat, unlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { Readable } from 'node:stream';
-import { buildHlsArgs, completedSegments, runInit, runPlaylist, runSegment, type HlsPipeline } from './ffmpeg';
+import { buildHlsArgs, completedSegments, runInit, runPlaylist, runSegment, SOFTWARE, type HlsPipeline, type VideoEncoder } from './ffmpeg';
 import type { Lease } from './upstream';
 import { cueKey, formatVtt, parseVtt, type Cue } from './webvtt';
 
@@ -57,6 +61,16 @@ interface Run {
   lease: Lease;
   /** subtitle track index -> WebVTT file this run writes */
   subs: Map<number, string>;
+  /** the video encoder of this run (full transcodes) */
+  video: VideoEncoder;
+  /** FFmpeg's error output, when it failed */
+  error: string;
+}
+
+/** The video encoder of a full transcode session, and where to report that it failed. */
+export interface SessionEncoder {
+  video: VideoEncoder;
+  failed: (video: VideoEncoder, error: string) => void;
 }
 
 /** A text subtitle track carried as an HLS rendition: its source index (0:s:N) and display attributes. */
@@ -106,8 +120,10 @@ function spawnFfmpeg(args: string[], onError: (msg: string) => void, stdin?: Rea
 
 /** Live/timeshift: ffmpeg reads MPEG-TS from a stream (fan-out or direct) or a URL, and owns the playlist. */
 export class StreamHlsSession extends Session {
-  private readonly proc: ChildProcess;
+  private proc!: ChildProcess;
   private exited = false;
+  /** the encoder of the current FFmpeg process */
+  video: VideoEncoder;
 
   constructor(
     dir: string,
@@ -119,18 +135,42 @@ export class StreamHlsSession extends Session {
     audioCodec: string | null = null,
     /** source audio track to map (PB-3) */
     audioIndex: number | null = null,
+    /** full transcode: the video encoder (default libx264) */
+    private readonly encoder: SessionEncoder | null = null,
   ) {
     super(dir);
-    const args = buildHlsArgs({
-      input: 'stream' in input ? 'pipe:0' : input.url, pipeline, dir, run: 0,
-      segmentSeconds: LIVE_SEGMENT_SECONDS, mode, audioCodec, audioIndex,
-    });
-    this.proc = spawnFfmpeg(args, onError, 'stream' in input ? input.stream : undefined);
-    this.proc.on('close', () => {
-      this.exited = true;
-      this.lease?.release();
-      if ('stream' in input) input.stream.destroy();
-    });
+    this.video = encoder?.video ?? SOFTWARE;
+    const start = (video: VideoEncoder) => {
+      const args = buildHlsArgs({
+        input: 'stream' in input ? 'pipe:0' : input.url, pipeline, dir, run: 0,
+        segmentSeconds: LIVE_SEGMENT_SECONDS, mode, audioCodec, audioIndex, video,
+      });
+      let error = '';
+      const proc = spawnFfmpeg(args, (msg) => ((error = msg), onError(msg)), 'stream' in input ? input.stream : undefined);
+      this.proc = proc;
+      this.video = video;
+      proc.on('close', (code, signal) => {
+        // a hardware encoder that failed before the first segment: the same input again on libx264
+        if (video.method !== 'software' && !this.closed && code !== 0 && signal !== 'SIGKILL' && !this.wroteSegment()) {
+          this.encoder?.failed(video, error || `ffmpeg exited with code ${code}`);
+          if ('stream' in input) input.stream.unpipe();
+          start(SOFTWARE);
+          return;
+        }
+        this.exited = true;
+        this.lease?.release();
+        if ('stream' in input) input.stream.destroy();
+      });
+    };
+    start(this.video);
+  }
+
+  private wroteSegment(): boolean {
+    try {
+      return readFileSync(path.join(this.dir, runPlaylist(0)), 'utf8').includes('#EXTINF');
+    } catch {
+      return false;
+    }
   }
 
   async playlist(): Promise<string> {
@@ -172,6 +212,13 @@ export class VodHlsSession extends Session {
   private readonly subsReady = new Set<number>();
   /** a run with subtitle outputs failed before writing anything: play on without subtitles */
   private subsFailed = false;
+  /** a run on the hardware encoder failed before writing anything: play on with libx264 */
+  private hwFailed = false;
+
+  /** the encoder new runs of this session use */
+  get video(): VideoEncoder {
+    return this.hwFailed || !this.encoder ? SOFTWARE : this.encoder.video;
+  }
 
   constructor(
     dir: string,
@@ -185,6 +232,8 @@ export class VodHlsSession extends Session {
     private readonly onSegment?: (seg: { init: string; file: string; start: number; end: number }) => void,
     /** source audio track to map, and text subtitle tracks to carry (PB-3) */
     private readonly tracks: { audio: number | null; subtitles: SubtitleRendition[] } = { audio: null, subtitles: [] },
+    /** full transcode: the video encoder (default libx264) */
+    private readonly encoder: SessionEncoder | null = null,
   ) {
     super(dir);
     this.count = Math.max(1, Math.ceil(duration / SEGMENT_SECONDS));
@@ -271,13 +320,17 @@ export class VodHlsSession extends Session {
     const lease = this.acquire();
     const id = ++this.runCounter;
     const subs = new Map<number, string>(this.subsFailed ? [] : this.tracks.subtitles.map((s) => [s.index, path.join(this.dir, `subs_r${id}_${s.index}.vtt`)]));
+    const video = this.video;
     const args = buildHlsArgs({
       input: this.url(), pipeline: this.pipeline, dir: this.dir, run: id, segmentSeconds: SEGMENT_SECONDS,
       mode: 'vod', seek: start * SEGMENT_SECONDS, startNumber: start, audioCodec: this.audioCodec,
-      audioIndex: this.tracks.audio, subtitles: [...subs].map(([index, file]) => ({ index, file })),
+      audioIndex: this.tracks.audio, subtitles: [...subs].map(([index, file]) => ({ index, file })), video,
     });
-    const proc = spawnFfmpeg(args, this.onError);
-    const run: Run = { id, proc, start, exited: false, exitCode: null, paused: false, completed: new Map(), lease, subs };
+    const proc = spawnFfmpeg(args, (msg) => {
+      run.error = msg;
+      this.onError(msg);
+    });
+    const run: Run = { id, proc, start, exited: false, exitCode: null, paused: false, completed: new Map(), lease, subs, video, error: '' };
     proc.on('close', (code) => {
       run.exited = true;
       run.exitCode = code;
@@ -306,6 +359,17 @@ export class VodHlsSession extends Session {
   private retryWithoutSubs(run: Run): Run | null {
     if (!run.exited || run.exitCode === 0 || run.completed.size || !run.subs.size || this.subsFailed || this.run !== run) return null;
     this.subsFailed = true;
+    return this.startRun(run.start);
+  }
+
+  /**
+   * A run on a hardware encoder failed before writing a segment: start it again on libx264 (for
+   * the rest of the session) and report the encoder. The new run, or null.
+   */
+  private retryWithoutHw(run: Run): Run | null {
+    if (!run.exited || run.exitCode === 0 || run.completed.size || run.video.method === 'software' || this.hwFailed || this.run !== run) return null;
+    this.hwFailed = true;
+    this.encoder?.failed(run.video, run.error || `ffmpeg exited with code ${run.exitCode}`);
     return this.startRun(run.start);
   }
 
@@ -380,7 +444,7 @@ export class VodHlsSession extends Session {
       await this.refresh(run);
       const file = path.join(this.dir, runInit(run.id));
       if (run.completed.size && (await stat(file).catch(() => null))?.size) return [file];
-      const retry = this.retryWithoutSubs(run);
+      const retry: Run | null = this.retryWithoutHw(run) ?? this.retryWithoutSubs(run);
       if (retry) {
         run = retry;
         continue;
@@ -407,7 +471,7 @@ export class VodHlsSession extends Session {
       if (this.run !== run) throw new HlsError(409, 'Playback moved elsewhere');
       await this.refresh(run);
       if (!last && run.completed.has(n)) return [path.join(this.dir, run.completed.get(n)!)];
-      const retry = this.retryWithoutSubs(run);
+      const retry: Run | null = this.retryWithoutHw(run) ?? this.retryWithoutSubs(run);
       if (retry) {
         run = retry;
         continue;

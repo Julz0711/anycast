@@ -209,6 +209,10 @@ const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/diagnostics$/, () => ({
     version: 'demo', uptimeSeconds: Math.round(performance.now() / 1000), node: 'demo', platform: 'browser',
     ffmpeg: { available: true, version: 'demo' }, ffprobe: { available: true, version: 'demo' }, hwEncoders: [],
+    videoEncoder: {
+      active: 'libx264', method: 'software', label: 'Software', reason: 'Hardware encoding is turned off.', setting: 'off', source: 'env', envSetting: 'off',
+      probes: [], checkedAt: null, unhealthyUntil: null,
+    },
     connections: { active: 0, max: 2, byKind: {} }, hlsSessions: 0,
     buffer: { enabled: true, bytes: 0, maxBytes: 20 * 1024 ** 3, recording: 0 }, thumbnails: { bytes: 0 },
   })],
