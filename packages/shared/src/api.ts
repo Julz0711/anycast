@@ -18,6 +18,7 @@ import type {
 import type { AdultMode, AdultStatus, UnlockMinutes } from './parental';
 import type { Preferences } from './settings';
 import type { TrackChoice } from './tracks';
+import type { AutoBackups, BackupFile, RestoreMode, RestoreResult } from './backup';
 
 export interface Profile { id: string; name: string; }
 
@@ -155,6 +156,8 @@ export type SyncEvent =
   | { type: 'catalog-updated' }
   /** the profile's parental lock settings changed (mode, PIN, duration): refetch GET /api/adult and lists */
   | { type: 'parental'; profileId: string }
+  /** an admin restored a backup: refetch everything of the profile (progress, favorites, lists, settings, parental) */
+  | { type: 'restored'; profileId: string }
   /**
    * Sent to the profile whose playback was stopped by another client taking over the connection.
    * `clientId` is the stopped client's x-anycast-client id; other clients of the profile ignore it.
@@ -166,6 +169,21 @@ export interface Api {
   'GET /api/health': { res: { ok: true; version: string } };
   /** Admin only (403 {error:'forbidden'} otherwise). */
   'GET /api/diagnostics': { res: ServerDiagnostics };
+  /**
+   * Backup and restore (backup.ts). Admin only (403 {error:'forbidden'} otherwise).
+   * GET /api/admin/backup answers the file as an attachment named anycast-backup-YYYY-MM-DD.json.
+   */
+  'GET /api/admin/backup': { res: BackupFile };
+  /** the automatic daily backups in DATA_DIR/backups, newest first */
+  'GET /api/admin/backups': { res: AutoBackups };
+  'GET /api/admin/backups/:name': { res: BackupFile };
+  /**
+   * Restores a backup in one transaction (mode defaults to 'replace'). `password` is the signed-in
+   * admin's own password. Errors: 400 bad_backup (not a valid backup), 400 backup_version (made by
+   * a newer AnyCast), 403 wrong_password, 413 too large, 429 rate_limited. Sends a 'restored'
+   * SyncEvent (and the usual per-kind events) to every profile it changed.
+   */
+  'POST /api/admin/restore': { body: { backup: BackupFile; mode?: RestoreMode; password: string }; res: RestoreResult };
   'POST /api/auth/login': { body: { username: string; password: string }; res: Me };
   'POST /api/auth/logout': { res: { ok: true } };
   'GET /api/me': { res: Me };
