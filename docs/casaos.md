@@ -115,7 +115,50 @@ docker compose up -d --build
 ```
 
 Your data (accounts, favorites, progress, settings, rewind buffer) lives in Docker volumes and
-survives updates.
+survives updates. To be safe across a rebuild or a move to another server, keep a backup (see
+[Backups](#backups)).
+
+## Backups
+
+Your accounts, profiles, favorites, progress (Continue watching and what you've watched), channel
+lists, settings, filters, parental PINs and pinned channels can be saved to one file. The file
+never contains your provider login, sign-in sessions or `ANYCAST_SECRET`; the catalog and guide
+come back from the provider on the next sync. It does contain the password and PIN *hashes*, so
+keep it somewhere private.
+
+**Automatic:** once a day the server writes `anycast-backup-YYYY-MM-DD.json` to `/data/backups`
+inside the container (the `anycast-data` volume) and keeps the last 7. Set `ANYCAST_BACKUP_KEEP` in
+`.env` to keep more or fewer, or `0` to turn them off. A restore also saves the data it replaces
+there first (`...-before-restore.json`).
+
+**In the app (admins):** Settings › All settings › Backup & restore. Download a backup now or one of
+the automatic ones, or restore from a file. Restoring shows what the file holds and asks for your
+password. *Replace everything* swaps all accounts and profiles for the backup's; *Merge* keeps
+what is there and only adds what is missing. The account you're signed in with always stays able
+to sign in.
+
+**Copy a backup off the server** (to keep it safe before rebuilding or moving):
+
+```sh
+cd /DATA/AppData/anycast
+docker compose exec anycast ls -l /data/backups
+docker compose cp anycast:/data/backups/anycast-backup-2026-11-06.json ./
+```
+
+Then copy it to your PC, e.g. `scp you@server-ip:/DATA/AppData/anycast/anycast-backup-2026-11-06.json .`
+
+**Restore without the web app** (e.g. on a new server, or when you can't sign in): copy the file in
+and run the restore command while AnyCast is stopped. Add `--merge` to keep existing data.
+
+```sh
+docker compose up -d && docker compose cp ./anycast-backup-2026-11-06.json anycast:/data/restore.json
+docker compose stop
+docker compose run --rm anycast node --import tsx src/backup/cli.ts /data/restore.json --yes
+docker compose up -d
+```
+
+Outside Docker: `pnpm --filter @anycast/server run restore path/to/anycast-backup-2026-11-06.json`.
+After a restore, sign in with the accounts and passwords from the backup.
 
 ## Troubleshooting
 

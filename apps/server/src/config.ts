@@ -54,6 +54,8 @@ export interface Config {
   thumbsMaxBytes?: number;
   /** hardware H.264 encoding for full transcodes (ANYCAST_HWACCEL, ANYCAST_VAAPI_DEVICE); off when missing */
   hwaccel?: { setting: HwAccelSetting; device: string };
+  /** automatic daily backups kept in DATA_DIR/backups (default 7); 0 = off */
+  backupKeep?: number;
 }
 
 const num = (v: string | undefined): number | null => {
@@ -125,6 +127,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     scheduler: true,
     buffer: bufferFromEnv(env),
     hwaccel: hwaccelFromEnv(env),
+    ...(num(env.ANYCAST_BACKUP_KEEP) !== null ? { backupKeep: Math.floor(num(env.ANYCAST_BACKUP_KEEP)!) } : {}),
     ...(num(env.THUMBS_MAX_GB) !== null ? { thumbsMaxBytes: num(env.THUMBS_MAX_GB)! * 1024 ** 3 } : {}),
   };
 }

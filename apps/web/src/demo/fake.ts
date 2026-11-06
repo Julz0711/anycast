@@ -3,8 +3,8 @@
  * Routes mirror `Api` in @anycast/shared. Writes emit SyncEvents to subscribers like the real SSE stream.
  */
 import {
-  ADULT_MODE_RANK, DEFAULT_PREFERENCES, FINISHED_THRESHOLD, LOCKED_NAME, mergePreferences, PIN_MAX_ATTEMPTS, PIN_WINDOW_MS,
-  type AdultMode, type AdultStatus, type Category, type UnlockMinutes,
+  ADULT_MODE_RANK, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, DEFAULT_PREFERENCES, FINISHED_THRESHOLD, LOCKED_NAME, mergePreferences, PIN_MAX_ATTEMPTS, summarizeBackup, PIN_WINDOW_MS,
+  type AdultMode, type AdultStatus, type BackupFile, type Category, type RestoreMode, type UnlockMinutes,
   type Channel, type ChannelList, type Favorite, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
   type Preferences, type Profile, type Progress, type Series, type SourceStatus, type SyncEvent, type TagSummary, type TimelineInfo,
 } from '@anycast/shared';
@@ -206,6 +206,10 @@ function contains(hay: string, needle: string) {
 type Handler = (m: RegExpExecArray, q: URLSearchParams, body: unknown, st: ProfileState) => unknown;
 const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/health$/, () => ({ ok: true, version: 'demo' })],
+  ['GET', /^\/api\/admin\/backup$/, () => demoBackup()],
+  ['GET', /^\/api\/admin\/backups$/, () => ({ keep: 7, files: demoAutoBackups() })],
+  ['GET', /^\/api\/admin\/backups\/([^/]+)$/, () => demoBackup()],
+  ['POST', /^\/api\/admin\/restore$/, (_m, _q, body) => demoRestore(body as Parameters<typeof demoRestore>[0])],
   ['GET', /^\/api\/diagnostics$/, () => ({
     version: 'demo', uptimeSeconds: Math.round(performance.now() / 1000), node: 'demo', platform: 'browser',
     ffmpeg: { available: true, version: 'demo' }, ffprobe: { available: true, version: 'demo' }, hwEncoders: [],
@@ -509,6 +513,56 @@ function findList(st: ProfileState, id: string) {
   if (!l) throw new ApiError(404, 'List not found');
   return l;
 }
+/* ---------- backup & restore: the demo's own state as a backup file ---------- */
+function demoBackup(): BackupFile {
+  const user = me().user;
+  return {
+    format: BACKUP_FORMAT, schemaVersion: BACKUP_SCHEMA_VERSION, appVersion: 'demo', createdAt: Date.now(),
+    users: [{
+      id: user.id, username: user.username, passwordHash: '$argon2id$v=19$m=19456,t=2,p=1$demo$demo', isAdmin: true, createdAt: 0,
+      profiles: profiles.map((p, i) => {
+        const st = state(p.id);
+        return {
+          id: p.id, name: p.name, createdAt: i, preferences: { ...st.prefs }, hideRules: st.rules,
+          parental: { mode: st.adult.mode, unlockMinutes: st.adult.unlockMinutes, pinHash: st.adult.pin ? '$argon2id$v=19$m=19456,t=2,p=1$demo$pin' : null, updatedAt: 0 },
+          favorites: st.favorites,
+          progress: [...st.progress.values()].map((x) => ({ kind: x.kind, id: x.id, seriesId: x.seriesId ?? null, position: x.position, duration: x.duration, finished: x.finished, updatedAt: x.updatedAt })),
+          trackChoices: [],
+          lists: st.lists.map((l, position) => ({ ...l, position, createdAt: position })),
+        };
+      }),
+    }],
+    pinnedChannels: [...pins].map((channelId) => ({ channelId, pinnedAt: 0 })),
+  };
+}
+const day = (n: number) => new Date(Date.now() - n * 86_400_000);
+const demoAutoBackups = () => [0, 1, 2].map((n) => ({ name: `anycast-backup-${day(n).toISOString().slice(0, 10)}.json`, bytes: 48_000 + n * 900, createdAt: day(n).setUTCHours(3, 0, 0, 0) }));
+
+function demoRestore(body: { backup: BackupFile; mode?: RestoreMode; password: string }) {
+  if (body.password !== 'demo') throw new ApiError(403, 'Wrong password. (Demo: "demo".)', { error: 'wrong_password' });
+  const b = body.backup;
+  if (b?.format !== BACKUP_FORMAT || !Array.isArray(b.users)) throw new ApiError(400, 'This is not an AnyCast backup file.', { error: 'bad_backup' });
+  const merge = body.mode === 'merge';
+  for (const bp of b.users.flatMap((u) => u.profiles)) {
+    // the demo has fixed profiles: data of profiles it doesn't know is skipped
+    if (!profiles.some((p) => p.id === bp.id)) continue;
+    const st = state(bp.id);
+    const has = (kind: string, id: string) => st.favorites.some((f) => f.kind === kind && f.id === id);
+    st.favorites = merge ? [...st.favorites, ...bp.favorites.filter((f) => !has(f.kind, f.id))] : [...bp.favorites];
+    if (!merge) st.progress.clear();
+    for (const x of bp.progress) {
+      const key = `${x.kind}:${x.id}`;
+      if (!merge || !st.progress.has(key)) st.progress.set(key, { kind: x.kind, id: x.id, position: x.position, duration: x.duration, finished: x.finished, updatedAt: x.updatedAt, ...(x.seriesId ? { seriesId: x.seriesId } : {}) });
+    }
+    if (!merge && bp.preferences) st.prefs = mergePreferences(bp.preferences);
+    if (!merge && bp.hideRules) st.rules = bp.hideRules;
+    const lists = bp.lists.map((l) => ({ id: l.id, name: l.name, channelIds: l.channelIds }));
+    st.lists = merge ? [...st.lists, ...lists.filter((l) => !st.lists.some((x) => x.id === l.id))] : lists;
+    emit({ type: 'restored', profileId: bp.id });
+  }
+  return { ok: true, mode: body.mode ?? 'replace', summary: summarizeBackup(b), keptCurrentAccount: false, safetyBackup: demoAutoBackups()[0]!.name };
+}
+
 const emitLists = (st: ProfileState) => emit({ type: 'lists', profileId: currentPid, lists: structuredClone(st.lists) });
 
 let syncingUntil = 0;
