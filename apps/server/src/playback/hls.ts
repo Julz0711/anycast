@@ -146,6 +146,8 @@ export class VodHlsSession extends Session {
     private readonly acquire: () => Lease,
     private readonly onError: (msg: string) => void,
     private readonly audioCodec: string | null = null,
+    /** each newly completed segment (thumbnails read these local files; see thumbs.ts) */
+    private readonly onSegment?: (seg: { init: string; file: string; start: number; end: number }) => void,
   ) {
     super(dir);
     this.count = Math.max(1, Math.ceil(duration / SEGMENT_SECONDS));
@@ -198,7 +200,16 @@ export class VodHlsSession extends Session {
   private async refresh(run: Run): Promise<void> {
     const text = await readFile(path.join(this.dir, runPlaylist(run.id)), 'utf8').catch(() => '');
     for (const n of completedSegments(text, run.id)) {
-      if (!run.completed.has(n)) run.completed.set(n, runSegment(run.id, n));
+      if (run.completed.has(n)) continue;
+      run.completed.set(n, runSegment(run.id, n));
+      if (this.onSegment && this.run === run) {
+        const files = { init: path.join(this.dir, runInit(run.id)), file: path.join(this.dir, runSegment(run.id, n)) };
+        try {
+          this.onSegment({ ...files, start: n * SEGMENT_SECONDS, end: Math.min(this.duration, (n + 1) * SEGMENT_SECONDS) });
+        } catch {
+          /* thumbnails never get in the way of playback */
+        }
+      }
     }
   }
 

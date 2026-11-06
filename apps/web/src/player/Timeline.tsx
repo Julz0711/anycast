@@ -2,8 +2,9 @@
  * The ribbon: EPG program blocks above a thin track. Playable ranges, greyed gaps (with reason),
  * live-edge marker, playhead. Drag or tap to seek; arrow keys skip; Home/End jump to start/live.
  */
-import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import type { TimelineInfo } from '@anycast/shared';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import type { ThumbIndex, TimelineInfo } from '@anycast/shared';
+import { tileAt } from './thumbs';
 import { clampFrac, fracToTime, layoutBlocks, programAt, timeToFrac, type Win } from './timelineMath';
 import { fmtClock, fmtDuration, gapText } from '../lib/time';
 
@@ -161,16 +162,61 @@ export function Ribbon(props: RibbonProps) {
   );
 }
 
-/** Plain scrub bar for movies and episodes. */
-export function VodBar(props: { position: number; duration: number; buffered: number; onSeek: (s: number) => void; onSkip: (dir: -1 | 1) => void }) {
+/** Preview card size estimates (px) for keeping the card inside the bar; the card itself is sized by CSS. */
+const TIME_CARD_HALF = 34;
+const CARD_PAD = 6;
+
+/**
+ * Plain scrub bar for movies and episodes. Hovering (mouse), dragging (mouse or touch) and
+ * keyboard/remote skips (`hint`) show a preview card above the bar: the thumbnail of that moment
+ * when the server has one, and the time.
+ */
+export function VodBar(props: {
+  position: number;
+  duration: number;
+  buffered: number;
+  onSeek: (s: number) => void;
+  onSkip: (dir: -1 | 1) => void;
+  thumbs?: ThumbIndex | null;
+  /** the user started scrubbing (refresh thumbnails if stale) */
+  onScrubStart?: () => void;
+  /** a skip landed at `t` seconds: show the preview there for a moment (new `key` each time) */
+  hint?: { t: number; key: number } | null;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState<number | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  const [hintT, setHintT] = useState<number | null>(null);
   const d = props.duration || 1;
   const shown = preview ?? props.position;
   const at = (x: number) => {
     const r = ref.current!.getBoundingClientRect();
     return clampFrac((x - r.left) / r.width) * d;
   };
+
+  const { hint, onScrubStart } = props;
+  useEffect(() => {
+    if (!hint) return;
+    setHintT(hint.t);
+    const t = setTimeout(() => setHintT(null), 1500);
+    return () => clearTimeout(t);
+  }, [hint]);
+
+  const card = preview ?? hover ?? hintT;
+  const scrubbing = card !== null;
+  useEffect(() => {
+    if (scrubbing) onScrubStart?.();
+  }, [scrubbing, onScrubStart]);
+
+  const tile = card !== null ? tileAt(props.thumbs ?? null, card) : null;
+  let cardLeft = '0px';
+  if (card !== null) {
+    const w = ref.current?.clientWidth ?? 0;
+    const half = tile ? tile.w / 2 + CARD_PAD : TIME_CARD_HALF;
+    const x = (clampFrac(card / d) * w);
+    cardLeft = `${w > half * 2 ? Math.min(w - half, Math.max(half, x)) : w / 2}px`;
+  }
+
   return (
     <div className="ribbon vod">
       <div
@@ -184,14 +230,23 @@ export function VodBar(props: { position: number; duration: number; buffered: nu
         aria-valuenow={Math.round(shown)}
         aria-valuetext={`${fmtDuration(shown)} of ${fmtDuration(d)}`}
         data-nav-autofocus=""
-        onPointerDown={(e) => (e.currentTarget.setPointerCapture(e.pointerId), setPreview(at(e.clientX)))}
-        onPointerMove={(e) => preview !== null && setPreview(at(e.clientX))}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          setPreview(at(e.clientX));
+        }}
+        onPointerMove={(e) => {
+          if (preview !== null) setPreview(at(e.clientX));
+          else if (e.pointerType === 'mouse') setHover(at(e.clientX));
+        }}
+        onPointerLeave={() => setHover(null)}
         onPointerUp={(e) => {
           if (preview === null) return;
           setPreview(null);
+          if (e.pointerType !== 'mouse') setHover(null);
           props.onSeek(at(e.clientX));
         }}
-        onPointerCancel={() => setPreview(null)}
+        onPointerCancel={() => (setPreview(null), setHover(null))}
         onKeyDown={(e) => {
           if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
             e.preventDefault();
@@ -205,9 +260,16 @@ export function VodBar(props: { position: number; duration: number; buffered: nu
           <i className="rb-fill" style={{ left: 0, width: pct(shown / d) }} />
         </div>
         <i className="rb-knob" style={{ left: pct(shown / d) }} aria-hidden="true" />
-        {preview !== null && (
-          <span className="rb-tip tabnum" style={{ left: pct(preview / d) }}>
-            {fmtDuration(preview)}
+        {card !== null && (
+          <span className={`rb-tip rb-preview tabnum${tile ? ' has-thumb' : ''}`} style={{ left: cardLeft }} data-testid="scrub-preview" aria-hidden="true">
+            {tile && (
+              <span
+                className="rb-thumb"
+                data-testid="scrub-thumb"
+                style={{ width: tile.w, height: tile.h, backgroundImage: `url("${tile.url}")`, backgroundPosition: `-${tile.x}px -${tile.y}px` }}
+              />
+            )}
+            {fmtDuration(card)}
           </span>
         )}
       </div>

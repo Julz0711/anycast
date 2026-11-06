@@ -68,12 +68,12 @@ export function playbackRoutes(app: FastifyInstance, s: Services): void {
   };
 
   /**
-   * Stream URLs are fetched by <video>/hls.js without the profile header, so they can't tell which
+   * Stream and thumbnail URLs are fetched by <video>/hls.js without the profile header, so they can't tell which
    * profile is watching. They are guessable from ids, so gate them too: allowed when any of the
    * signed-in user's profiles may open the item (all profiles share one login anyway).
    */
   app.addHook('onRequest', async (req) => {
-    const m = /^\/api\/stream\/(live|timeshift|buffer|movie|episode)\/([^/?]+?)(?:\.ts)?(?:[/?]|$)/.exec(req.url);
+    const m = /^\/api\/(?:stream|thumbs)\/(live|timeshift|buffer|movie|episode)\/([^/?]+?)(?:\.ts)?(?:[/?]|$)/.exec(req.url);
     if (!m || !req.auth) return;
     const kind = m[1] === 'movie' || m[1] === 'episode' ? m[1] : 'live';
     const category = s.parental.categoryOf(kind, decodeURIComponent(m[2]!));

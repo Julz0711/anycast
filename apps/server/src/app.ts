@@ -15,6 +15,7 @@ import { ProbeCache } from './playback/probe';
 import { Parental, ParentalError } from './parental';
 import { NotFoundError, PlaybackService } from './playback/service';
 import { archiveSource } from './playback/timeline';
+import { DEFAULT_THUMBS, Thumbnails } from './playback/thumbs';
 import { ConnectionLimitError, GapError, UpstreamError } from './playback/upstream';
 import { createRedactor, redactDeep, type Redactor } from './redact';
 import { artRoutes } from './routes/art';
@@ -25,6 +26,7 @@ import { eventRoutes } from './routes/events';
 import { listRoutes } from './routes/lists';
 import { parentalRoutes } from './routes/parental';
 import { playbackRoutes } from './routes/playback';
+import { thumbRoutes } from './routes/thumbs';
 import { userDataRoutes } from './routes/userdata';
 import { SourceService } from './source';
 import { UserData } from './userdata';
@@ -81,6 +83,11 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
     dir: config.bufferDir,
     config: { ...DEFAULT_BUFFER, ...config.buffer },
   });
+  playback.thumbs = new Thumbnails(
+    path.join(config.dataDir, 'thumbs'),
+    { ...DEFAULT_THUMBS, ...(config.thumbsMaxBytes !== undefined ? { maxBytes: config.thumbsMaxBytes } : {}) },
+    (msg) => app.log.warn({ thumbs: redact()(msg) }, 'thumbnail problem'),
+  );
   playback.onTakenOver = (victim, by) =>
     bus.emit({
       type: 'playback-stopped', profileId: victim.profileId, clientId: victim.clientId, reason: 'taken-over',
@@ -119,6 +126,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   playbackRoutes(app, services);
   bufferRoutes(app, services);
   parentalRoutes(app, services);
+  thumbRoutes(app, services);
   eventRoutes(app, services);
   artRoutes(app, services);
 

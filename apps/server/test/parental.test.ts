@@ -100,7 +100,7 @@ describe('hidden (the default)', () => {
   });
 
   test('stream URLs built from ids are gated too', async () => {
-    for (const url of [`/api/stream/live/${adultChannel}.ts`, `/api/stream/live/${adultChannel}/remux/index.m3u8`, `/api/stream/movie/${adultMovie}/video.mp4`]) {
+    for (const url of [`/api/stream/live/${adultChannel}.ts`, `/api/stream/live/${adultChannel}/remux/index.m3u8`, `/api/stream/movie/${adultMovie}/video.mp4`, `/api/thumbs/movie/${adultMovie}`]) {
       const res = await call({ url });
       expect(res.statusCode, url).toBe(403);
       expect(res.json()).toMatchObject({ error: 'adult_locked' });

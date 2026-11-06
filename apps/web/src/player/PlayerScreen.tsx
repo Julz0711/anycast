@@ -19,6 +19,7 @@ import { applyTrackPrefs, createEngine, PlaybackFailure, type Engine } from './e
 import { fromApiError, fromPlaybackFailure, type PlayerErr } from './errors';
 import { absolutePosition, computeWindow, mediaTimeFor, programAt, resolveSeek, type Win } from './timelineMath';
 import { Ribbon, VodBar } from './Timeline';
+import { useThumbIndex } from './thumbs';
 import { IconBack, IconClock, IconClose, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks } from '../components/Icons';
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
@@ -59,6 +60,9 @@ export default function PlayerScreen() {
   const [slow, setSlow] = useState(false);
   const [paused, setPaused] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
+  // scrub thumbnails (movies and episodes); a skip shows the preview where it landed
+  const thumbs = useThumbIndex(vodKind, id, !isLive, !paused);
+  const [seekHint, setSeekHint] = useState<{ t: number; key: number } | null>(null);
   const [, setTick] = useState(0);
   const [tracksVer, setTracksVer] = useState(0);
   const [timeline, setTimeline] = useState<TimelineInfo | null>(null);
@@ -324,7 +328,10 @@ export default function PlayerScreen() {
       const v = videoRef.current;
       if (!v) return;
       if (isLive) seekAbs(position + dir * secs * 1000);
-      else v.currentTime = Math.max(0, Math.min((v.duration || Infinity) - 0.5, v.currentTime + dir * secs));
+      else {
+        v.currentTime = Math.max(0, Math.min((v.duration || Infinity) - 0.5, v.currentTime + dir * secs));
+        setSeekHint({ t: v.currentTime, key: Date.now() });
+      }
     },
     [isLive, position, prefs.skipBackSeconds, prefs.skipForwardSeconds, seekAbs],
   );
@@ -844,7 +851,16 @@ export default function PlayerScreen() {
             <Skeleton h="2.5rem" />
           )
         ) : (
-          <VodBar position={ct} duration={duration} buffered={buffered} onSeek={(s) => videoRef.current && (videoRef.current.currentTime = s)} onSkip={(d) => skip(d)} />
+          <VodBar
+            position={ct}
+            duration={duration}
+            buffered={buffered}
+            onSeek={(s) => videoRef.current && (videoRef.current.currentTime = s)}
+            onSkip={(d) => skip(d)}
+            thumbs={thumbs.index}
+            onScrubStart={thumbs.refresh}
+            hint={seekHint}
+          />
         )}
 
         {notice && (

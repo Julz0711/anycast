@@ -25,6 +25,7 @@ working directory and from the repo root.
 | `BUFFER_MAX_HOURS_PER_CHANNEL` (2), `BUFFER_MAX_GB` (20) | Buffer caps. The oldest segments are evicted first. |
 | `BUFFER_GRACE_MINUTES` (10) | Keep recording this long after the last viewer leaves. |
 | `BUFFER_ENABLED` (on) | Set to `0` to turn the rolling buffer off. |
+| `THUMBS_MAX_GB` (2) | Cap for the scrub thumbnail cache in `DATA_DIR/thumbs`. Least recently used titles are removed first. |
 | `WEB_DIST` | The built web app. Defaults to `apps/web/dist` if that folder exists. Any unknown non-API path gets `index.html`. |
 | `TRUST_PROXY` | Set to `1` behind a reverse proxy that sets `X-Forwarded-*`. |
 | `LOG_LEVEL` | Pino level (`info` by default). |
@@ -197,3 +198,13 @@ artwork URLs carry `?profile=` because `<img>` requests send no profile header.
   `GET /api/play/live/:id/at` serves buffered times as a growing EVENT playlist of the recorded
   TS segments (or through FFmpeg when the client needs other codecs). On start the index is checked
   against the disk: unmatched rows and files are removed. `GET /api/buffer/status` reports it all.
+- **Scrub thumbnails** (`playback/thumbs.ts`): built only from what is already streamed for playback,
+  so they never take a provider connection. When a VOD HLS session finishes a segment, the segment
+  is hard-linked (playback can delete its copy as usual) and a serial FFmpeg job at the lowest CPU
+  priority keeps the first frame at or after each 10 s mark in it (with `-copyts`, so frame times are
+  playback positions), 160 px wide. `GET /api/thumbs/:kind/:id` lists the tiles; they are packed into
+  10 × 10 sprite sheets (`.../sheet/:n.jpg`, built on request, URLs versioned by tile count). Parts
+  nobody played have no tiles yet, and nothing is decoded again for parts that have them. Titles
+  played as a direct MP4 file (passthrough) get none: the browser reads that file in byte ranges
+  straight from the provider, and there is no second connection to spare for a separate pass. The
+  cache lives in `DATA_DIR/thumbs` (`THUMBS_MAX_GB`), whole titles evicted least recently used first.
