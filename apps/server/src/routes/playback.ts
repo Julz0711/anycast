@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { PassThrough } from 'node:stream';
 import { z } from 'zod';
 import { getChannel, getEpisode, getMovie } from '../catalog/store';
+import { castTokenOf } from '../cast';
 import { auth, type Services } from '../context';
 import { parentalCtx } from '../parental';
 import { parseCaps } from '../playback/caps';
@@ -14,7 +15,7 @@ import type { TrackKind } from '../userdata';
 const CLIENT_ID = /^[\w-]{8,64}$/;
 
 /** The playback client behind a request (x-anycast-client / x-anycast-device), or null for clients that send none. */
-function viewerOf(req: FastifyRequest, s: Services): Viewer | null {
+export function viewerOf(req: FastifyRequest, s: Services): Viewer | null {
   const clientId = req.headers['x-anycast-client'];
   if (typeof clientId !== 'string' || !CLIENT_ID.test(clientId)) return null;
   const { user, profileId } = auth(req);
@@ -96,7 +97,8 @@ export function playbackRoutes(app: FastifyInstance, s: Services): void {
    */
   app.addHook('onRequest', async (req) => {
     const m = /^\/api\/(?:stream|thumbs)\/(live|timeshift|buffer|movie|episode)\/([^/?]+?)(?:\.ts)?(?:[/?]|$)/.exec(req.url);
-    if (!m || !req.auth) return;
+    // a cast link was only made after its item passed the check on POST /api/cast/play
+    if (!m || !req.auth || castTokenOf(req.raw)) return;
     const kind = m[1] === 'movie' || m[1] === 'episode' ? m[1] : 'live';
     const category = s.parental.categoryOf(kind, decodeURIComponent(m[2]!));
     const a = req.auth;

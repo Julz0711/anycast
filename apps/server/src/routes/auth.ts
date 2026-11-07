@@ -2,6 +2,7 @@ import { PROFILE_NAME_MAX } from '@anycast/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { SESSION_COOKIE, SESSION_TTL_MS } from '../auth/users';
+import { CAST_CORS, castTokenOf } from '../cast';
 import { auth, type Services } from '../context';
 
 const LoginBody = z.object({ username: z.string().min(1).max(200), password: z.string().min(1).max(500) });
@@ -23,6 +24,15 @@ export function registerAuthHook(app: FastifyInstance, s: Services): void {
   app.decorateRequest('auth', null);
   app.addHook('onRequest', async (req, reply) => {
     const url = req.url.split('?')[0]!;
+    // a TV opening a cast link: authenticated by the link's token, for that item's streams only
+    const castToken = castTokenOf(req.raw);
+    if (castToken) {
+      if (req.method === 'OPTIONS') return reply.code(204).headers(CAST_CORS).send();
+      const a = s.cast.resolve(castToken, url);
+      if (!a) return reply.code(401).headers(CAST_CORS).send({ error: 'unauthorized', message: 'This cast link has ended. Cast again from the app.' });
+      req.auth = a;
+      return;
+    }
     if (!url.startsWith('/api/') || PUBLIC_ROUTES.has(url)) return;
     const token = req.cookies[SESSION_COOKIE];
     const user = token ? s.users.userForSession(token) : null;
@@ -54,6 +64,7 @@ export function authRoutes(app: FastifyInstance, s: Services): void {
 
   app.post('/api/auth/logout', async (req, reply) => {
     s.users.deleteSession(auth(req).token);
+    s.cast.revokeSession(auth(req).token);
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return { ok: true };
   });

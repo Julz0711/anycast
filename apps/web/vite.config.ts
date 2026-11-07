@@ -39,7 +39,7 @@ export default defineConfig(({ mode }) => {
           globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
           globIgnores: ['**/clip-*.webm'],
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//],
+          navigateFallbackDenylist: [/^\/api\//, /^\/cast\//],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\//,
@@ -55,6 +55,8 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         '/api': { target: 'http://localhost:8787', changeOrigin: false },
+        // cast links a TV opens (/cast/<token>/api/stream/...)
+        '/cast': { target: 'http://localhost:8787', changeOrigin: false },
       },
     },
     build: {

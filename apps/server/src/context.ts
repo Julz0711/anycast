@@ -1,5 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 import type { Users, UserRow } from './auth/users';
+import type { CastLinks } from './cast';
 import type { AutoBackups } from './backup/auto';
 import type { CatalogSync } from './catalog/sync';
 import type { Config } from './config';
@@ -21,6 +22,7 @@ export interface Services {
   playback: PlaybackService;
   parental: Parental;
   backups: AutoBackups;
+  cast: CastLinks;
 }
 
 export interface AuthContext {
