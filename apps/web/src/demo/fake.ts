@@ -6,7 +6,7 @@ import {
   ADULT_MODE_RANK, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, DEFAULT_PREFERENCES, FINISHED_THRESHOLD, LOCKED_NAME, mergePreferences, PIN_MAX_ATTEMPTS, summarizeBackup, PIN_WINDOW_MS,
   defaultAvatar, type AdultMode, type AdultStatus, type BackupFile, type Category, type RestoreMode, type UnlockMinutes,
   type Channel, type ChannelList, type Favorite, type MediaList, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
-  type Preferences, type Profile, type Progress, type Series, type SourceStatus, type SyncEvent, type TagSummary, type TimelineInfo,
+  type Preferences, type Profile, type Progress, type RecentChannel, RECENT_CHANNELS_MAX, type Series, type SourceStatus, type SyncEvent, type TagSummary, type TimelineInfo,
 } from '@anycast/shared';
 import { ApiError } from '../api/client';
 import { buildFixtures } from './fixtures';
@@ -22,6 +22,7 @@ interface ProfileState {
   rules: HideRules;
   lists: ChannelList[];
   mediaLists: MediaList[];
+  recent: RecentChannel[];
   adult: { mode: AdultMode; pin: string | null; unlockMinutes: UnlockMinutes; unlockedUntil: number | null; failures: number[] };
 }
 
@@ -122,6 +123,7 @@ function state(pid: string | null): ProfileState {
         },
         ...(id === 'p1' ? [{ id: 'ml1', name: 'Date night', builtin: null, items: [{ kind: 'movie' as const, id: 'm7', addedAt: now }, { kind: 'movie' as const, id: 'm108', addedAt: now }] }] : []),
       ],
+      recent: id === 'p1' ? [ch(104), ch(131), ch(112), ch(121), ch(107), ch(141)].map((cid, i) => ({ id: cid, watchedAt: now - (i + 1) * 2_400_000 })) : [],
       adult: { mode: 'locked', pin: '1234', unlockMinutes: 30, unlockedUntil: null, failures: [] },
     };
     const seed: Progress[] = [
@@ -132,6 +134,9 @@ function state(pid: string | null): ProfileState {
       { kind: 'episode', id: 's1e1x1', seriesId: 's1', position: 2700, duration: 2700, finished: true, updatedAt: now - 9800_000 },
       { kind: 'episode', id: 's1e1x2', seriesId: 's1', position: 2650, duration: 2700, finished: true, updatedAt: now - 9000_000 },
       { kind: 'episode', id: 's102e1x2', seriesId: 's102', position: 600, duration: 2580, finished: false, updatedAt: now - 5400_000 },
+      // finished: Up next shows the episode after it
+      { kind: 'episode', id: 's5e1x4', seriesId: 's5', position: 2580, duration: 2600, finished: true, updatedAt: now - 20_000_000 },
+      { kind: 'episode', id: 's8e1x1', seriesId: 's8', position: 2500, duration: 2550, finished: true, updatedAt: now - 90_000_000 },
     ];
     for (const p of seed) s.progress.set(`${p.kind}:${p.id}`, p);
     states.set(id, s);
@@ -500,19 +505,41 @@ const routes: [string, RegExp, Handler][] = [
     return p;
   }],
   ['GET', /^\/api\/continue$/, (_m, _q, _b, st) => {
-    const ps = [...st.progress.values()].filter((p) => !p.finished).sort((a, b) => b.updatedAt - a.updatedAt);
-    const movies = ps.filter((p) => p.kind === 'movie').flatMap((p) => {
+    const all = [...st.progress.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    const movies = all.filter((p) => p.kind === 'movie' && !p.finished && p.position > 0).flatMap((p) => {
       const mv = fx.movies.find((x) => x.id === p.id);
       return mv ? [{ ...(mv as Movie), progress: p }] : [];
     });
-    const episodes = ps.filter((p) => p.kind === 'episode').flatMap((p) => {
-      const d = p.seriesId ? fx.seriesDetail(p.seriesId) : null;
-      const ep = d?.seasons.flatMap((s) => s.episodes).find((e) => e.id === p.id);
-      if (!d || !ep) return [];
+    // like the server: per series its latest episode; finished -> the next one, as "up next" (position 0)
+    const latest = new Map<string, Progress>();
+    for (const p of all) if (p.kind === 'episode' && p.seriesId && !latest.has(p.seriesId)) latest.set(p.seriesId, p);
+    const episodes = [...latest.values()].flatMap((p) => {
+      const d = fx.seriesDetail(p.seriesId!);
+      if (!d) return [];
+      const eps = d.seasons.flatMap((s) => s.episodes);
+      const idx = eps.findIndex((e) => e.id === p.id);
+      if (idx < 0) return [];
       const { seasons: _s, ...series } = d;
-      return [{ ...ep, progress: p, series: series as Series }];
+      if (!p.finished) return [{ ...eps[idx]!, progress: p, series: series as Series }];
+      const next = eps.slice(idx + 1).find((e) => !st.progress.get(`episode:${e.id}`)?.finished);
+      if (!next) return [];
+      const progress: Progress = st.progress.get(`episode:${next.id}`) ?? { kind: 'episode', id: next.id, seriesId: d.id, position: 0, duration: next.duration ?? 0, finished: false, updatedAt: p.updatedAt };
+      return [{ ...next, progress, series: series as Series }];
     });
     return { movies, episodes };
+  }],
+  ['GET', /^\/api\/recent-channels$/, (_m, _q, _b, st) => st.recent],
+  ['PUT', /^\/api\/recent-channels$/, (_m, _q, body, st) => {
+    const id = (body as { channelId: string }).channelId;
+    st.recent = [{ id, watchedAt: Date.now() }, ...st.recent.filter((r) => r.id !== id)].slice(0, RECENT_CHANNELS_MAX);
+    emit({ type: 'recent-channels', profileId: currentPid, recent: structuredClone(st.recent) });
+    return st.recent;
+  }],
+  ['DELETE', /^\/api\/recent-channels(?:\/([^/]+))?$/, (_m, _q, _b, st) => {
+    const id = _m[1];
+    st.recent = id ? st.recent.filter((r) => r.id !== decodeURIComponent(id)) : [];
+    emit({ type: 'recent-channels', profileId: currentPid, recent: structuredClone(st.recent) });
+    return st.recent;
   }],
   ['GET', /^\/api\/preferences$/, (_m, _q, _b, st) => st.prefs],
   ['PUT', /^\/api\/preferences$/, (_m, _q, body, st) => {

@@ -1,7 +1,8 @@
 import { normalizeTabOrder, type TabId } from '@anycast/shared';
-import { IconLists, IconLive, IconMovie, IconSearch, IconSeries, IconSettings, IconStar } from '../components/Icons';
+import { IconHome, IconLists, IconLive, IconMovie, IconSearch, IconSeries, IconSettings, IconStar } from '../components/Icons';
 
 export const TABS: Record<TabId | 'settings', { label: string; short: string; path: string; key: string; Icon: typeof IconLive }> = {
+  home: { label: 'Home', short: 'Home', path: '/home', key: 'H', Icon: IconHome },
   search: { label: 'Search', short: 'Search', path: '/search', key: '/', Icon: IconSearch },
   favorites: { label: 'Favorites', short: 'Favorites', path: '/favorites', key: 'F', Icon: IconStar },
   lists: { label: 'Lists', short: 'Lists', path: '/lists', key: 'T', Icon: IconLists },

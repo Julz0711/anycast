@@ -222,3 +222,43 @@ describe('movie and series lists', () => {
     expect((await call({ method: 'PATCH', url: `/api/media-lists/${b.id}`, payload: { name: 'Mine' } })).statusCode).toBe(404);
   });
 });
+
+describe('recent channels (Home › Jump back in)', () => {
+  test('newest first, a rewatch moves to the front, capped, forget one or all, per profile', async () => {
+    const [a, b, c] = channels.map((x) => x.id);
+    expect(await json({ url: '/api/recent-channels' })).toEqual([]);
+    await json({ method: 'PUT', url: '/api/recent-channels', payload: { channelId: a } });
+    await new Promise((r) => setTimeout(r, 5));
+    await json({ method: 'PUT', url: '/api/recent-channels', payload: { channelId: b } });
+    await new Promise((r) => setTimeout(r, 5));
+    const got = await json<{ id: string; watchedAt: number }[]>({ method: 'PUT', url: '/api/recent-channels', payload: { channelId: a } });
+    expect(got.map((x) => x.id)).toEqual([a, b]);
+    expect(got[0]!.watchedAt).toBeGreaterThan(got[1]!.watchedAt);
+    expect((await call({ method: 'PUT', url: '/api/recent-channels', payload: {} })).statusCode).toBe(400);
+
+    // another profile has its own
+    const other = await newProfile('Recent other');
+    expect(await json({ url: '/api/recent-channels', profile: other.id })).toEqual([]);
+
+    // capped at RECENT_CHANNELS_MAX
+    const { RECENT_CHANNELS_MAX } = await import('@anycast/shared');
+    for (let i = 0; i < RECENT_CHANNELS_MAX + 5; i++) await json({ method: 'PUT', url: '/api/recent-channels', payload: { channelId: `x${i}` }, profile: other.id });
+    const capped = await json<{ id: string }[]>({ url: '/api/recent-channels', profile: other.id });
+    expect(capped).toHaveLength(RECENT_CHANNELS_MAX);
+    expect(capped[0]!.id).toBe(`x${RECENT_CHANNELS_MAX + 4}`);
+
+    await json({ method: 'PUT', url: '/api/recent-channels', payload: { channelId: c } });
+    expect((await json<{ id: string }[]>({ method: 'DELETE', url: `/api/recent-channels/${a}` })).map((x) => x.id)).toEqual([c, b]);
+    expect(await json({ method: 'DELETE', url: '/api/recent-channels' })).toEqual([]);
+  });
+
+  test('changes reach the profile as a recent-channels event', async () => {
+    const events: SyncEvent[] = [];
+    const off = built.services.bus.subscribe(me.id, (e) => events.push(e));
+    await json({ method: 'PUT', url: '/api/recent-channels', payload: { channelId: channels[0]!.id } });
+    off();
+    const ev = events.find((e) => e.type === 'recent-channels');
+    expect(ev).toMatchObject({ type: 'recent-channels', profileId: me.id });
+    expect(ev?.type === 'recent-channels' && ev.recent[0]!.id).toBe(channels[0]!.id);
+  });
+});

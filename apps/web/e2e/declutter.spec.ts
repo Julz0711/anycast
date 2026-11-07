@@ -26,8 +26,9 @@ test('declutter: keep only English in setup; other languages vanish from Live, M
   await expect(langs.getByRole('button', { name: /^German/ })).toHaveAttribute('aria-pressed', 'false');
   await page.getByRole('button', { name: 'Keep 1 language' }).click();
 
-  // Live TV
-  await expect(page).toHaveURL(/\/live$/);
+  // a new profile opens on Home; then Live TV
+  await expect(page).toHaveURL(/\/home$/);
+  await page.getByRole('link', { name: 'Live TV' }).first().click();
   const groups = page.getByRole('toolbar', { name: 'Channel groups' });
   await expect(groups.getByRole('button', { name: chip(d.liveCat.en), exact: true })).toBeVisible();
   await expect(groups.getByRole('button', { name: chip(d.liveCat.de), exact: true })).toHaveCount(0);
@@ -54,6 +55,6 @@ test('declutter: keep only English in setup; other languages vanish from Live, M
   // the setup is stored on the server for this profile: another device goes straight to the app
   const other = await profile.device();
   await other.goto('/');
-  await expect(other).toHaveURL(/\/live$/);
-  await expect(other.getByRole('heading', { name: 'Live TV' })).toBeVisible();
+  await expect(other).toHaveURL(/\/home$/);
+  await expect(other.getByRole('button', { name: 'Customize' })).toBeVisible();
 });

@@ -21,6 +21,8 @@
  * Excluded:
  *   sessions          sign-in tokens (hashed); a restore must not sign anyone in, or out of a new server
  *   profile_entries   which sign-in sessions opened a locked profile; goes with the sessions
+ *   recent_channels   the last channels each profile watched (Home › Jump back in): short-lived
+ *                     viewing history that fills again as soon as someone watches TV
  *   source            the provider login (Xtream URL, user, password), encrypted with ANYCAST_SECRET:
  *                     it comes from .env, and a backup file must never carry it
  *   kv                only the last catalog / guide sync times (sync state, not user data)
@@ -55,6 +57,7 @@ export const BACKUP_TABLES = {
 
   sessions: 'exclude',
   profile_entries: 'exclude',
+  recent_channels: 'exclude',
   source: 'exclude',
   kv: 'exclude',
   categories: 'exclude',

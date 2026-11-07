@@ -24,7 +24,7 @@ function useLockedLink(locked: boolean | undefined, to: string) {
     : undefined;
 }
 
-function Art(props: { id: string; name: string; src: string | null; children?: React.ReactNode; wide?: boolean; locked?: boolean }) {
+export function Art(props: { id: string; name: string; src: string | null; children?: React.ReactNode; wide?: boolean; locked?: boolean }) {
   const show = useApp((s) => s.prefs.appearance.showArtwork);
   const [broken, setBroken] = useState(false);
   return (
@@ -79,6 +79,20 @@ export function ContinueCard(props: { to: string; id: string; title: string; sub
       <ProgressBar value={props.position / props.duration} label={`${Math.round((props.position / props.duration) * 100)}% watched`} />
       <div className="t">{props.title}</div>
       {props.subtitle && <div className="s">{props.subtitle}</div>}
+    </Link>
+  );
+}
+
+/** The next episode of a series the viewer is following (nothing watched of it yet). */
+export function UpNextCard(props: { to: string; id: string; title: string; label: string; subtitle: string; poster: string | null; locked?: boolean }) {
+  const onClick = useLockedLink(props.locked, props.to);
+  return (
+    <Link to={props.to} className="cont-card poster" onClick={onClick} onMouseEnter={prefetchPlayer} onFocus={prefetchPlayer} aria-label={`${props.title}, ${props.label}, ${props.subtitle}`}>
+      <Art id={props.id} name={props.title} src={props.poster} wide locked={props.locked}>
+        <span className="left tabnum">{props.label}</span>
+      </Art>
+      <div className="t">{props.title}</div>
+      <div className="s">{props.subtitle}</div>
     </Link>
   );
 }

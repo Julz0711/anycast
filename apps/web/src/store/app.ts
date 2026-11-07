@@ -1,6 +1,6 @@
 /** Global app state (zustand). Actions live in ./actions.ts. */
 import { create } from 'zustand';
-import { DEFAULT_PREFERENCES, type ChannelList, type Favorite, type HideRules, type MediaList, type Me, type Preferences, type Progress } from '@anycast/shared';
+import { DEFAULT_PREFERENCES, type ChannelList, type Favorite, type HideRules, type MediaList, type Me, type Preferences, type Progress, type RecentChannel } from '@anycast/shared';
 import type { DeviceOverride } from '../lib/device';
 import { readLocal } from '../lib/storage';
 
@@ -19,6 +19,8 @@ export interface AppState {
   prefsLoaded: boolean;
   favorites: Favorite[];
   progress: Record<string, Progress>;
+  /** live channels watched lately, newest first (Home › Jump back in) */
+  recentChannels: RecentChannel[];
   hideRules: HideRules;
   hideRulesLoaded: boolean;
   /** the profile's channel lists, in the user's order (LB-3) */
@@ -52,6 +54,7 @@ export const useApp = create<AppState>(() => ({
   prefsLoaded: false,
   favorites: [],
   progress: {},
+  recentChannels: [],
   hideRules: EMPTY_RULES,
   hideRulesLoaded: false,
   lists: [],

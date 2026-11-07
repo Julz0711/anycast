@@ -40,6 +40,11 @@ export interface MediaListItem { kind: 'movie' | 'series'; id: string; addedAt: 
 export interface MediaList { id: string; name: string; builtin: 'watch-later' | null; items: MediaListItem[] }
 export const MEDIA_LIST_LIMITS = { lists: 100, items: 5000, name: 60 } as const;
 
+/** A live channel the profile watched lately (Home › Jump back in); `watchedAt` is epoch ms. */
+export interface RecentChannel { id: string; watchedAt: number }
+/** How many recent channels a profile keeps; older ones drop off. */
+export const RECENT_CHANNELS_MAX = 30;
+
 export interface Me {
   user: { id: string; username: string; isAdmin: boolean };
   profiles: Profile[];
@@ -192,6 +197,8 @@ export type SyncEvent =
   | { type: 'lists'; profileId: string; lists: ChannelList[] }
   /** the profile's movie and series lists (Watch Later first), all of them in order, after any change */
   | { type: 'media-lists'; profileId: string; lists: MediaList[] }
+  /** the profile's recently watched channels, newest first, after any change */
+  | { type: 'recent-channels'; profileId: string; recent: RecentChannel[] }
   | { type: 'catalog-updated' }
   /** the profile's parental lock settings changed (mode, PIN, duration): refetch GET /api/adult and lists */
   | { type: 'parental'; profileId: string }
@@ -335,6 +342,17 @@ export interface Api {
   'PUT /api/favorites': { body: { kind: Favorite['kind']; id: string; favorite: boolean }; res: Favorite[] };
   'GET /api/progress': { res: Progress[] };
   'PUT /api/progress': { body: Omit<Progress, 'updatedAt' | 'finished'>; res: Progress };
+  /**
+   * Recently watched live channels (Home › Jump back in), newest first, at most RECENT_CHANNELS_MAX.
+   * The web app records a channel once it has played for a few seconds. Ids only: hydrate them with
+   * GET /api/items (hidden channels drop out there). Every change sends a 'recent-channels' SyncEvent.
+   */
+  'GET /api/recent-channels': { res: RecentChannel[] };
+  'PUT /api/recent-channels': { body: { channelId: string }; res: RecentChannel[] };
+  /** forgets one channel */
+  'DELETE /api/recent-channels/:id': { res: RecentChannel[] };
+  /** forgets them all */
+  'DELETE /api/recent-channels': { res: RecentChannel[] };
   'GET /api/continue': { res: { movies: (Movie & { progress: Progress })[]; episodes: (Episode & { progress: Progress; series: Series })[] } };
   /** includes `setupDone`, the per-profile first-run flag */
   'GET /api/preferences': { res: Preferences };
