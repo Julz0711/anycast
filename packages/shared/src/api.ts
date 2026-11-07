@@ -20,6 +20,7 @@ import type { Preferences } from './settings';
 import type { TrackChoice } from './tracks';
 import type { AutoBackups, BackupFile, RestoreMode, RestoreResult } from './backup';
 import type { Profile, ProfileImageType } from './profiles';
+import type { CastPlayRequest, CastPlayResponse, CastSettings } from './cast';
 
 
 /**
@@ -328,6 +329,16 @@ export interface Api {
   'POST /api/play/takeover': { res: { ok: true; stopped: boolean } };
   /** This client stopped watching (player closed): its provider connection is released now. */
   'POST /api/play/stop': { res: { ok: true } };
+
+  /**
+   * Casting (cast.ts): the stream of an item for a TV, and a cast link to it the TV can open
+   * without the session cookie. Like /api/play/*, it is this client's claim on the provider
+   * connection, so the phone's own stream and the TV's are never two connections. Errors as /api/play/*.
+   */
+  'POST /api/cast/play': { body: CastPlayRequest; res: CastPlayResponse };
+  'GET /api/cast/settings': { res: CastSettings };
+  /** Admin only. 400 for an address that is not http(s)://host[:port] */
+  'PUT /api/cast/settings': { body: CastSettings; res: CastSettings };
 
   /** Rolling buffer: pinned channels record continuously (TL-4) */
   'GET /api/buffer/pins': { res: BufferPins };

@@ -76,6 +76,21 @@ has in its App Store:
 AnyCast is then at `https://<server-name>.<your-tailnet>.ts.net`, with a valid certificate, from
 anywhere, without opening ports on your router. On the phone, open it and use "Add to Home Screen".
 
+## 4b. Casting to a TV (Chromecast, AirPlay)
+
+The player has a cast button when a TV is on your network: Chromecast (and TVs with Chromecast
+built in, like most Sony Android TVs) from Chrome or Edge, AirPlay from Safari on iPhone, iPad and
+Mac. The TV plays the stream your server already makes for the app, so it never needs a second
+provider connection, and the phone becomes the remote (play, pause, seek, zap).
+
+Two things to know:
+
+- **Chromecast needs the app opened over https** (step 4). That is a Chrome rule for casting.
+- **The TV opens the stream from your server itself**, and it is not on your tailnet. So in the
+  app, open Settings › All settings › Casting and set **Server address for TVs** to the server's
+  home network address, e.g. `http://192.168.1.20:8787` (the address you opened in step 3).
+  Without it, the TV is sent the `ts.net` address and can't play.
+
 ## 5. Optional: Hardware transcoding
 
 Most streams play without any conversion. When a device can't decode a stream's video (HEVC on

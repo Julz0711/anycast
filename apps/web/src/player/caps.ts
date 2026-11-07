@@ -1,3 +1,6 @@
+import { airPlayApi } from './cast/airplay';
+import { isAppleWebKit } from './engine';
+
 /**
  * Playback capabilities, sent to the server as `x-anycast-caps: {"hls":bool,"mse":bool,"codecs":[...]}`
  * so it can choose passthrough / remux / transcode.
@@ -44,14 +47,22 @@ export function detectCaps(env: CapsEnv): Caps {
   return { hls, mse, codecs };
 }
 
+/**
+ * Safari with AirPlay: ask for HLS played by Safari itself, never MSE (mpegts.js), because only
+ * Safari's own player can hand the video to an Apple TV. The server then remuxes live channels to
+ * HLS instead of passing the raw TS through, which costs it little (no re-encoding).
+ */
+export function preferNativeHls(caps: Caps, env: { appleWebKit: boolean; airPlay: boolean }): Caps {
+  return env.appleWebKit && env.airPlay && caps.hls ? { ...caps, mse: false } : caps;
+}
+
 let memo: string | null = null;
 export function capsHeader(): string | null {
   if (memo) return memo;
   if (typeof document === 'undefined') return null;
   const v = document.createElement('video');
   const w = window as unknown as { MediaSource?: CapsEnv['MediaSource']; ManagedMediaSource?: CapsEnv['ManagedMediaSource'] };
-  memo = JSON.stringify(
-    detectCaps({ MediaSource: w.MediaSource, ManagedMediaSource: w.ManagedMediaSource, canPlayType: (t) => v.canPlayType(t) }),
-  );
+  const caps = detectCaps({ MediaSource: w.MediaSource, ManagedMediaSource: w.ManagedMediaSource, canPlayType: (t) => v.canPlayType(t) });
+  memo = JSON.stringify(preferNativeHls(caps, { appleWebKit: isAppleWebKit(), airPlay: airPlayApi() }));
   return memo;
 }

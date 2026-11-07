@@ -1,0 +1,13 @@
+/* Casting: the stage while a TV plays (Chromecast or AirPlay). */
+.pl-cast { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.625rem; padding: 1.5rem; text-align: center; background: radial-gradient(ellipse at center, rgba(30, 32, 36, 0.92), rgba(10, 11, 13, 0.97)); }
+.pl-cast .ico { width: 2.75rem; height: 2.75rem; color: var(--accent); }
+.pl-cast-label { color: var(--muted); font-size: 0.8125rem; letter-spacing: 0.02em; }
+.pl-cast-device { font-size: 1.25rem; font-weight: 700; color: var(--text); max-width: 100%; overflow-wrap: anywhere; }
+.pl-cast-state { color: var(--text-2); font-size: 0.875rem; min-height: 1.25em; }
+.pl-cast .actions { margin-top: 0.5rem; pointer-events: auto; }
+.pl-cast-hint { color: var(--muted); font-size: 0.75rem; max-width: 28rem; line-height: 1.4; }
+/* phone: the stage is short and the top bar sits over it, so no big icon */
+[data-form="phone"] .pl-cast { gap: 0.25rem; padding: 3.5rem 1rem 1rem; }
+[data-form="phone"] .pl-cast > .ico { display: none; }
+[data-form="phone"] .pl-cast-device { font-size: 1rem; }
+[data-form="tv"] .pl-cast-device { font-size: 1.75rem; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectCaps } from './caps';
+import { detectCaps, preferNativeHls } from './caps';
 import { chooseEngine } from './engine';
 
 describe('detectCaps', () => {
@@ -40,5 +40,17 @@ describe('chooseEngine', () => {
     expect(chooseEngine('hls', { mse: true, nativeHls: true, appleWebKit: false })).toBe('hls.js');
     expect(chooseEngine('mpegts', chrome)).toBe('mpegts');
     expect(chooseEngine('file', chrome)).toBe('native');
+  });
+});
+
+describe('preferNativeHls', () => {
+  const caps = { hls: true, mse: true, codecs: ['avc1', 'mp4a'] };
+  it('Safari with AirPlay plays HLS itself, so AirPlay can take the video', () => {
+    expect(preferNativeHls(caps, { appleWebKit: true, airPlay: true })).toEqual({ ...caps, mse: false });
+  });
+  it('leaves other browsers alone', () => {
+    expect(preferNativeHls(caps, { appleWebKit: false, airPlay: false })).toBe(caps);
+    expect(preferNativeHls(caps, { appleWebKit: true, airPlay: false })).toBe(caps);
+    expect(preferNativeHls({ ...caps, hls: false }, { appleWebKit: true, airPlay: true }).mse).toBe(true);
   });
 });

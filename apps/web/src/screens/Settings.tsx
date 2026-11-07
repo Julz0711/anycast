@@ -26,6 +26,7 @@ import { ParentalLock } from './ParentalLock';
 import { DiagnosticsSection } from './Diagnostics';
 import { HwEncoding } from './HwEncoding';
 import { BackupSection } from './Backup';
+import { CastSettings } from './CastSettings';
 import '../theme/settings.css';
 
 type P = Preferences;
@@ -53,6 +54,7 @@ export default function SettingsScreen() {
         { id: 'live', title: 'Live TV', body: <LiveSettings prefs={prefs} form={form} all /> },
         { id: 'lists', title: 'Channel lists', body: <ListsManager /> },
         { id: 'player', title: 'Player', body: <PlayerSettings prefs={prefs} all /> },
+        { id: 'casting', title: 'Casting', body: <CastSettings Row={Row} /> },
         { id: 'tabs', title: 'Start & tabs', body: <StartTabs prefs={prefs} all /> },
         { id: 'home', title: 'Home', body: <HomeEditor compact /> },
         { id: 'filters', title: 'Filters', body: <Filters all /> },

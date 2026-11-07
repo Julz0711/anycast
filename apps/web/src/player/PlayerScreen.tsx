@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Episode, PlaybackInfo, TimelineInfo, TrackChoice } from '@anycast/shared';
+import type { CastPlayResponse, Episode, PlaybackInfo, TimelineInfo, TrackChoice } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
 import { recordRecentChannel, saveProgress, saveProgressOnUnload, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
 import { cachedGet, call } from '../api/client';
@@ -29,7 +29,13 @@ import { Skeleton } from '../components/ui';
 import { useMediaSession } from './mediaSession';
 import { PipButton, usePictureInPicture } from './PipButton';
 import { StatsButton, StatsOverlay, useStatsToggle } from './stats/Stats';
+import { useAirPlay } from './cast/airplay';
+import { CastButton } from './cast/CastButton';
+import { castConnected, castLoad, castPause, castPlay, castPlayPause, castSeek, castStopMedia, endChromecast, playerMounted, useChromecast } from './cast/chromecast';
+import { IconAirPlay, IconCast } from './cast/icons';
+import { castMediaFor, castUrl, unreachableFromTv } from './cast/media';
 import '../theme/player.css';
+import '../theme/cast.css';
 
 /** Within this of the live edge counts as live. */
 const LIVE_SLACK_MS = 6_000;
@@ -132,6 +138,28 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const progressBodyRef = useRef<() => ProgressBody | null>(() => null);
   const stats = useStatsToggle();
 
+  /* casting: a Chromecast session plays on the TV; AirPlay plays this <video> on the TV */
+  const airplay = useAirPlay(videoRef);
+  const ccState = useChromecast((s) => s.castState);
+  const ccDevice = useChromecast((s) => s.device);
+  const ccPlayer = useChromecast((s) => s.playerState);
+  const ccTime = useChromecast((s) => s.time);
+  const ccDuration = useChromecast((s) => s.duration);
+  const ccIdle = useChromecast((s) => s.idleReason);
+  const ccLoadSeq = useChromecast((s) => s.loadSeq);
+  const casting = ccState === 'CONNECTED';
+  const castingRef = useRef(casting);
+  castingRef.current = casting;
+  const airplayRef = useRef(false);
+  airplayRef.current = airplay.active;
+  /** title, subtitle and artwork the TV shows */
+  const castMeta = useRef<{ title: string; subtitle: string | null; image: string | null }>({ title: '', subtitle: null, image: null });
+  /** live on the TV: the wall time it was asked to play from, and its media time once playing */
+  const castLive = useRef<{ at: number; mediaT: number | null }>({ at: Date.now(), mediaT: null });
+  /** the cast server address (Settings), for the error tips */
+  const castBase = useRef<string | null>(null);
+  useEffect(() => playerMounted(), []);
+
   /* ---------------- metadata ---------------- */
   const channel = useAsync(
     async (signal) => (isLive ? (lookup('live', id) ?? (await resolveItems('live', [id], { signal }))[0] ?? null) : null),
@@ -201,8 +229,53 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       // retry, resume, go live, a seek into the archive or buffer: the same audio and subtitles
       const item = `${kind}:${id}`;
       const { audio, sub } = keepTracks(opts, playing.current.item === item ? playing.current.tracks : {});
+      const castBody = (target: 'chromecast' | 'airplay') => ({
+        kind: (isLive ? 'live' : vodKind) as 'live' | 'movie' | 'episode',
+        id,
+        target,
+        ...(isLive && at !== null ? { at: Math.round(at) } : {}),
+        ...(audio !== undefined ? { audio } : {}),
+        ...(sub !== undefined ? { sub } : {}),
+      });
+      if (castingRef.current) {
+        // on the TV: the same stream, through a cast link; this device only controls it
+        let r: CastPlayResponse;
+        try {
+          r = await call('POST /api/cast/play', { body: castBody('chromecast') });
+        } catch (e) {
+          if (seq !== loadSeq.current) return;
+          setError(fromApiError(e, { live: isLive, timeshift: at !== null }));
+          setWaiting(false);
+          return;
+        }
+        if (seq !== loadSeq.current) return;
+        castBase.current = r.baseUrl;
+        const ci = r.info;
+        const start = isLive
+          ? at !== null && ci.startsAt !== undefined && at - ci.startsAt > 1000
+            ? (at - ci.startsAt) / 1000
+            : 0
+          : (opts.position ?? (opts.fromStart ? 0 : (ci.resumeAt ?? 0)));
+        streamRef.current = { info: ci, liveEdge: at === null, seq };
+        setInfo(ci);
+        setSubIdx(ci.tracks?.subtitleIndex ?? null);
+        playing.current = { item, tracks: playingTracks(ci.tracks, ci.tracks?.subtitleIndex ?? null) };
+        castLive.current = { at: at ?? Date.now(), mediaT: null };
+        try {
+          await castLoad(castMediaFor(r, { live: isLive, startTime: start, ...castMeta.current }, location.origin));
+        } catch {
+          if (seq !== loadSeq.current) return;
+          setError(castFailure(useChromecast.getState().device, r.baseUrl));
+        }
+        if (seq === loadSeq.current) setWaiting(false);
+        return;
+      }
       try {
-        pi = isLive
+        if (airplayRef.current) {
+          // AirPlay: the TV opens the stream itself, without this browser's session cookie
+          const r = await call('POST /api/cast/play', { body: castBody('airplay') });
+          pi = { ...r.info, url: castUrl(r, location.origin) };
+        } else pi = isLive
           ? at !== null
             ? await call('GET /api/play/live/:id/at', { params: { id }, query: { at: Math.round(at), audio } })
             : await call('GET /api/play/live/:id', { params: { id }, query: { audio } })
@@ -239,7 +312,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       }
       play();
     },
-    [isLive, id, kind, onFatal, play],
+    [isLive, id, kind, vodKind, onFatal, play],
   );
 
   useEffect(() => {
@@ -276,6 +349,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     if (!stopped || stopped.at < loadStarted.current) return;
     const b = progressBodyRef.current();
     if (b && b.position > 1) void saveProgress(b);
+    if (castingRef.current) castStopMedia();
     loadSeq.current++;
     engineRef.current?.destroy();
     engineRef.current = null;
@@ -300,6 +374,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   // another device can start at once). Zapping needs no call: the next play request does it.
   useEffect(() => {
     const stop = () => {
+      // the TV goes on playing after the player (or the app) closes; the connection stays its
+      if (castConnected() && useChromecast.getState().loaded) return;
       try {
         void call('POST /api/play/stop', { keepalive: true }).catch(() => undefined);
       } catch {
@@ -313,13 +389,53 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     };
   }, []);
 
+  /* ---------------- casting: hand over to the TV and back ---------------- */
+  /** where the TV got to, to continue here when casting ends */
+  const lastCast = useRef<{ position: number; behind: boolean; vod: number }>({ position: 0, behind: false, vod: 0 });
+  /** where this device got to, to continue on the TV from there */
+  const lastLocal = useRef<{ position: number; behind: boolean; vod: number }>({ position: 0, behind: false, vod: 0 });
+  const wasCasting = useRef(casting);
+  useEffect(() => {
+    if (wasCasting.current === casting) return;
+    wasCasting.current = casting;
+    const v = videoRef.current;
+    if (casting) {
+      // continue on the TV from the same point; this device stops playing (its engine stops in load)
+      const l = lastLocal.current;
+      v?.pause();
+      castLive.current = { at: l.behind ? l.position : Date.now(), mediaT: null };
+      void load(isLive && l.behind ? l.position : null, isLive ? {} : { position: l.vod });
+    } else {
+      const l = lastCast.current;
+      void load(isLive && l.behind ? l.position : null, isLive ? {} : { position: l.vod });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [casting]);
+
+  const wasAirPlay = useRef(false);
+  useEffect(() => {
+    if (wasAirPlay.current === airplay.active) return;
+    wasAirPlay.current = airplay.active;
+    if (!streamRef.current || castingRef.current) return;
+    // the same stream again, through a link the TV can open (or back to the plain one)
+    void load(isLive && !atLiveRef.current ? positionRef.current : null, isLive ? {} : { position: videoRef.current?.currentTime ?? 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [airplay.active]);
+
   /* ---------------- position maths ---------------- */
   const video = videoRef.current;
   const now = Date.now() + clockOffset;
-  const ct = video?.currentTime ?? 0;
+  if (casting && isLive && castLive.current.mediaT === null && ccPlayer === 'PLAYING') castLive.current.mediaT = ccTime;
+  const ct = casting ? ccTime : (video?.currentTime ?? 0);
   const seekEnd = video && video.seekable.length ? video.seekable.end(video.seekable.length - 1) : video?.duration && Number.isFinite(video.duration) ? video.duration : 0;
   const startsAt = info?.startsAt;
-  const position = isLive ? (engineRef.current?.positionDate() ?? (info ? absolutePosition(startsAt, ct, seekEnd, now) : now)) : ct;
+  const position = casting
+    ? isLive
+      ? castLive.current.at + Math.max(0, ccTime - (castLive.current.mediaT ?? ccTime)) * 1000
+      : ct
+    : isLive
+      ? (engineRef.current?.positionDate() ?? (info ? absolutePosition(startsAt, ct, seekEnd, now) : now))
+      : ct;
   positionRef.current = position;
   // Streams play a little behind real time (HLS latency). Measure that once at the live edge and
   // report "behind live" relative to it, so a 10 s skip back shows as 0:10, not 0:28.
@@ -331,12 +447,16 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   });
   const behind = Math.max(0, rawBehind - edge.current.offset);
   const atLive = isLive && behind < LIVE_SLACK_MS;
+  const atLiveRef = useRef(atLive);
+  atLiveRef.current = atLive;
+  if (casting) lastCast.current = { position, behind: !atLive, vod: ccTime };
+  else if (info) lastLocal.current = { position, behind: !atLive, vod: ct };
   const span = (form === 'phone' ? 3 : 4) * 3_600_000;
   const winRef = useRef<Win | null>(null);
   if (!dragging.current || !winRef.current) winRef.current = computeWindow(now, position, span);
   const win = winRef.current;
   const program = isLive && timeline ? programAt(position, timeline.programs) : null;
-  const duration = !isLive && video && Number.isFinite(video.duration) ? video.duration : (movie.data?.duration ?? episode?.duration ?? 0);
+  const duration = !isLive && casting && ccDuration > 0 ? ccDuration : !isLive && video && Number.isFinite(video.duration) ? video.duration : (movie.data?.duration ?? episode?.duration ?? 0);
   const buffered = video && video.buffered.length ? video.buffered.end(video.buffered.length - 1) : 0;
 
   // 1 s clock so "behind live" and the live edge keep moving even while paused
@@ -371,7 +491,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       const s = streamRef.current;
       const nowS = Date.now() + clockOffset;
       if (t >= nowS - 5_000) return goLive();
-      if (v && s) {
+      if (v && s && !castingRef.current) {
         const se = v.seekable.length ? v.seekable.end(v.seekable.length - 1) : v.duration;
         const ss = v.seekable.length ? v.seekable.start(0) : 0;
         const mt = Number.isFinite(se) ? mediaTimeFor(t, s.info.startsAt, ss, se, nowS) : null;
@@ -395,7 +515,12 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       const v = videoRef.current;
       if (!v) return;
       if (isLive) seekAbs(position + dir * secs * 1000);
-      else {
+      else if (castingRef.current) {
+        const st = useChromecast.getState();
+        const t = Math.max(0, Math.min((st.duration || Infinity) - 0.5, st.time + dir * secs));
+        castSeek(t);
+        setSeekHint({ t, key: Date.now() });
+      } else {
         v.currentTime = Math.max(0, Math.min((v.duration || Infinity) - 0.5, v.currentTime + dir * secs));
         setSeekHint({ t: v.currentTime, key: Date.now() });
       }
@@ -404,11 +529,18 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   );
 
   const togglePlay = useCallback(() => {
+    if (castingRef.current) return castPlayPause();
     const v = videoRef.current;
     if (!v) return;
     if (v.paused) play();
     else v.pause();
   }, [play]);
+
+  /** VOD: to a media time, here or on the TV */
+  const seekVod = useCallback((t: number) => {
+    if (castingRef.current) castSeek(t);
+    else if (videoRef.current) videoRef.current.currentTime = t;
+  }, []);
 
   /* ---------------- channel zapping ---------------- */
   const zap = useCallback(
@@ -577,6 +709,12 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
 
   /* ---------------- progress (VOD) ---------------- */
   const progressBody = useCallback(() => {
+    if (castingRef.current && !isLive) {
+      const st = useChromecast.getState();
+      if (!st.loaded || st.duration <= 0) return null;
+      const position = st.playerState === 'IDLE' && st.idleReason === 'FINISHED' ? st.duration : st.time;
+      return { kind: vodKind, id, position, duration: st.duration, ...(kind === 'episode' && seriesId ? { seriesId } : {}) } as const;
+    }
     const v = videoRef.current;
     if (!v || isLive || !Number.isFinite(v.duration) || v.duration <= 0) return null;
     return { kind: vodKind, id, position: v.ended ? v.duration : v.currentTime, duration: v.duration, ...(kind === 'episode' && seriesId ? { seriesId } : {}) } as const;
@@ -593,7 +731,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       const b = progressBody();
       if (b && b.position > 1) saveProgressOnUnload(b);
     };
-    const t = setInterval(() => videoRef.current && !videoRef.current.paused && save(), 10_000);
+    const playingNow = () => (castingRef.current ? useChromecast.getState().playerState === 'PLAYING' : !!videoRef.current && !videoRef.current.paused);
+    const t = setInterval(() => playingNow() && save(), 10_000);
     const vis = () => document.visibilityState === 'hidden' && unload();
     document.addEventListener('visibilitychange', vis);
     window.addEventListener('pagehide', unload);
@@ -664,6 +803,16 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     setError(fromPlaybackFailure(v.error, streamRef.current?.info.pipeline, isLive));
     setWaiting(false);
   };
+
+  // the TV finished (or failed) what it played: the same as the end of the stream here
+  useEffect(() => {
+    if (!casting || ccPlayer !== 'IDLE' || !ccIdle || !useChromecast.getState().loaded) return;
+    if (ccIdle === 'ERROR') {
+      setError(castFailure(ccDevice, castBase.current));
+      setWaiting(false);
+    } else if (ccIdle === 'FINISHED') onEnded();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [casting, ccPlayer, ccIdle, ccLoadSeq]);
 
   /* ---------------- phone gestures: double-tap sides to skip, swipe up/down to zap ---------------- */
   const gesture = useRef<{ x: number; y: number; t: number } | null>(null);
@@ -794,9 +943,15 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       ? [series.data?.name, episode ? `S${episode.season} E${episode.episode}` : null].filter(Boolean).join(' · ')
       : [movie.data?.year, duration ? fmtDuration(duration) : null].filter(Boolean).join(' · ');
   const title = isLive ? (program?.title ?? ch?.name ?? 'Live') : kind === 'episode' ? (episode?.title ?? 'Episode') : (movie.data?.name ?? 'Movie');
+  castMeta.current = {
+    title,
+    subtitle: metaLine || null,
+    image: (isLive ? ch?.logo : kind === 'episode' ? series.data?.poster : movie.data?.poster) ?? null,
+  };
   const tracks = info?.tracks;
   const hasTracks = hasTrackChoice(tracks);
-  const showPlayOverlay = !error && !moved && countdown === null && (needsTap || (paused && !waiting));
+  const showPlayOverlay = !casting && !error && !moved && countdown === null && (needsTap || (paused && !waiting));
+  const shownPaused = casting ? ccPlayer === 'PAUSED' : paused || needsTap;
 
   /* ---------------- media session (lock screen, media keys) ---------------- */
   const prevEpisode: Episode | undefined = epIdx > 0 ? episodes[epIdx - 1] : undefined;
@@ -808,10 +963,10 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
         ? { title, artist: series.data?.name, album: episode ? `S${episode.season} E${episode.episode}` : null, artwork: series.data?.poster }
         : { title, album: movie.data?.year ? String(movie.data.year) : null, artwork: movie.data?.poster },
     {
-      play,
-      pause: () => videoRef.current?.pause(),
+      play: () => (castingRef.current ? castPlay() : play()),
+      pause: () => (castingRef.current ? castPause() : videoRef.current?.pause()),
       seekBy: (s) => skip(s < 0 ? -1 : 1, Math.abs(s)),
-      seekTo: (t) => videoRef.current && (videoRef.current.currentTime = t),
+      seekTo: seekVod,
       previous: isLive ? () => void zap(-1) : prevEpisode ? () => go(`/play/episode/${prevEpisode.id}?series=${prevEpisode.seriesId}`) : undefined,
       next: isLive ? () => void zap(1) : nextEpisode ? goNext : undefined,
     },
@@ -831,6 +986,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           ref={videoRef}
           className="pl-video"
           playsInline
+          x-webkit-airplay="allow"
           preload="auto"
           onTimeUpdate={() => setTick((x) => x + 1)}
           onWaiting={onWaiting}
@@ -848,7 +1004,22 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           onError={onVideoError}
         />
         <div className="pl-gesture" onPointerDown={onGestureDown} onPointerUp={onGestureUp} aria-hidden="true" />
-        {waiting && !error && (
+        {(casting || airplay.active) && (
+          <div className="pl-cast" role="status" data-testid="cast-overlay">
+            {casting ? <IconCast connected /> : <IconAirPlay />}
+            <div className="pl-cast-label">{casting ? 'Playing on' : 'Playing with AirPlay'}</div>
+            {casting && <div className="pl-cast-device">{ccDevice ?? 'your TV'}</div>}
+            {casting && <div className="pl-cast-state">{ccPlayer === 'BUFFERING' || waiting ? 'Loading…' : ccPlayer === 'PAUSED' ? 'Paused' : ''}</div>}
+            {casting && (
+              <div className="actions">
+                <button type="button" className="btn" onClick={endChromecast}>
+                  Stop casting
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {waiting && !error && !casting && (
           <div className="pl-loading" aria-hidden="true">
             <span className="skel" />
           </div>
@@ -864,6 +1035,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           )}
           {form === 'phone' && (
             <span className="pl-top-end">
+              <CastButton airplay={airplay} className="pl-round" />
               <button type="button" className="pl-round" aria-label={kind === 'episode' ? 'Add series to list' : 'Add to list'} onClick={addToList} disabled={kind === 'episode' && !seriesId}>
                 <IconListAdd />
               </button>
@@ -973,12 +1145,16 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             sub={isLive ? (ch?.name ?? null) : kind === 'episode' ? metaLine : null}
             live={isLive && !!info && !error && !moved}
             atLive={atLive}
-            paused={paused || needsTap}
+            paused={shownPaused}
             progress={!isLive && duration > 0 ? ct / duration : null}
             problem={moved ? 'Playback moved to another device' : error ? error.title : null}
             onPlay={togglePlay}
             onExpand={expand}
-            onClose={close}
+            onClose={() => {
+              // closing the mini player stops watching, on the TV too
+              if (castingRef.current) endChromecast();
+              close();
+            }}
           />
         )}
       </div>
@@ -1016,7 +1192,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             position={ct}
             duration={duration}
             buffered={buffered}
-            onSeek={(s) => videoRef.current && (videoRef.current.currentTime = s)}
+            onSeek={seekVod}
             onSkip={(d) => skip(d)}
             thumbs={thumbs.index}
             onScrubStart={thumbs.refresh}
@@ -1042,8 +1218,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           <button type="button" className="pl-round" onClick={() => skip(-1)} aria-label={`Back ${prefs.skipBackSeconds} seconds`}>
             −{prefs.skipBackSeconds < 60 ? `${prefs.skipBackSeconds}s` : '1m'}
           </button>
-          <button type="button" className="pl-round pl-main" onClick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}>
-            {paused || needsTap ? <IconPlay /> : <IconPause />}
+          <button type="button" className="pl-round pl-main" onClick={togglePlay} aria-label={shownPaused ? 'Play' : 'Pause'}>
+            {shownPaused ? <IconPlay /> : <IconPause />}
           </button>
           <button type="button" className="pl-round" onClick={() => skip(1)} aria-label={`Forward ${prefs.skipForwardSeconds} seconds`} disabled={atLive}>
             +{prefs.skipForwardSeconds < 60 ? `${prefs.skipForwardSeconds}s` : '1m'}
@@ -1100,7 +1276,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
               </button>
             </>
           )}
-          <PipButton pip={pip} />
+          {form !== 'phone' && <CastButton airplay={airplay} label />}
+          {!casting && <PipButton pip={pip} />}
           <StatsButton open={stats.open} onToggle={stats.toggle} />
           {form === 'tv' && <span className="pl-hint">◀ ▶ seek · ▲▼ channels · Back to close</span>}
         </div>
@@ -1117,7 +1294,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
               } else {
                 const r = parseMediaTime(raw, { position: ct, duration });
                 if (!r.ok) return r.error;
-                if (videoRef.current) videoRef.current.currentTime = r.at;
+                seekVod(r.at);
               }
               setMenu(null);
               return null;
@@ -1259,4 +1436,16 @@ function MiniBar(props: {
       )}
     </div>
   );
+}
+
+/** The TV could not open or play the stream. */
+function castFailure(device: string | null, baseUrl: string | null): PlayerErr {
+  const tv = device ?? 'The TV';
+  const tips = ['Check that the TV and the AnyCast server are on the same network.'];
+  if (!baseUrl && unreachableFromTv(location.origin)) {
+    tips.unshift(`Your TV can't open ${location.host}. Set the server's home network address for TVs in Settings › All settings › Casting.`);
+  } else if (baseUrl) {
+    tips.push(`The TV opens the server at ${baseUrl} (Settings › All settings › Casting). Check that this address works from another device on your network.`);
+  }
+  return { title: `${tv} couldn't play this`, detail: 'The TV could not load the stream from your AnyCast server.', tips, actions: ['retry', 'back'] };
 }
