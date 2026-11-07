@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ACCENTS, ALL_TABS, DEFAULT_PREFERENCES, normalizeTabOrder, PROFILES_MAX, type AccentId, type HideRules, type MediaKind, type Preferences, type TabId } from '@anycast/shared';
 import { useApp } from '../store/app';
-import { askOnLaunch, logout, patchPrefs, refreshMe, saveHideRules, setAskOnLaunch, setDeviceOverride, setPref, toast } from '../store/actions';
+import { askOnLaunch, clearWatchHistory, logout, patchPrefs, refreshMe, saveHideRules, setAskOnLaunch, setDeviceOverride, setPref, toast } from '../store/actions';
 import { useNavigate } from 'react-router-dom';
 import { ProfileAvatar } from '../profiles/Avatar';
 import { switchProfile } from '../profiles/actions';
@@ -58,6 +58,7 @@ export default function SettingsScreen() {
         { id: 'casting', title: 'Casting', body: <CastSettings Row={Row} /> },
         { id: 'tabs', title: 'Start & tabs', body: <StartTabs prefs={prefs} all /> },
         { id: 'home', title: 'Home', body: <HomeEditor compact /> },
+        { id: 'history', title: 'Watch history', body: <WatchHistory prefs={prefs} /> },
         { id: 'swipe', title: 'Swipe', body: <SwipeSettings /> },
         { id: 'filters', title: 'Filters', body: <Filters all /> },
         { id: 'parental', title: 'Parental lock', body: <ParentalLock Row={Row} /> },
@@ -128,6 +129,44 @@ function Row(props: { label: string; hint?: ReactNode; children: ReactNode; stac
       </div>
       <div className="set-ctl">{props.children}</div>
     </div>
+  );
+}
+
+/* ---------------- Watch history (the recap) ---------------- */
+function WatchHistory({ prefs }: { prefs: P }) {
+  const navigate = useNavigate();
+  const [confirm, setConfirm] = useState(false);
+  const on = prefs.history.record;
+  return (
+    <>
+      <Row
+        label="Keep watch history"
+        hint={on ? 'AnyCast counts how long you watch each channel, movie and series for your recap. Only this profile sees it.' : 'Off: nothing new is recorded. Your recap keeps what was recorded before.'}
+      >
+        <Toggle label="Keep watch history" checked={on} onChange={(v) => setPref('history', { record: v })} />
+      </Row>
+      <Row label="Your recap" hint="A look back at what you watched, as story cards.">
+        <button type="button" className="btn" onClick={() => navigate('/recap')}>
+          Open recap
+        </button>
+      </Row>
+      <Row label="Clear watch history" hint="Forgets everything this profile watched. The recap starts again from zero.">
+        {confirm ? (
+          <div className="actions">
+            <button type="button" className="btn btn-danger" onClick={() => void clearWatchHistory().then(() => setConfirm(false))}>
+              Clear it
+            </button>
+            <button type="button" className="btn" onClick={() => setConfirm(false)}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button type="button" className="btn" onClick={() => setConfirm(true)}>
+            Clear…
+          </button>
+        )}
+      </Row>
+    </>
   );
 }
 

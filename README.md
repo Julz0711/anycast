@@ -21,6 +21,11 @@ installable PWA) to every device in the house: phone, laptop, tablet and TV brow
   buttons, or use ← → ↑ and Z. Filter by kind, category and rating.
 - **Five tabs on the phone:** Home, Live, Movies, Series and Library (Favorites and Lists in one
   place); Search is a button on every page and your profile sits at the top of Home and Library.
+- **Your recap:** a Wrapped-style look back per profile (this month, last month, this year, last
+  year or all time) as story cards: hours watched, your mix of live, series and movies, top
+  channels, series and movies, top genres, when you watch, streaks and your viewer type. Watch
+  time is counted only while something actually plays; Settings › Watch history turns it off or
+  clears it.
 - **Channel lists:** your own ordered lists ("News", "Sport") as chips in Live TV; zapping follows the list.
 - **Profiles** like a streaming service: a full-screen "Who's watching?" picker, built-in pictures or your own photo, an optional profile PIN, and a profile menu to switch in one tap. Each profile has its own favorites, channel lists, progress, settings and language filters, synced live
   across devices.

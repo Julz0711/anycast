@@ -54,6 +54,9 @@ export function exportBackup(db: Db, now = Date.now()): BackupFile {
     const tracks = byProfile<BackupProfile['trackChoices'][number]>(
       'SELECT profile_id, kind, item_id AS id, audio, subtitle, updated_at AS updatedAt FROM track_choices ORDER BY kind, item_id',
     );
+    const watch = byProfile<NonNullable<BackupProfile['watchHistory']>[number]>(
+      'SELECT profile_id, hour, kind, item_id AS id, series_id AS seriesId, seconds FROM watch_history ORDER BY hour, kind, item_id',
+    );
     const lists = byProfile<{ id: string; name: string; position: number; createdAt: number }>(
       'SELECT profile_id, id, name, position, created_at AS createdAt FROM channel_lists ORDER BY position, created_at',
     );
@@ -109,6 +112,7 @@ export function exportBackup(db: Db, now = Date.now()): BackupFile {
             avatar: p.avatar,
             image: images.has(p.id) ? { ...images.get(p.id)!, data: images.get(p.id)!.data.toString('base64') } : null,
             lockHash: p.lock_hash,
+            watchHistory: watch.get(p.id) ?? [],
           }),
         ),
       }),
@@ -178,6 +182,10 @@ export function restoreBackup(db: Db, backup: BackupFile, opts: RestoreOptions):
         'INSERT OR IGNORE INTO progress (profile_id, kind, item_id, series_id, position, duration, finished, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       ),
       track: db.prepare('INSERT OR IGNORE INTO track_choices (profile_id, kind, item_id, audio, subtitle, updated_at) VALUES (?, ?, ?, ?, ?, ?)'),
+      watch: db.prepare(
+        `INSERT INTO watch_history (profile_id, hour, kind, item_id, series_id, seconds) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(profile_id, hour, kind, item_id) DO UPDATE SET seconds = MAX(seconds, excluded.seconds)`,
+      ),
       listExists: db.prepare('SELECT 1 FROM channel_lists WHERE id = ?'),
       listMax: db.prepare('SELECT COALESCE(MAX(position), -1) AS n FROM channel_lists WHERE profile_id = ?'),
       insertList: db.prepare('INSERT INTO channel_lists (id, profile_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)'),
@@ -221,6 +229,7 @@ export function restoreBackup(db: Db, backup: BackupFile, opts: RestoreOptions):
         for (const f of p.favorites) did(q.favorite.run(p.id, f.kind, f.id, f.addedAt));
         for (const x of p.progress) did(q.progress.run(p.id, x.kind, x.id, x.seriesId, x.position, x.duration, x.finished ? 1 : 0, x.updatedAt));
         for (const t of p.trackChoices) did(q.track.run(p.id, t.kind, t.id, t.audio, t.subtitle, t.updatedAt));
+        for (const w of p.watchHistory ?? []) did(q.watch.run(p.id, w.hour, w.kind, w.id, w.seriesId, w.seconds));
         // lists that already exist are kept as they are; new ones go after the profile's own lists on a merge
         let next = replace ? 0 : (q.listMax.get(p.id) as { n: number }).n + 1;
         for (const l of [...p.lists].sort((a, b) => a.position - b.position || a.createdAt - b.createdAt)) {

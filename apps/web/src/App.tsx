@@ -29,6 +29,7 @@ import { PlayerHost } from './player/PlayerHost';
 
 const SettingsScreen = lazy(() => import('./screens/Settings'));
 const ProfilePage = lazy(() => import('./profiles/ProfilePage'));
+const RecapScreen = lazy(() => import('./screens/Recap'));
 
 function subscribeMotion(cb: () => void) {
   const mq = matchMedia('(prefers-reduced-motion: reduce)');
@@ -132,6 +133,7 @@ function AuthedRoutes() {
           <Route path="/play/:kind/:id" element={null} />
           <Route path="/profiles" element={<ProfilePicker manage />} />
           <Route path="/profiles/:id" element={<ProfilePage />} />
+          <Route path="/recap" element={<RecapScreen />} />
           <Route element={<Shell />}>
             <Route path="/home" element={<HomeScreen />} />
             <Route path="/live" element={<LiveScreen />} />

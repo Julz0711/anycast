@@ -22,9 +22,9 @@ const LIBRARY_PARTS: readonly string[] = ['favorites', 'lists'];
 const asTab = (t: unknown): TabId | null => (LIBRARY_PARTS.includes(t as string) ? 'library' : ALL_TABS.includes(t as TabId) ? (t as TabId) : null);
 
 /** The sections of the Home dashboard. */
-export type HomeSectionId = 'continue' | 'newEpisodes' | 'recent' | 'next' | 'favorites' | 'watchLater';
+export type HomeSectionId = 'continue' | 'recap' | 'newEpisodes' | 'recent' | 'next' | 'favorites' | 'watchLater';
 /** Every Home section, in the default order. */
-export const ALL_HOME_SECTIONS: readonly HomeSectionId[] = ['continue', 'newEpisodes', 'recent', 'next', 'favorites', 'watchLater'];
+export const ALL_HOME_SECTIONS: readonly HomeSectionId[] = ['continue', 'recap', 'newEpisodes', 'recent', 'next', 'favorites', 'watchLater'];
 
 /**
  * A saved Home section order made valid: unknown and repeated ids dropped, and missing sections
@@ -143,6 +143,10 @@ export interface Preferences {
   categories: {
     pinned: string[];
   };
+  /** Watch history: what played and for how long, for the recap */
+  history: {
+    record: boolean;
+  };
   settingsMode: 'basic' | 'all';
   /** First-run setup (language filter) finished or skipped for this profile */
   setupDone: boolean;
@@ -194,6 +198,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   },
   categories: {
     pinned: [],
+  },
+  history: {
+    record: true,
   },
   settingsMode: 'basic',
   setupDone: false,

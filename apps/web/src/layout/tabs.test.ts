@@ -62,10 +62,10 @@ describe('Home', () => {
 
   test('sections: unknown and repeated dropped, missing added; hidden kept in order; bad row limit repaired', () => {
     const p = mergePreferences({ home: { sections: ['favorites', 'bogus', 'favorites', 'continue'], hiddenSections: ['watchLater', 'nope', 'favorites'], rowLimit: 7 } });
-    expect(p.home.sections).toEqual(['favorites', 'watchLater', 'continue', 'newEpisodes', 'recent', 'next']);
+    expect(p.home.sections).toEqual(['favorites', 'watchLater', 'continue', 'recap', 'newEpisodes', 'recent', 'next']);
     // a section added later lands next to its neighbour in the default order
     expect(mergePreferences({ home: { sections: ['watchLater', 'next', 'continue', 'recent', 'favorites'] } }).home.sections).toEqual([
-      'watchLater', 'next', 'continue', 'newEpisodes', 'recent', 'favorites',
+      'watchLater', 'next', 'continue', 'recap', 'newEpisodes', 'recent', 'favorites',
     ]);
     expect(p.home.hiddenSections).toEqual(['favorites', 'watchLater']);
     expect(p.home.rowLimit).toBe(12);

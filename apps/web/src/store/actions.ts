@@ -259,6 +259,41 @@ export function saveProgressOnUnload(body: ProgressBody) {
   }
 }
 
+/* ---------------- watch history (the recap) ---------------- */
+export type WatchBody = { kind: 'live' | 'movie' | 'episode'; id: string; seconds: number; seriesId?: string };
+
+/** Played seconds for the watch history; `unload` sends it as a keepalive request that outlives the page. */
+export function reportWatchTime(body: WatchBody, unload = false) {
+  if (!get().prefs.history.record || !(body.seconds >= 1)) return;
+  const b = { ...body, seconds: Math.min(Math.round(body.seconds), 600) };
+  if (!unload || isDemo()) {
+    void call('POST /api/watch-time', { body: b }).catch(() => {
+      /* history only; never interrupt playback */
+    });
+    return;
+  }
+  try {
+    void fetch(buildPath('POST /api/watch-time'), {
+      method: 'POST', headers: requestHeaders(true), body: JSON.stringify(b), keepalive: true, credentials: 'same-origin',
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Forgets the profile's whole watch history. */
+export async function clearWatchHistory(): Promise<boolean> {
+  try {
+    await call('DELETE /api/watch-history');
+    clearApiCache('/api/recap');
+    toast('Watch history cleared');
+    return true;
+  } catch (e) {
+    toast(`Couldn't clear the watch history: ${errorMessage(e)}`, 'error');
+    return false;
+  }
+}
+
 /* ---------------- recent channels (Home › Jump back in) ---------------- */
 /** A channel that played for a while: to the front of the profile's recent channels (optimistic). */
 export async function recordRecentChannel(id: string) {

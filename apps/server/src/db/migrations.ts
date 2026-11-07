@@ -352,4 +352,17 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (profile_id, kind, item_id)
   ) WITHOUT ROWID;
   `,
+  `
+  -- watch history (recap.ts): seconds that played per profile, item and hour (hour = epoch ms of
+  -- the UTC hour it started in). series_id is set for episodes.
+  CREATE TABLE IF NOT EXISTS watch_history (
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    hour INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    series_id TEXT,
+    seconds REAL NOT NULL,
+    PRIMARY KEY (profile_id, hour, kind, item_id)
+  ) WITHOUT ROWID;
+  `,
 ];

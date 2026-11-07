@@ -65,7 +65,11 @@ export interface BackupProfile {
   image?: { type: string; data: string; updatedAt: number } | null;
   /** argon2 hash of the profile lock PIN */
   lockHash?: string | null;
+  /** watched seconds per item and hour, for the recap (missing in backups made before it) */
+  watchHistory?: BackupWatch[];
 }
+/** `hour`: epoch ms of the UTC hour; `seriesId` is set for episodes */
+export interface BackupWatch { hour: number; kind: 'live' | 'movie' | 'episode'; id: string; seriesId: string | null; seconds: number }
 
 export interface BackupUser {
   id: string;

@@ -5,7 +5,7 @@
  */
 import { useCallback, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { normalizeHomeSections, type Episode, type HomeSectionId, type LiveChannelWithNow, type Movie, type Progress, type Series } from '@anycast/shared';
+import { normalizeHomeSections, recapRange, type Episode, type HomeSectionId, type LiveChannelWithNow, type Movie, type Progress, type Series } from '@anycast/shared';
 import { useApp } from '../store/app';
 import { forgetRecentChannels, saveProgress, setZapList, toast } from '../store/actions';
 import { whenUnlocked } from '../store/parental';
@@ -23,6 +23,7 @@ import { prefetchPlayer } from '../player/prefetch';
 import { NewEpisodeCards, useNewEpisodes } from '../components/NewEpisodes';
 import { PhoneHeadActions } from '../components/PageHead';
 import '../theme/home.css';
+import '../theme/recap.css';
 
 type ContMovie = Movie & { progress: Progress };
 type ContEpisode = Episode & { progress: Progress; series: Series };
@@ -75,6 +76,18 @@ export function HomeScreen() {
   const upNext = useMemo(() => (cont.data?.episodes ?? []).filter((e) => e.progress.position <= 0), [cont.data]);
 
   const newEps = useNewEpisodes(want('newEpisodes'));
+
+  // Your recap: last month's during the first week of a month, else this month's so far
+  const recapPeriod = new Date(now).getDate() <= 7 ? 'lastMonth' : 'month';
+  const recapSpan = recapRange(recapPeriod, new Date(now));
+  const recap = useAsync(
+    () =>
+      want('recap')
+        ? cachedGet('GET /api/recap', { query: { from: recapSpan.from, to: recapSpan.to, tz: Intl.DateTimeFormat().resolvedOptions().timeZone } }, 300_000).catch(() => null)
+        : Promise.resolve(null),
+    [want('recap'), recapSpan.from, version],
+  );
+  const recapReady = !!recap.data && recap.data.totalSeconds >= 5 * 60;
 
   const recentKey = recentIds.map((r) => r.id).join(',');
   const needRecent = (want('recent') || home.showHero) && !!recentKey;
@@ -139,6 +152,7 @@ export function HomeScreen() {
   const loaded = (!want('newEpisodes') || !!newEps.data) && (!needCont || !!cont.data) && (!needRecent || !!recent.data) && (!needFavs || !!favs.data) && (!needWl || !!wl.data);
   const counts: Record<HomeSectionId, number> = {
     continue: contRow.length + (heroCont ? 1 : 0),
+    recap: recapReady ? 1 : 0,
     newEpisodes: newEps.data?.length ?? 0,
     recent: recentRows.length,
     next: upNext.length,
@@ -290,6 +304,25 @@ export function HomeScreen() {
                 ))}
               </ul>
             )}
+          </Section>
+        );
+      case 'recap':
+        if (!recapReady) return null;
+        return (
+          <Section key={id} id={id} title={title}>
+            <Link to={`/recap?p=${recapPeriod}`} className="recap-teaser" data-nav-row="home-recap">
+              <span className="recap-teaser-text">
+                <span className="recap-teaser-kicker">AnyCast Recap</span>
+                <span className="recap-teaser-title">Your {recapSpan.title}{recapPeriod === 'month' ? ' so far' : ''}</span>
+                <span className="recap-teaser-sub">
+                  {recap.data!.totalSeconds < 5400 ? `${Math.round(recap.data!.totalSeconds / 60)} minutes` : `${Math.round(recap.data!.totalSeconds / 3600)} hours`} watched · your
+                  top picks, habits and viewer type
+                </span>
+              </span>
+              <span className="recap-teaser-play" aria-hidden="true">
+                <IconPlay />
+              </span>
+            </Link>
           </Section>
         );
       case 'watchLater':
