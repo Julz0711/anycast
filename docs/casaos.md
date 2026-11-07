@@ -11,6 +11,13 @@ once; updating later is two commands. It takes about 15 minutes, most of it the 
   Personal access tokens → Fine-grained tokens → Generate new token**, give it access to only
   `Julz0711/anycast` with **Contents: Read-only**, and copy it. Don't share it with anyone.
 
+## Why the terminal, not CasaOS's "Custom Install"
+
+CasaOS's App Store **Custom Install** / **Import** (docker-compose) dialog can only pull ready-made
+images; it can't build one from source. AnyCast has no published image, so the build runs once over
+SSH with `docker compose`. After that the container shows up in the CasaOS dashboard like any app,
+where you can start, stop and read its logs.
+
 ## 1. Get the code onto the server
 
 ```sh
@@ -21,7 +28,6 @@ git clone https://github.com/Julz0711/anycast.git .
 ```
 
 When git asks for a username, type `Julz0711`; as the password, paste the token.
-(Until the first pull request is merged, add `-b m0-foundations` to the clone command.)
 
 If `git` is missing: `sudo apt install -y git`.
 
@@ -100,6 +106,10 @@ a GPU, AnyCast simply uses the CPU.
 
 **Intel (most mini PCs and NAS boxes) or AMD:**
 
+On an AMD Ryzen, only the models with built-in graphics (a "G" in the name, e.g. 5600G, or most
+laptop/mini PC chips) have a GPU. Without one and without a graphics card, `/dev/dri` is missing:
+skip this section, the CPU handles conversions.
+
 1. Check the server has a GPU device: `ls /dev/dri` should list `renderD128`.
 2. In `docker-compose.yml`, uncomment the two `devices:` lines under "Hardware transcoding".
 3. Restart: `docker compose up -d`.
@@ -177,6 +187,8 @@ After a restore, sign in with the accounts and passwords from the backup.
 
 ## Troubleshooting
 
+- **`permission denied ... docker.sock`:** your user isn't in the `docker` group. Put `sudo` in front of
+  every `docker` command, or run `sudo usermod -aG docker $USER` once and log in again.
 - **Container keeps restarting:** `docker compose logs` shows why. Usually a missing or short
   `ANYCAST_SECRET` (needs 16+ characters).
 - **Can't sign in:** the admin account is created on the very first start. If you changed
