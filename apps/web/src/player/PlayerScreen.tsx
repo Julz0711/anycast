@@ -1,9 +1,10 @@
 /**
  * Player for live channels (with the timeline ribbon), movies and episodes.
  * Route: /play/:kind/:id  (kind = live | movie | episode)  ?at=<epoch ms> (live)  ?series=<id> (episode)  ?start=0 (ignore resume)
+ * PlayerHost renders it for that route and keeps it mounted as the mini player after leaving it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import type { Episode, PlaybackInfo, TimelineInfo, TrackChoice } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
 import { saveProgress, saveProgressOnUnload, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
@@ -22,7 +23,7 @@ import { Ribbon, VodBar } from './Timeline';
 import { useThumbIndex } from './thumbs';
 import { hasTrackChoice, playingTracks, reloadTracks as keepTracks, renditionOf, subtitleAction, type TrackRequest } from './tracks';
 import { TracksMenu } from './TracksMenu';
-import { IconBack, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock } from '../components/Icons';
+import { IconBack, IconClose, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock } from '../components/Icons';
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
 import { useMediaSession } from './mediaSession';
@@ -52,9 +53,23 @@ interface Stream {
   seq: number;
 }
 
-export default function PlayerScreen() {
-  const { kind = 'live', id = '' } = useParams();
-  const [sp] = useSearchParams();
+export interface PlayerProps {
+  kind: 'live' | 'movie' | 'episode';
+  id: string;
+  /** the route's query string */
+  search: string;
+  /** shrunk into the corner while the viewer browses */
+  mini: boolean;
+  /** plays another item (zapping, next episode): replaces the route, or just the mini player's item */
+  go: (path: string) => void;
+  /** mini player: back to the full player */
+  expand: () => void;
+  /** mini player: stop and close */
+  close: () => void;
+}
+
+export default function PlayerScreen({ kind, id, search, mini, go, expand, close }: PlayerProps) {
+  const sp = useMemo(() => new URLSearchParams(search), [search]);
   const navigate = useNavigate();
   const form = useFormFactor();
   const prefs = useApp((s) => s.prefs.player);
@@ -92,7 +107,7 @@ export default function PlayerScreen() {
   const [countdown, setCountdown] = useState<number | null>(null);
   const [ripple, setRipple] = useState<{ side: 'l' | 'r'; text: string; key: number } | null>(null);
   const dragging = useRef(false);
-  const overlay = form === 'tv' || fullscreen;
+  const overlay = !mini && (form === 'tv' || fullscreen);
   const isAdmin = useApp((s) => s.me?.user.isAdmin ?? false);
   const bufPins = useBufferPins(isLive && isAdmin);
   const pinned = !!bufPins.pins?.channelIds.includes(id);
@@ -399,9 +414,9 @@ export default function PlayerScreen() {
       if (!list.length) return;
       const i = list.indexOf(id);
       const next = list[(i + dir + list.length) % list.length]!;
-      navigate(`/play/live/${next}`, { replace: true });
+      go(`/play/live/${next}`);
     },
-    [isLive, zapList, id, navigate],
+    [isLive, zapList, id, go],
   );
 
   /* ---------------- fullscreen & chrome ---------------- */
@@ -442,6 +457,8 @@ export default function PlayerScreen() {
   }, [navigate, isLive, kind, seriesId]);
 
   useEffect(() => {
+    // the mini player leaves the keyboard to the screen behind it
+    if (mini) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
@@ -540,7 +557,14 @@ export default function PlayerScreen() {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds, pipSupported, togglePip]);
+  }, [mini, form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds, pipSupported, togglePip]);
+
+  // shrinking closes menus; the mini player has its own few controls
+  useEffect(() => {
+    if (!mini) return;
+    setMenu(null);
+    setChrome(true);
+  }, [mini]);
 
   /* ---------------- progress (VOD) ---------------- */
   const progressBody = useCallback(() => {
@@ -576,8 +600,8 @@ export default function PlayerScreen() {
   const goNext = useCallback(() => {
     if (!nextEpisode) return;
     setCountdown(null);
-    navigate(`/play/episode/${nextEpisode.id}?series=${nextEpisode.seriesId}`, { replace: true });
-  }, [nextEpisode, navigate]);
+    go(`/play/episode/${nextEpisode.id}?series=${nextEpisode.seriesId}`);
+  }, [nextEpisode, go]);
   useEffect(() => {
     if (countdown === null) return;
     if (countdown <= 0) return goNext();
@@ -701,12 +725,12 @@ export default function PlayerScreen() {
 
   // TV: start with focus on the timeline so left/right seek straight away.
   useEffect(() => {
-    if (form !== 'tv') return;
+    if (form !== 'tv' || mini) return;
     const t = setTimeout(() => {
       if (document.activeElement === document.body) rootRef.current?.querySelector<HTMLElement>('[role="slider"]')?.focus();
     }, 300);
     return () => clearTimeout(t);
-  }, [form, id, info]);
+  }, [form, id, info, mini]);
 
   /* ---------------- audio & subtitles (PB-3) ---------------- */
   // show the chosen subtitle rendition once the engine knows the stream's renditions
@@ -779,7 +803,7 @@ export default function PlayerScreen() {
       pause: () => videoRef.current?.pause(),
       seekBy: (s) => skip(s < 0 ? -1 : 1, Math.abs(s)),
       seekTo: (t) => videoRef.current && (videoRef.current.currentTime = t),
-      previous: isLive ? () => void zap(-1) : prevEpisode ? () => navigate(`/play/episode/${prevEpisode.id}?series=${prevEpisode.seriesId}`, { replace: true }) : undefined,
+      previous: isLive ? () => void zap(-1) : prevEpisode ? () => go(`/play/episode/${prevEpisode.id}?series=${prevEpisode.seriesId}`) : undefined,
       next: isLive ? () => void zap(1) : nextEpisode ? goNext : undefined,
     },
     !isLive,
@@ -789,7 +813,7 @@ export default function PlayerScreen() {
     <div
       ref={rootRef}
       className="player"
-      data-mode={overlay ? 'overlay' : 'stacked'}
+      data-mode={mini ? 'mini' : overlay ? 'overlay' : 'stacked'}
       data-chrome={chrome ? 'on' : 'off'}
       onPointerMove={overlay ? activity : undefined}
     >
@@ -933,6 +957,20 @@ export default function PlayerScreen() {
               </button>
             </div>
           </div>
+        )}
+        {mini && (
+          <MiniBar
+            title={title}
+            sub={isLive ? (ch?.name ?? null) : kind === 'episode' ? metaLine : null}
+            live={isLive && !!info && !error && !moved}
+            atLive={atLive}
+            paused={paused || needsTap}
+            progress={!isLive && duration > 0 ? ct / duration : null}
+            problem={moved ? 'Playback moved to another device' : error ? error.title : null}
+            onPlay={togglePlay}
+            onExpand={expand}
+            onClose={close}
+          />
         )}
       </div>
 
@@ -1159,6 +1197,57 @@ function Earlier(props: { timeline: TimelineInfo; now: number; position: number;
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** The mini player's controls: what is playing, play/pause, expand, close. */
+function MiniBar(props: {
+  title: string;
+  sub: string | null;
+  live: boolean;
+  atLive: boolean;
+  paused: boolean;
+  progress: number | null;
+  problem: string | null;
+  onPlay: () => void;
+  onExpand: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="mini-bar">
+      {props.problem && (
+        <p className="mini-problem" role="status">
+          {props.problem}
+        </p>
+      )}
+      <div className="mini-row">
+        <div className="mini-text">
+          <div className="mini-title ellipsis">{props.title}</div>
+          {(props.sub || props.live) && (
+            <div className="mini-sub ellipsis">
+              {props.live && <span className={`mini-live${props.atLive ? ' on' : ''}`}>{props.atLive ? 'LIVE' : 'Rewound'}</span>}
+              {props.sub}
+            </div>
+          )}
+        </div>
+        {!props.problem && (
+          <button type="button" className="mini-btn" onClick={props.onPlay} aria-label={props.paused ? 'Play' : 'Pause'}>
+            {props.paused ? <IconPlay /> : <IconPause />}
+          </button>
+        )}
+        <button type="button" className="mini-btn" onClick={props.onExpand} aria-label="Expand player">
+          <IconExpand />
+        </button>
+        <button type="button" className="mini-btn" onClick={props.onClose} aria-label="Close player">
+          <IconClose />
+        </button>
+      </div>
+      {props.progress !== null && (
+        <div className="mini-progress" aria-hidden="true">
+          <i style={{ width: `${Math.min(100, Math.max(0, props.progress * 100)).toFixed(2)}%` }} />
+        </div>
+      )}
     </div>
   );
 }
