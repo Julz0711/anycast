@@ -12,6 +12,7 @@ import { LibraryIndex } from './components/PageHead';
 import { SeriesScreen } from './screens/Series';
 import { SeriesDetailScreen } from './screens/SeriesDetail';
 import { SearchScreen } from './screens/Search';
+import { SwipeScreen } from './screens/Swipe';
 import { FavoritesIndex, FavoritesScreen } from './screens/Favorites';
 import { ListsIndex, ListsScreen } from './screens/Lists';
 import { LoginScreen } from './screens/Login';
@@ -146,6 +147,7 @@ function AuthedRoutes() {
             <Route path="/lists" element={<ListsIndex />} />
             <Route path="/lists/:id" element={<ListsScreen />} />
             <Route path="/search" element={<SearchScreen />} />
+            <Route path="/swipe" element={<SwipeScreen />} />
             <Route path="/settings" element={<SettingsScreen />} />
             <Route path="/me" element={<ProfileHub />} />
           </Route>

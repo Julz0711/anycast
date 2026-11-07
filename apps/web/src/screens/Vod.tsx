@@ -1,6 +1,6 @@
 /** Shared browse screen for Movies and Series: Continue Watching, Favorites, category rows, virtualized poster grid. */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Category, Movie, Series, VodQuery, VodSort } from '@anycast/shared';
 import { useApp } from '../store/app';
@@ -12,7 +12,7 @@ import { PosterCard } from '../components/cards';
 import { Empty, Skeleton } from '../components/ui';
 import { CategoryChips } from '../components/CategoryChips';
 import { SearchButton } from '../components/PageHead';
-import { IconSearch } from '../components/Icons';
+import { IconSearch, IconSwipe } from '../components/Icons';
 import { catLabel } from './Live';
 
 type Kind = 'movie' | 'series';
@@ -106,19 +106,30 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
     <div>
       <div className="page-head">
         <h1 className="h1">{props.title}</h1>
-        {form !== 'large' ? (
-          <SearchButton />
-        ) : (
-          <label className="search-box">
-            <IconSearch />
-            <input
-              aria-label={`Search ${props.title.toLowerCase()}`}
-              placeholder={`Search ${props.title.toLowerCase()}`}
-              onChange={(e) => e.target.value && navigate(`/search?q=${encodeURIComponent(e.target.value)}`)}
-            />
-            {form === 'large' && <kbd>/</kbd>}
-          </label>
-        )}
+        <div className="head-actions">
+          {form === 'phone' ? (
+            <Link to={`/swipe?kind=${kind}`} className="icon-btn" aria-label={`Swipe through ${NOUN[kind]}`}>
+              <IconSwipe />
+            </Link>
+          ) : (
+            <Link to={`/swipe?kind=${kind}`} className="btn">
+              <IconSwipe /> Swipe
+            </Link>
+          )}
+          {form !== 'large' ? (
+            <SearchButton />
+          ) : (
+            <label className="search-box">
+              <IconSearch />
+              <input
+                aria-label={`Search ${props.title.toLowerCase()}`}
+                placeholder={`Search ${props.title.toLowerCase()}`}
+                onChange={(e) => e.target.value && navigate(`/search?q=${encodeURIComponent(e.target.value)}`)}
+              />
+              {form === 'large' && <kbd>/</kbd>}
+            </label>
+          )}
+        </div>
       </div>
       {cats.loading && !cats.data ? (
         <div className="chips" aria-hidden="true">

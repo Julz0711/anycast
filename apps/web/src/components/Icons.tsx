@@ -129,6 +129,11 @@ export const IconCheck = (p: SVGProps<SVGSVGElement>) => (
 );
 
 /** The AnyCast mark: a rounded screen with a thin ribbon under it. */
+/** two cards, the front one tilted: Swipe */
+export const IconSwipe = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3.5" y="5" width="10" height="14" rx="2" /><path d="M13.6 6.9l4.2 1.1a1.8 1.8 0 011.3 2.2l-2.6 9.6a1.8 1.8 0 01-2.2 1.3l-3.1-.8" /></svg>
+);
+
 export const BrandMark = () => (
   <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
     <rect x="3" y="5" width="26" height="17" rx="5" fill="none" stroke="var(--text)" strokeWidth="2.5" />

@@ -212,6 +212,31 @@ export type SyncEvent =
    */
   | { type: 'playback-stopped'; profileId: string; clientId: string; reason: 'taken-over'; by: { profileName: string; device?: string } };
 
+/**
+ * Swipe: a deck of random movies and series to sort through. Swiping right puts a title in Watch
+ * Later, swiping left passes on it, and passed titles never come up again for that profile (until
+ * the profile brings them back). The deck leaves out what is already in one of the profile's lists,
+ * what the profile started watching, titles without a poster and locked adult titles.
+ */
+export type SwipeCard = { kind: 'movie'; item: Movie } | { kind: 'series'; item: Series };
+export type SwipeKind = 'all' | 'movie' | 'series';
+export interface SwipeQuery {
+  kind?: SwipeKind;
+  /** only with kind movie or series */
+  categoryId?: string;
+  minRating?: number;
+  /** cards to return, default 20, at most 50 */
+  limit?: number;
+  /** "kind:id,kind:id": cards the client already holds, so the answer has none of them */
+  skip?: string;
+}
+export interface SwipeDeck {
+  cards: SwipeCard[];
+  /** how many titles the deck still has with these filters, the returned cards included */
+  left: number;
+}
+export const SWIPE_LIMITS = { deck: 50, skip: 300 } as const;
+
 /** Route table (method + path -> request/response). Documentation as code. */
 export interface VodQuery {
   categoryId?: string;
@@ -297,6 +322,14 @@ export interface Api {
   'GET /api/series': { query: VodQuery; res: Page<Series> };
   /** Followed series with episodes added since the profile last opened them, newest first. */
   'GET /api/new-episodes': { res: NewEpisodes[] };
+  /** random cards for Swipe (see SwipeCard), never the same title twice in one answer */
+  'GET /api/swipe': { query: SwipeQuery; res: SwipeDeck };
+  /** passes on a title: it leaves the deck for good (POST) or comes back (DELETE, the undo) */
+  'POST /api/swipe/passed': { body: { kind: 'movie' | 'series'; id: string }; res: { passed: number } };
+  'DELETE /api/swipe/passed/:kind/:id': { res: { passed: number } };
+  /** how many titles the profile passed on; DELETE brings them all back */
+  'GET /api/swipe/passed': { res: { passed: number } };
+  'DELETE /api/swipe/passed': { res: { passed: number } };
   /** Episodes new since the profile last opened the series carry isNew (see PUT …/seen). */
   'GET /api/series/:id': { res: SeriesDetail };
   /** The series page was opened: its new episodes stop being new. */

@@ -25,6 +25,8 @@
  *   profile_entries   which sign-in sessions opened a locked profile; goes with the sessions
  *   recent_channels   the last channels each profile watched (Home › Jump back in): short-lived
  *                     viewing history that fills again as soon as someone watches TV
+ *   swipe_passed      movies and series a profile swiped away in Swipe; losing them only means
+ *                     they can come up in the deck again
  *   source            the provider login (Xtream URL, user, password), encrypted with ANYCAST_SECRET:
  *                     it comes from .env, and a backup file must never carry it
  *   kv                only the last catalog / guide sync times (sync state, not user data)
@@ -63,6 +65,7 @@ export const BACKUP_TABLES = {
   sessions: 'exclude',
   profile_entries: 'exclude',
   recent_channels: 'exclude',
+  swipe_passed: 'exclude',
   source: 'exclude',
   kv: 'exclude',
   categories: 'exclude',

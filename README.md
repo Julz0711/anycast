@@ -16,6 +16,9 @@ installable PWA) to every device in the house: phone, laptop, tablet and TV brow
   by year and rating; Recently added rows; New episodes of the series you follow on Home and on
   the series page; movie pages with backdrop, genre, cast, director and trailer. Artwork is kept on
   the server (DATA_DIR/art, 512 MB) so slow provider image hosts are asked once.
+- **Swipe:** can't pick? Swipe through random movies and series: right puts a title in Watch Later,
+  left passes on it for good (per profile; Settings › Swipe brings them back). Drag, tap the
+  buttons, or use ← → ↑ and Z. Filter by kind, category and rating.
 - **Five tabs on the phone:** Home, Live, Movies, Series and Library (Favorites and Lists in one
   place); Search is a button on every page and your profile sits at the top of Home and Library.
 - **Your recap:** a Wrapped-style look back per profile (this month, last month, this year, last
