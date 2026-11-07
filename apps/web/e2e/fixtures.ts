@@ -69,7 +69,16 @@ export const currentTime = (page: Page) => video(page).evaluate((v: HTMLVideoEle
 /** Waits until the video is actually advancing. */
 export async function expectPlaying(page: Page, timeout = 30_000) {
   const t0 = await currentTime(page);
-  await expect.poll(() => currentTime(page), { timeout, message: 'video should be playing' }).toBeGreaterThan(t0 + 0.3);
+  try {
+    await expect.poll(() => currentTime(page), { timeout, message: 'video should be playing' }).toBeGreaterThan(t0 + 0.3);
+  } catch (e) {
+    // say what the player showed, so a failure in CI can be read from the job log alone
+    const state = await video(page)
+      .evaluate((v: HTMLVideoElement) => ({ t: v.currentTime, paused: v.paused, readyState: v.readyState, networkState: v.networkState, error: v.error?.message ?? v.error?.code ?? null, src: v.currentSrc.replace(/^https?:\/\/[^/]+/, '') }))
+      .catch(() => null);
+    const shown = await page.locator('.pl-stage, main').first().innerText().catch(() => '');
+    throw new Error(`${(e as Error).message}\nvideo: ${JSON.stringify(state)}\nplayer text: ${shown.replace(/\s+/g, ' ').slice(0, 400)}`);
+  }
 }
 
 /** The live timeline's playhead (epoch ms), from the slider's aria-valuenow. */

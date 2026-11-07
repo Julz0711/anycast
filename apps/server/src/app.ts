@@ -4,6 +4,8 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import path from 'node:path';
 import { HttpError, Users } from './auth/users';
+import { AutoBackups, DEFAULT_BACKUP_KEEP } from './backup/auto';
+import { BackupError } from './backup/format';
 import { CatalogSync } from './catalog/sync';
 import { DEFAULT_BUFFER, VERSION, type Config } from './config';
 import type { Services } from './context';
@@ -17,10 +19,12 @@ import { Parental, ParentalError } from './parental';
 import { NotFoundError, PlaybackService } from './playback/service';
 import { archiveSource } from './playback/timeline';
 import { DEFAULT_THUMBS, Thumbnails } from './playback/thumbs';
+import { HwAccel, type EncodeRunner } from './playback/hwaccel';
 import { ConnectionLimitError, GapError, UpstreamError } from './playback/upstream';
 import { createRedactor, redactDeep, type Redactor } from './redact';
 import { artRoutes } from './routes/art';
 import { authRoutes, registerAuthHook } from './routes/auth';
+import { backupRoutes } from './routes/backup';
 import { bufferRoutes } from './routes/buffer';
 import { catalogRoutes } from './routes/catalog';
 import { diagnosticsRoutes } from './routes/diagnostics';
@@ -40,6 +44,10 @@ export interface BuildOptions {
   logStream?: NodeJS.WritableStream;
   /** runs ffmpeg/ffprobe for GET /api/diagnostics (tests pass a fake) */
   runCommand?: CommandRunner;
+  /** runs the hardware encoder test encodes (tests pass a fake) */
+  runEncodeTest?: EncodeRunner;
+  /** whether a render device exists (tests pass a fake) */
+  deviceExists?: (path: string) => boolean;
 }
 
 export interface BuiltApp {
@@ -92,12 +100,21 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
     { ...DEFAULT_THUMBS, ...(config.thumbsMaxBytes !== undefined ? { maxBytes: config.thumbsMaxBytes } : {}) },
     (msg) => app.log.warn({ thumbs: redact()(msg) }, 'thumbnail problem'),
   );
+  playback.hw = new HwAccel({
+    setting: config.hwaccel?.setting ?? 'off',
+    device: config.hwaccel?.device,
+    db,
+    run: opts.runEncodeTest,
+    deviceExists: opts.deviceExists,
+    log: (level, obj, msg) => app.log[level](obj, msg),
+  });
   playback.onTakenOver = (victim, by) =>
     bus.emit({
       type: 'playback-stopped', profileId: victim.profileId, clientId: victim.clientId, reason: 'taken-over',
       by: { profileName: by.profileName, ...(by.device ? { device: by.device } : {}) },
     });
-  const services: Services = { config, db, users, source, sync, bus, userData: new UserData(db, bus), playback, parental: new Parental(db, bus) };
+  const backups = new AutoBackups(db, path.join(config.dataDir, 'backups'), config.backupKeep ?? DEFAULT_BACKUP_KEEP, (msg) => app.log.warn(msg));
+  const services: Services = { config, db, users, source, sync, bus, userData: new UserData(db, bus), playback, parental: new Parental(db, bus), backups };
 
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
@@ -109,6 +126,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
     }
     if (err instanceof TakenOverError) return reply.code(409).send({ error: err.code, message: err.message });
     if (err instanceof ParentalError) return reply.code(err.statusCode).send(err.body);
+    if (err instanceof BackupError) return reply.code(400).send({ error: err.code, message: err.message });
     if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: err.code, message: err.message });
     if (err instanceof NotFoundError) return reply.code(404).send({ error: 'not_found', message: err.message });
     if (err instanceof GapError) return reply.code(err.statusCode).send({ error: 'gap', message: err.message, cause: err.gap });
@@ -134,6 +152,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   thumbRoutes(app, services);
   eventRoutes(app, services);
   artRoutes(app, services);
+  backupRoutes(app, services);
 
   if (config.webDist) {
     await app.register(fastifyStatic, { root: config.webDist, wildcard: false });
@@ -144,6 +163,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   });
 
   app.addHook('onClose', async () => {
+    backups.stop();
     await sync.stop();
     await playback.close();
     db.close();

@@ -96,6 +96,12 @@ export const PIPELINE_LABEL: Record<Pipeline, string> = {
   transcode: 'Full transcode (to H.264 + AAC)',
 };
 
+/** The Pipeline row: a full transcode also names the H.264 encoder the server picked ("… · VAAPI encoder"). */
+export function pipelineLine(info: Pick<PlaybackInfo, 'pipeline' | 'diagnostics'>): string {
+  const enc = info.pipeline === 'transcode' ? info.diagnostics?.videoEncoder : undefined;
+  return enc ? `${PIPELINE_LABEL.transcode} · ${enc.label} encoder` : PIPELINE_LABEL[info.pipeline];
+}
+
 export const ENGINE_LABEL: Record<EngineKind, string> = {
   'hls.js': 'hls.js (MSE)',
   'native-hls': 'Native HLS',

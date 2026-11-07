@@ -37,6 +37,10 @@ function start(name: string, cwd: string, env: Record<string, string>): ChildPro
     log.push(String(b));
     if (log.length > 200) log.shift();
     if (process.env.E2E_DEBUG) process.stderr.write(`[${name}] ${b}`);
+    // on CI, server warnings and errors go to the job log so a failed run can be diagnosed there
+    else if (process.env.CI) {
+      for (const line of String(b).split('\n')) if (/"level":(40|50|60)\b|"statusCode":[45]\d\d/.test(line)) process.stderr.write(`[${name}] ${line.slice(0, 2000)}\n`);
+    }
   };
   child.stdout!.on('data', keep);
   child.stderr!.on('data', keep);

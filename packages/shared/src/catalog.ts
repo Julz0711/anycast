@@ -199,6 +199,20 @@ export interface TimelineInfo {
 
 export type Pipeline = 'passthrough' | 'remux' | 'transcode-audio' | 'transcode';
 
+/** Hardware video encoding methods the server can use for a full transcode. */
+export type HwAccelMethod = 'vaapi' | 'qsv' | 'nvenc';
+/** How the server picks its H.264 encoder: probe for hardware (auto), software only (off), or one method. */
+export type HwAccelSetting = 'auto' | 'off' | HwAccelMethod;
+export type VideoEncoderName = 'libx264' | 'h264_vaapi' | 'h264_qsv' | 'h264_nvenc';
+
+/** The H.264 encoder a full transcode uses (player Stats panel). */
+export interface VideoEncoderInfo {
+  active: VideoEncoderName;
+  method: 'software' | HwAccelMethod;
+  /** e.g. "Intel VAAPI", "Software" */
+  label: string;
+}
+
 /** Where a stream comes from: the live channel, the provider archive, the server's rolling buffer, or VOD. */
 export type StreamSource = 'live' | 'timeshift' | 'buffer' | 'movie' | 'episode';
 
@@ -225,6 +239,8 @@ export interface PlaybackDiagnostics {
   probe: StreamProbe;
   /** true when the probe failed (or was skipped) and the server assumed typical codecs */
   assumed: boolean;
+  /** full transcode only: the H.264 encoder the server picked when the stream was requested */
+  videoEncoder?: VideoEncoderInfo;
 }
 
 export interface PlaybackInfo {

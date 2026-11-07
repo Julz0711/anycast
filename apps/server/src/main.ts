@@ -11,7 +11,10 @@ try {
 }
 
 const { app, services } = await buildApp(config);
+// check the hardware encoders once now, so the first conversion does not wait for it
+void services.playback.hw.check().then((s) => app.log.info({ videoEncoder: s.active, setting: s.setting }, 'video encoder'));
 if (config.scheduler && services.source.credentials()) services.sync.start();
+if (config.scheduler) services.backups.start();
 if (!services.users.hasUsers()) app.log.warn('No users yet: set ANYCAST_ADMIN_USER and ANYCAST_ADMIN_PASSWORD and restart');
 if (!services.source.credentials()) app.log.warn('No provider configured: set XTREAM_URL, XTREAM_USERNAME and XTREAM_PASSWORD');
 

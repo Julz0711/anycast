@@ -1,3 +1,4 @@
+import type { HwAccelSetting } from '@anycast/shared';
 import { config as loadDotenv } from 'dotenv';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -51,6 +52,10 @@ export interface Config {
   buffer?: Partial<BufferConfig>;
   /** scrub thumbnail cache cap in bytes (default 2 GB), under DATA_DIR/thumbs */
   thumbsMaxBytes?: number;
+  /** hardware H.264 encoding for full transcodes (ANYCAST_HWACCEL, ANYCAST_VAAPI_DEVICE); off when missing */
+  hwaccel?: { setting: HwAccelSetting; device: string };
+  /** automatic daily backups kept in DATA_DIR/backups (default 7); 0 = off */
+  backupKeep?: number;
 }
 
 const num = (v: string | undefined): number | null => {
@@ -68,6 +73,15 @@ export function bufferFromEnv(env: NodeJS.ProcessEnv): Partial<BufferConfig> {
   if (grace !== null) out.graceMs = grace * 60_000;
   if (/^(0|false|no|off)$/i.test(env.BUFFER_ENABLED?.trim() ?? '')) out.enabled = false;
   return out;
+}
+
+const HW_SETTINGS: readonly HwAccelSetting[] = ['auto', 'off', 'vaapi', 'qsv', 'nvenc'];
+
+/** ANYCAST_HWACCEL=auto|off|vaapi|qsv|nvenc (default auto; anything else counts as auto), ANYCAST_VAAPI_DEVICE (default /dev/dri/renderD128). */
+export function hwaccelFromEnv(env: NodeJS.ProcessEnv): { setting: HwAccelSetting; device: string } {
+  const v = env.ANYCAST_HWACCEL?.trim().toLowerCase() ?? '';
+  const setting = /^(0|false|no|none|software)$/.test(v) ? 'off' : (HW_SETTINGS.find((s) => s === v) ?? 'auto');
+  return { setting, device: env.ANYCAST_VAAPI_DEVICE?.trim() || '/dev/dri/renderD128' };
 }
 
 export const VERSION = '0.1.0';
@@ -112,6 +126,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: /^(1|true|yes)$/i.test(env.TRUST_PROXY?.trim() ?? ''),
     scheduler: true,
     buffer: bufferFromEnv(env),
+    hwaccel: hwaccelFromEnv(env),
+    ...(num(env.ANYCAST_BACKUP_KEEP) !== null ? { backupKeep: Math.floor(num(env.ANYCAST_BACKUP_KEEP)!) } : {}),
     ...(num(env.THUMBS_MAX_GB) !== null ? { thumbsMaxBytes: num(env.THUMBS_MAX_GB)! * 1024 ** 3 } : {}),
   };
 }

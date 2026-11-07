@@ -608,6 +608,19 @@ export class BufferManager {
     return this.pins();
   }
 
+  /** The pinned channels were changed directly in the database (a restored backup): start and stop recorders to match. */
+  async pinsChanged(): Promise<void> {
+    const pinned = new Set(this.pins());
+    for (const id of pinned) void this.startRecorder(id, 'pin');
+    for (const [id, rec] of [...this.recorders]) {
+      if (pinned.has(id)) continue;
+      const t = this.retryTimers.get(id);
+      if (t) clearTimeout(t);
+      this.retryTimers.delete(id);
+      if ((await this.deps.fanouts.viewers(`live:${id}`)) === 0) rec.stop(REASON_UNPINNED);
+    }
+  }
+
   status(): BufferStatus {
     const ids = new Set<string>([
       ...this.pins(),

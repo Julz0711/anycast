@@ -13,11 +13,12 @@
  */
 import type {
   Category, Channel, EpgProgram, Episode, Favorite, HideRules, ItemRef, Movie, PlaybackInfo,
-  Progress, Series, SeriesDetail, TimelineInfo,
+  Progress, Series, SeriesDetail, TimelineInfo, HwAccelMethod, HwAccelSetting, VideoEncoderInfo,
 } from './catalog';
 import type { AdultMode, AdultStatus, UnlockMinutes } from './parental';
 import type { Preferences } from './settings';
 import type { TrackChoice } from './tracks';
+import type { AutoBackups, BackupFile, RestoreMode, RestoreResult } from './backup';
 
 export interface Profile { id: string; name: string; }
 
@@ -87,8 +88,10 @@ export interface ServerDiagnostics {
   platform: string;
   ffmpeg: { available: boolean; version: string | null };
   ffprobe: { available: boolean; version: string | null };
-  /** H.264/HEVC hardware encoders this ffmpeg build lists (e.g. h264_nvenc, h264_vaapi). Detected only; AnyCast encodes with libx264. */
+  /** H.264/HEVC hardware encoders this ffmpeg build lists (e.g. h264_nvenc, h264_vaapi); listed is not the same as usable, see videoEncoder */
   hwEncoders: string[];
+  /** the encoder full transcodes use now, and why */
+  videoEncoder: VideoEncoderStatus;
   connections: {
     /** provider connections AnyCast holds right now */
     active: number;
@@ -101,6 +104,31 @@ export interface ServerDiagnostics {
   hlsSessions: number;
   buffer: { enabled: boolean; bytes: number; maxBytes: number | null; recording: number };
   thumbnails: { bytes: number } | null;
+}
+
+/** One hardware encoder test (a one second test encode through the same filter chain playback uses). */
+export interface HwAccelProbe {
+  method: HwAccelMethod;
+  ok: boolean;
+  /** why it failed: the first FFmpeg error line, without file system paths */
+  error: string | null;
+}
+
+/** Hardware encoding state (GET /api/diagnostics videoEncoder, GET/PUT /api/hwaccel). */
+export interface VideoEncoderStatus extends VideoEncoderInfo {
+  /** one sentence: why this encoder */
+  reason: string;
+  /** the setting in effect, and where it comes from (the ANYCAST_HWACCEL environment variable, or an admin's choice in Settings) */
+  setting: HwAccelSetting;
+  source: 'env' | 'admin';
+  /** ANYCAST_HWACCEL (default auto) */
+  envSetting: HwAccelSetting;
+  /** the test encodes of the last check, in the order tried */
+  probes: HwAccelProbe[];
+  /** epoch ms of the last check; null before the first */
+  checkedAt: number | null;
+  /** the hardware encoder failed during playback: software is used until then (epoch ms) */
+  unhealthyUntil: number | null;
 }
 
 export interface Page<T> { items: T[]; total: number; }
@@ -155,6 +183,8 @@ export type SyncEvent =
   | { type: 'catalog-updated' }
   /** the profile's parental lock settings changed (mode, PIN, duration): refetch GET /api/adult and lists */
   | { type: 'parental'; profileId: string }
+  /** an admin restored a backup: refetch everything of the profile (progress, favorites, lists, settings, parental) */
+  | { type: 'restored'; profileId: string }
   /**
    * Sent to the profile whose playback was stopped by another client taking over the connection.
    * `clientId` is the stopped client's x-anycast-client id; other clients of the profile ignore it.
@@ -166,6 +196,25 @@ export interface Api {
   'GET /api/health': { res: { ok: true; version: string } };
   /** Admin only (403 {error:'forbidden'} otherwise). */
   'GET /api/diagnostics': { res: ServerDiagnostics };
+  /** Admin only. Hardware encoding status; PUT sets an override (null = follow ANYCAST_HWACCEL) and checks again; POST /check only checks again. */
+  'GET /api/hwaccel': { res: VideoEncoderStatus };
+  'PUT /api/hwaccel': { body: { setting: HwAccelSetting | null }; res: VideoEncoderStatus };
+  'POST /api/hwaccel/check': { res: VideoEncoderStatus };
+  /**
+   * Backup and restore (backup.ts). Admin only (403 {error:'forbidden'} otherwise).
+   * GET /api/admin/backup answers the file as an attachment named anycast-backup-YYYY-MM-DD.json.
+   */
+  'GET /api/admin/backup': { res: BackupFile };
+  /** the automatic daily backups in DATA_DIR/backups, newest first */
+  'GET /api/admin/backups': { res: AutoBackups };
+  'GET /api/admin/backups/:name': { res: BackupFile };
+  /**
+   * Restores a backup in one transaction (mode defaults to 'replace'). `password` is the signed-in
+   * admin's own password. Errors: 400 bad_backup (not a valid backup), 400 backup_version (made by
+   * a newer AnyCast), 403 wrong_password, 413 too large, 429 rate_limited. Sends a 'restored'
+   * SyncEvent (and the usual per-kind events) to every profile it changed.
+   */
+  'POST /api/admin/restore': { body: { backup: BackupFile; mode?: RestoreMode; password: string }; res: RestoreResult };
   'POST /api/auth/login': { body: { username: string; password: string }; res: Me };
   'POST /api/auth/logout': { res: { ok: true } };
   'GET /api/me': { res: Me };

@@ -88,5 +88,25 @@ test.describe(() => {
     await expect(diag.locator('.set-row', { hasText: 'FFmpeg' }).first()).toContainText(/\d+\.\d/);
     await expect(diag).toContainText(/\d+ of (\d+|unlimited) in use/);
     await expect(diag).not.toContainText('http');
+    await expect(diag.getByTestId('video-encoder')).toHaveText(/\((libx264|h264_(vaapi|qsv|nvenc))\)$/);
+  });
+
+  test('Settings › Player: an admin can override hardware encoding, and the server checks again', async ({ profile }) => {
+    const page = await profile.device();
+    await page.goto('/settings');
+    const hw = page.getByRole('region', { name: 'Player' }).getByTestId('hw-encoding');
+    const select = hw.getByLabel('Hardware encoding');
+    await expect(select).toHaveValue('');
+    await expect(select.locator('option').first()).toHaveText('Server default (Automatic)');
+    await select.selectOption('off');
+    await expect(hw.getByTestId('hw-encoder-active')).toHaveText('Software (libx264)');
+    await expect(hw).toContainText('Hardware encoding is turned off.');
+    // the server keeps it
+    await page.reload();
+    await expect(page.getByRole('region', { name: 'Player' }).getByLabel('Hardware encoding')).toHaveValue('off');
+    // back to the environment's setting (the server is shared by every spec)
+    await page.getByRole('region', { name: 'Player' }).getByLabel('Hardware encoding').selectOption('');
+    await expect(page.getByRole('region', { name: 'Player' }).getByLabel('Hardware encoding')).toHaveValue('');
+    await expect(page.getByRole('region', { name: 'Player' }).getByTestId('hw-encoding')).toContainText(/Tested: NVENC/);
   });
 });

@@ -71,7 +71,12 @@ export function Diagnostics({ Row }: { Row: RowComp }) {
       <Row label="ffprobe" hint="Reads a stream's codecs once, to pick the cheapest way to play it.">
         <Tool t={d.ffprobe} />
       </Row>
-      <Row label="Hardware encoders" hint="Listed by this FFmpeg build; the hardware itself may not be present. Conversions use the software H.264 encoder.">
+      <Row label="Video encoder" hint={d.videoEncoder.reason}>
+        <span className={d.videoEncoder.method === 'software' ? 'tabnum' : 'status-ok tabnum'} data-testid="video-encoder">
+          {d.videoEncoder.label} ({d.videoEncoder.active})
+        </span>
+      </Row>
+      <Row label="Hardware encoders" hint="Listed by this FFmpeg build; the hardware itself may not be present. A test encode decides which one conversions use.">
         <span className="muted caps">{d.hwEncoders.length ? d.hwEncoders.join(' · ') : 'None found'}</span>
       </Row>
       <Row label="Provider connections" hint={connectionsHint(c.byKind)}>

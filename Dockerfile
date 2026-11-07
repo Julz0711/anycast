@@ -21,7 +21,29 @@ RUN cd apps/server && node -e "require('better-sqlite3')(':memory:').close(); re
  && node --import tsx -e "0"
 
 FROM node:22-bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates tini && rm -rf /var/lib/apt/lists/*
+# Hardware encoding (used only when /dev/dri or an NVIDIA GPU is passed in; see docs/casaos.md).
+# Debian's FFmpeg already has VAAPI, QSV and NVENC built in; the GPU drivers are separate:
+# VAAPI for AMD (mesa) and Intel (iHD, the non-free build, which can encode on every generation
+# it supports), the Quick Sync runtime for newer Intel GPUs, and vainfo to check the device.
+# NVENC needs nothing here: the NVIDIA container toolkit brings the driver libraries.
+# The Quick Sync runtime (Gen12+) is best effort: QSV is only a fallback behind VAAPI.
+# They add roughly 50 MB; build with --build-arg HWACCEL_DRIVERS=0 to leave them out.
+ARG HWACCEL_DRIVERS=1
+RUN set -eux; \
+    pkgs="ffmpeg ca-certificates tini"; \
+    if [ "$HWACCEL_DRIVERS" = "1" ]; then \
+      pkgs="$pkgs vainfo mesa-va-drivers"; \
+      if [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+        sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources; \
+        pkgs="$pkgs intel-media-va-driver-non-free"; \
+      fi; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends $pkgs; \
+    if [ "$HWACCEL_DRIVERS" = "1" ] && [ "$(dpkg --print-architecture)" = "amd64" ]; then \
+      apt-get install -y --no-install-recommends libmfx-gen1.2 || echo "libmfx-gen1.2 not available, QSV on newer Intel GPUs will fall back to VAAPI"; \
+    fi; \
+    rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/package.json /app/pnpm-workspace.yaml ./
 COPY --from=build /app/node_modules ./node_modules
@@ -29,6 +51,7 @@ COPY --from=build /app/packages/shared ./packages/shared
 COPY --from=build /app/apps/server ./apps/server
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 ENV NODE_ENV=production \
+    ANYCAST_HWACCEL=auto \
     PORT=8787 \
     DATA_DIR=/data \
     BUFFER_DIR=/buffer \

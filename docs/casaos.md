@@ -76,6 +76,36 @@ has in its App Store:
 AnyCast is then at `https://<server-name>.<your-tailnet>.ts.net`, with a valid certificate, from
 anywhere, without opening ports on your router. On the phone, open it and use "Add to Home Screen".
 
+## 5. Optional: Hardware transcoding
+
+Most streams play without any conversion. When a device can't decode a stream's video (HEVC on
+an older browser, say), the server converts it to H.264, which costs a lot of CPU. With a GPU
+passed into the container, it uses the GPU instead. Nothing to do if you don't need it: without
+a GPU, AnyCast simply uses the CPU.
+
+**Intel (most mini PCs and NAS boxes) or AMD:**
+
+1. Check the server has a GPU device: `ls /dev/dri` should list `renderD128`.
+2. In `docker-compose.yml`, uncomment the two `devices:` lines under "Hardware transcoding".
+3. Restart: `docker compose up -d`.
+4. In the app, open Settings › All settings › Diagnostics: **Video encoder** should say
+   `VAAPI (h264_vaapi)`. If it says Software, the hint under it says what the test found.
+
+To check from the server itself: `docker compose exec anycast vainfo` lists what the GPU can do
+(look for `VAProfileH264` with `VAEntrypointEncSlice` or `VAEntrypointEncSliceLP`).
+
+**NVIDIA:** install the NVIDIA Container Toolkit on the host, uncomment the `deploy:` block in
+`docker-compose.yml` instead, and restart. Diagnostics should then say `NVIDIA NVENC (h264_nvenc)`.
+
+By default (`ANYCAST_HWACCEL=auto`) the server tries NVENC, VAAPI and Quick Sync with a one second
+test encode at startup and uses the first that works. An admin can force one, or turn it off, in
+Settings › All settings › Player › Hardware encoding (the **Check again** button there re-runs the
+test). If the GPU fails during playback, that stream carries on with the CPU and the GPU is left
+alone for 15 minutes.
+
+The GPU drivers add about 50 MB to the image. To build without them:
+`docker compose build --build-arg HWACCEL_DRIVERS=0`.
+
 ## Updating
 
 ```sh
@@ -85,7 +115,50 @@ docker compose up -d --build
 ```
 
 Your data (accounts, favorites, progress, settings, rewind buffer) lives in Docker volumes and
-survives updates.
+survives updates. To be safe across a rebuild or a move to another server, keep a backup (see
+[Backups](#backups)).
+
+## Backups
+
+Your accounts, profiles, favorites, progress (Continue watching and what you've watched), channel
+lists, settings, filters, parental PINs and pinned channels can be saved to one file. The file
+never contains your provider login, sign-in sessions or `ANYCAST_SECRET`; the catalog and guide
+come back from the provider on the next sync. It does contain the password and PIN *hashes*, so
+keep it somewhere private.
+
+**Automatic:** once a day the server writes `anycast-backup-YYYY-MM-DD.json` to `/data/backups`
+inside the container (the `anycast-data` volume) and keeps the last 7. Set `ANYCAST_BACKUP_KEEP` in
+`.env` to keep more or fewer, or `0` to turn them off. A restore also saves the data it replaces
+there first (`...-before-restore.json`).
+
+**In the app (admins):** Settings › All settings › Backup & restore. Download a backup now or one of
+the automatic ones, or restore from a file. Restoring shows what the file holds and asks for your
+password. *Replace everything* swaps all accounts and profiles for the backup's; *Merge* keeps
+what is there and only adds what is missing. The account you're signed in with always stays able
+to sign in.
+
+**Copy a backup off the server** (to keep it safe before rebuilding or moving):
+
+```sh
+cd /DATA/AppData/anycast
+docker compose exec anycast ls -l /data/backups
+docker compose cp anycast:/data/backups/anycast-backup-2026-11-06.json ./
+```
+
+Then copy it to your PC, e.g. `scp you@server-ip:/DATA/AppData/anycast/anycast-backup-2026-11-06.json .`
+
+**Restore without the web app** (e.g. on a new server, or when you can't sign in): copy the file in
+and run the restore command while AnyCast is stopped. Add `--merge` to keep existing data.
+
+```sh
+docker compose up -d && docker compose cp ./anycast-backup-2026-11-06.json anycast:/data/restore.json
+docker compose stop
+docker compose run --rm anycast node --import tsx src/backup/cli.ts /data/restore.json --yes
+docker compose up -d
+```
+
+Outside Docker: `pnpm --filter @anycast/server run restore path/to/anycast-backup-2026-11-06.json`.
+After a restore, sign in with the accounts and passwords from the backup.
 
 ## Troubleshooting
 

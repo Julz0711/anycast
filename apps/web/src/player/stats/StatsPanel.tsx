@@ -7,7 +7,7 @@ import type { PlaybackInfo } from '@anycast/shared';
 import type { EngineKind } from '../engine';
 import { IconClose } from '../../components/Icons';
 import {
-  audioLine, bufferAhead, decodedBytes, ENGINE_LABEL, fmtBitrate, fmtSeconds, frameCounts, PIPELINE_LABEL, RateMeter, SOURCE_LABEL, sourceOf,
+  audioLine, bufferAhead, decodedBytes, ENGINE_LABEL, fmtBitrate, fmtSeconds, frameCounts, pipelineLine, RateMeter, SOURCE_LABEL, sourceOf,
   streamBytes, videoLine, type FrameCounts,
 } from './sample';
 import '../../theme/player-extras.css';
@@ -98,7 +98,7 @@ export default function StatsPanel(p: StatsPanelProps) {
       ) : (
         <dl className="pl-stats-list tabnum">
           <Row name="Source" stat="source">{SOURCE_LABEL[sourceOf(p.info, p.routeKind)]}</Row>
-          <Row name="Pipeline" stat="pipeline">{PIPELINE_LABEL[p.info.pipeline]}</Row>
+          <Row name="Pipeline" stat="pipeline">{pipelineLine(p.info)}</Row>
           {d && (
             <dd className="pl-stats-why" data-stat="reason">
               {d.reason}
