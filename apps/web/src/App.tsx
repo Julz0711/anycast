@@ -6,6 +6,7 @@ import { applyTheme } from './theme/theme';
 import { focusables, installSpatialNav } from './nav/spatial';
 import { Shell, Toasts } from './layout/Shell';
 import { LiveScreen } from './screens/Live';
+import { HomeScreen } from './screens/Home';
 import { MoviesScreen, MovieDetail } from './screens/Movies';
 import { SeriesScreen } from './screens/Series';
 import { SeriesDetailScreen } from './screens/SeriesDetail';
@@ -128,6 +129,7 @@ function AuthedRoutes() {
         <Route path="/profiles" element={<ProfilePicker manage />} />
         <Route path="/profiles/:id" element={<ProfilePage />} />
         <Route element={<Shell />}>
+          <Route path="/home" element={<HomeScreen />} />
           <Route path="/live" element={<LiveScreen />} />
           <Route path="/movies" element={<MoviesScreen />} />
           <Route path="/movies/:id" element={<MovieDetail />} />

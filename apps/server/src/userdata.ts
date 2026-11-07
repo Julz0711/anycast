@@ -1,6 +1,6 @@
-/** Per-profile state: favorites, progress, preferences, hide rules, track choices. Every change but track choices emits a SyncEvent. */
+/** Per-profile state: favorites, progress, recent channels, preferences, hide rules, track choices. Every change but track choices emits a SyncEvent. */
 import {
-  DEFAULT_PREFERENCES, mergePreferences, type Favorite, type HideRules, type MediaKind, type Preferences, type Progress,
+  DEFAULT_PREFERENCES, mergePreferences, RECENT_CHANNELS_MAX, type RecentChannel, type Favorite, type HideRules, type MediaKind, type Preferences, type Progress,
   type TrackChoice,
 } from '@anycast/shared';
 import { EMPTY_RULES } from './catalog/store';
@@ -72,6 +72,42 @@ export class UserData {
       .run(profileId, progress.kind, progress.id, progress.seriesId ?? null, position, duration, progress.finished ? 1 : 0, progress.updatedAt);
     this.bus.emit({ type: 'progress', profileId, progress });
     return progress;
+  }
+
+  /** Recently watched live channels, newest first. */
+  recentChannels(profileId: string): RecentChannel[] {
+    return this.db
+      .prepare('SELECT channel_id AS id, watched_at AS watchedAt FROM recent_channels WHERE profile_id = ? ORDER BY watched_at DESC, channel_id LIMIT ?')
+      .all(profileId, RECENT_CHANNELS_MAX) as RecentChannel[];
+  }
+
+  /** Moves a channel to the front of the recent channels; the oldest past RECENT_CHANNELS_MAX drop off. */
+  touchRecentChannel(profileId: string, channelId: string, at = Date.now()): RecentChannel[] {
+    this.db.transaction(() => {
+      this.db
+        .prepare('INSERT INTO recent_channels (profile_id, channel_id, watched_at) VALUES (?, ?, ?) ON CONFLICT(profile_id, channel_id) DO UPDATE SET watched_at = excluded.watched_at')
+        .run(profileId, channelId, at);
+      this.db
+        .prepare(
+          `DELETE FROM recent_channels WHERE profile_id = ? AND channel_id NOT IN (
+             SELECT channel_id FROM recent_channels WHERE profile_id = ? ORDER BY watched_at DESC, channel_id LIMIT ?)`,
+        )
+        .run(profileId, profileId, RECENT_CHANNELS_MAX);
+    })();
+    return this.emitRecent(profileId);
+  }
+
+  /** Forgets one recent channel, or all of them (channelId null). */
+  forgetRecentChannels(profileId: string, channelId: string | null): RecentChannel[] {
+    if (channelId === null) this.db.prepare('DELETE FROM recent_channels WHERE profile_id = ?').run(profileId);
+    else this.db.prepare('DELETE FROM recent_channels WHERE profile_id = ? AND channel_id = ?').run(profileId, channelId);
+    return this.emitRecent(profileId);
+  }
+
+  private emitRecent(profileId: string): RecentChannel[] {
+    const recent = this.recentChannels(profileId);
+    this.bus.emit({ type: 'recent-channels', profileId, recent });
+    return recent;
   }
 
   /** The audio and subtitle track picked for a movie, episode or live channel (PB-3); null when nothing was picked. */

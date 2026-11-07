@@ -39,6 +39,15 @@ export function userDataRoutes(app: FastifyInstance, s: Services): void {
     return s.userData.saveProgress(auth(req).profileId, input);
   });
 
+  app.get('/api/recent-channels', async (req) => s.userData.recentChannels(auth(req).profileId));
+  app.put('/api/recent-channels', async (req, reply) => {
+    const b = z.object({ channelId: z.string().min(1).max(64) }).safeParse(req.body);
+    if (!b.success) return reply.code(400).send(bad('channelId is required'));
+    return s.userData.touchRecentChannel(auth(req).profileId, b.data.channelId);
+  });
+  app.delete('/api/recent-channels', async (req) => s.userData.forgetRecentChannels(auth(req).profileId, null));
+  app.delete<{ Params: { id: string } }>('/api/recent-channels/:id', async (req) => s.userData.forgetRecentChannels(auth(req).profileId, req.params.id));
+
   app.get('/api/continue', async (req) => {
     const all = s.userData.allProgress(auth(req).profileId);
     // hidden adult titles are left out; locked ones are shown as placeholders

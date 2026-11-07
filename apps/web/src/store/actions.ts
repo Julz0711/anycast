@@ -133,13 +133,14 @@ export function clearProfile() {
 
 export async function loadProfileData() {
   const pid = get().profileId;
-  const [prefs, favs, progress, rules, lists, mediaLists] = await Promise.allSettled([
+  const [prefs, favs, progress, rules, lists, mediaLists, recent] = await Promise.allSettled([
     call('GET /api/preferences'),
     call('GET /api/favorites'),
     call('GET /api/progress'),
     call('GET /api/hide-rules'),
     call('GET /api/lists'),
     call('GET /api/media-lists'),
+    call('GET /api/recent-channels'),
   ]);
   if (get().profileId !== pid) return;
   if (prefs.status === 'fulfilled' && !pendingPrefs) setPrefsFromServer(prefs.value);
@@ -153,6 +154,7 @@ export async function loadProfileData() {
   else set({ listsLoaded: true });
   if (mediaLists.status === 'fulfilled') set({ mediaLists: mediaLists.value, mediaListsLoaded: true });
   else set({ mediaListsLoaded: true });
+  if (recent.status === 'fulfilled') set({ recentChannels: recent.value });
 }
 
 function setPrefsFromServer(p: Preferences) {
@@ -257,6 +259,29 @@ export function saveProgressOnUnload(body: ProgressBody) {
   }
 }
 
+/* ---------------- recent channels (Home › Jump back in) ---------------- */
+/** A channel that played for a while: to the front of the profile's recent channels (optimistic). */
+export async function recordRecentChannel(id: string) {
+  set((s) => ({ recentChannels: [{ id, watchedAt: Date.now() }, ...s.recentChannels.filter((r) => r.id !== id)] }));
+  try {
+    set({ recentChannels: await call('PUT /api/recent-channels', { body: { channelId: id } }) });
+  } catch {
+    /* history only; never interrupt playback */
+  }
+}
+
+/** Forgets one recent channel, or all of them (no id). */
+export async function forgetRecentChannels(id?: string) {
+  const before = get().recentChannels;
+  set({ recentChannels: id ? before.filter((r) => r.id !== id) : [] });
+  try {
+    set({ recentChannels: id ? await call('DELETE /api/recent-channels/:id', { params: { id } }) : await call('DELETE /api/recent-channels') });
+  } catch (e) {
+    set({ recentChannels: before });
+    toast(`Couldn't update recent channels: ${errorMessage(e)}`, 'error');
+  }
+}
+
 /* ---------------- hide rules ---------------- */
 export async function saveHideRules(rules: HideRules) {
   const before = get().hideRules;
@@ -294,6 +319,9 @@ export function applyEvent(ev: SyncEvent) {
       break;
     case 'media-lists':
       applyMediaListsEvent(ev.lists);
+      break;
+    case 'recent-channels':
+      set({ recentChannels: ev.recent });
       break;
     case 'parental':
       // mode, PIN or duration changed on another device: reload the lock state and the lists

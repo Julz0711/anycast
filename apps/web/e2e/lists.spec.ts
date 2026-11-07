@@ -71,7 +71,7 @@ test('Lists tab: Watch Later and a movie list from the movie page, a tab per lis
   // the main navigation order
   await a.goto('/live');
   const nav = a.getByRole('navigation', { name: 'Main' }).getByRole('link');
-  await expect(nav).toHaveText([/Search/, /Favorites/, /Lists/, /Live TV/, /Movies/, /Series/, /Settings/]);
+  await expect(nav).toHaveText([/Home/, /Search/, /Favorites/, /Lists/, /Live TV/, /Movies/, /Series/, /Settings/]);
 
   await a.goto(`/movies/${fx.movie.id}`);
   await a.getByRole('button', { name: 'Watch later' }).click();

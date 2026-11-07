@@ -14,29 +14,45 @@ export const ACCENTS = {
 } as const;
 export type AccentId = keyof typeof ACCENTS;
 
-export type TabId = 'search' | 'favorites' | 'lists' | 'live' | 'movies' | 'series';
+export type TabId = 'home' | 'search' | 'favorites' | 'lists' | 'live' | 'movies' | 'series';
 /** Every main tab, in the default order. */
-export const ALL_TABS: readonly TabId[] = ['search', 'favorites', 'lists', 'live', 'movies', 'series'];
+export const ALL_TABS: readonly TabId[] = ['home', 'search', 'favorites', 'lists', 'live', 'movies', 'series'];
+
+/** The sections of the Home dashboard. */
+export type HomeSectionId = 'continue' | 'recent' | 'next' | 'favorites' | 'watchLater';
+/** Every Home section, in the default order. */
+export const ALL_HOME_SECTIONS: readonly HomeSectionId[] = ['continue', 'recent', 'next', 'favorites', 'watchLater'];
+
+/** A saved Home section order made valid: unknown and repeated ids dropped, missing sections added at the end in default order. */
+export function normalizeHomeSections(order: unknown): HomeSectionId[] {
+  const out: HomeSectionId[] = [];
+  for (const t of Array.isArray(order) ? order : []) if (ALL_HOME_SECTIONS.includes(t as HomeSectionId) && !out.includes(t as HomeSectionId)) out.push(t as HomeSectionId);
+  for (const t of ALL_HOME_SECTIONS) if (!out.includes(t)) out.push(t);
+  return out;
+}
 
 /** Earlier default orders. A saved order equal to one of them was never changed by the user, so it follows the new default. */
 const OLD_DEFAULT_ORDERS: readonly (readonly string[])[] = [
   ['live', 'movies', 'series', 'search'],
   ['live', 'favorites', 'movies', 'series', 'search'],
+  ['search', 'favorites', 'lists', 'live', 'movies', 'series'],
 ];
 
 /**
  * A saved tab order made valid: unknown and repeated ids dropped, missing tabs added in default order.
  * An untouched old default becomes the current default. Orders saved before Favorites existed get it
- * right after Live TV; orders saved before Lists existed get it right after Favorites.
+ * right after Live TV; orders saved before Lists existed get it right after Favorites; orders saved
+ * before Home existed get it first.
  */
 export function normalizeTabOrder(order: unknown): TabId[] {
   if (Array.isArray(order) && OLD_DEFAULT_ORDERS.some((d) => d.length === order.length && d.every((t, i) => order[i] === t))) return [...ALL_TABS];
   const out: TabId[] = [];
   for (const t of Array.isArray(order) ? order : []) if (ALL_TABS.includes(t as TabId) && !out.includes(t as TabId)) out.push(t as TabId);
   if (!out.length) return [...ALL_TABS];
-  for (const t of ALL_TABS) if (t !== 'favorites' && t !== 'lists' && !out.includes(t)) out.push(t);
+  for (const t of ALL_TABS) if (t !== 'home' && t !== 'favorites' && t !== 'lists' && !out.includes(t)) out.push(t);
   if (!out.includes('favorites')) out.splice(out.indexOf('live') + 1, 0, 'favorites');
   if (!out.includes('lists')) out.splice(out.indexOf('favorites') + 1, 0, 'lists');
+  if (!out.includes('home')) out.unshift('home');
   return out;
 }
 
@@ -83,6 +99,18 @@ export interface Preferences {
     tabOrder: TabId[];
     hiddenTabs: TabId[];
   };
+  /** The Home dashboard */
+  home: {
+    /** every section, in the user's order */
+    sections: HomeSectionId[];
+    hiddenSections: HomeSectionId[];
+    /** a large "pick up where you left off" card above the sections */
+    showHero: boolean;
+    /** Favorite channels: only the ones with guide data (what's on now) */
+    favoritesWithGuideOnly: boolean;
+    /** most cards a row shows before "See all" */
+    rowLimit: 6 | 12 | 24;
+  };
   settingsMode: 'basic' | 'all';
   /** First-run setup (language filter) finished or skipped for this profile */
   setupDone: boolean;
@@ -119,9 +147,16 @@ export const DEFAULT_PREFERENCES: Preferences = {
     preferredSubtitleLanguage: null,
   },
   start: {
-    startTab: 'live',
-    tabOrder: ['search', 'favorites', 'lists', 'live', 'movies', 'series'],
+    startTab: 'home',
+    tabOrder: ['home', 'search', 'favorites', 'lists', 'live', 'movies', 'series'],
     hiddenTabs: [],
+  },
+  home: {
+    sections: ['continue', 'recent', 'next', 'favorites', 'watchLater'],
+    hiddenSections: [],
+    showHero: true,
+    favoritesWithGuideOnly: false,
+    rowLimit: 12,
   },
   settingsMode: 'basic',
   setupDone: false,
@@ -147,5 +182,13 @@ export function mergePreferences(partial: unknown): Preferences {
   start.tabOrder = normalizeTabOrder(start.tabOrder);
   start.hiddenTabs = Array.isArray(start.hiddenTabs) ? start.tabOrder.filter((t) => start.hiddenTabs.includes(t)) : [];
   if (!ALL_TABS.includes(start.startTab)) start.startTab = DEFAULT_PREFERENCES.start.startTab;
+  // Saved before Home existed, still on the old default start tab: open on Home from now on.
+  const raw = partial as Record<string, unknown>;
+  const savedStart = raw.start as Record<string, unknown> | undefined;
+  if (!('home' in raw) && savedStart && savedStart.startTab === 'live') start.startTab = 'home';
+  const home = prefs.home;
+  home.sections = normalizeHomeSections(home.sections);
+  home.hiddenSections = Array.isArray(home.hiddenSections) ? home.sections.filter((t) => home.hiddenSections.includes(t)) : [];
+  if (![6, 12, 24].includes(home.rowLimit)) home.rowLimit = DEFAULT_PREFERENCES.home.rowLimit;
   return prefs;
 }

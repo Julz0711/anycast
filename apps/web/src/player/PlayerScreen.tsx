@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Episode, PlaybackInfo, TimelineInfo, TrackChoice } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
-import { saveProgress, saveProgressOnUnload, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
+import { recordRecentChannel, saveProgress, saveProgressOnUnload, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
 import { cachedGet, call } from '../api/client';
 import { lookup, resolveItems } from '../api/catalog';
 import { setBufferPin, useBufferPins } from '../api/buffer';
@@ -32,6 +32,8 @@ import '../theme/player.css';
 
 /** Within this of the live edge counts as live. */
 const LIVE_SLACK_MS = 6_000;
+/** how long a channel plays before it shows up in Home › Jump back in */
+const RECENT_AFTER_MS = 8_000;
 
 /** How a stream is (re)loaded: VOD from the start or a position, with other tracks (PB-3). */
 interface LoadOpts {
@@ -236,6 +238,13 @@ export default function PlayerScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, id]);
+
+  // Home › Jump back in: a channel counts once it has been on for a while, so zapping past doesn't fill the list
+  useEffect(() => {
+    if (!isLive) return;
+    const t = setTimeout(() => void recordRecentChannel(id), RECENT_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [isLive, id]);
 
   /**
    * Try again / Resume: the stream again from where it got to (live: the same time behind live),

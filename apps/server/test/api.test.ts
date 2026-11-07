@@ -214,7 +214,7 @@ describe('user data', () => {
       url: '/api/preferences',
       payload: { start: { tabOrder: ['series', 'live', 'movies', 'search'], hiddenTabs: ['search', 'bogus'] } },
     });
-    expect(p.start.tabOrder).toEqual(['series', 'live', 'favorites', 'lists', 'movies', 'search']);
+    expect(p.start.tabOrder).toEqual(['home', 'series', 'live', 'favorites', 'lists', 'movies', 'search']);
     expect(p.start.hiddenTabs).toEqual(['search']);
   });
 

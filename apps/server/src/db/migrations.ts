@@ -297,4 +297,13 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (session_hash, profile_id)
   ) WITHOUT ROWID;
   `,
+  `
+  -- live channels a profile watched lately (Home › Jump back in); trimmed to RECENT_CHANNELS_MAX
+  CREATE TABLE IF NOT EXISTS recent_channels (
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    channel_id TEXT NOT NULL,
+    watched_at INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, channel_id)
+  ) WITHOUT ROWID;
+  `,
 ];

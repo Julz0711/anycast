@@ -13,6 +13,9 @@ const base = (p: SVGProps<SVGSVGElement>) => ({
   ...p,
 });
 
+export const IconHome = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 10.5L12 4l8 6.5V19a1.5 1.5 0 01-1.5 1.5H15v-5.5h-6v5.5H5.5A1.5 1.5 0 014 19z" /></svg>
+);
 export const IconLive = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="3" y="6" width="18" height="13" rx="2.5" /><path d="M8 2.5l4 3.5 4-3.5" /></svg>
 );

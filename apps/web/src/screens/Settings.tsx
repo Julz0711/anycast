@@ -20,6 +20,7 @@ import { TABS, visibleTabs } from '../layout/tabs';
 import { ProgressBar, Segmented, Skeleton, Toggle } from '../components/ui';
 import { IconDown, IconDrag, IconLock, IconRefresh, IconUp } from '../components/Icons';
 import { ListsManager } from '../components/ListEditor';
+import { HomeEditor } from '../components/HomeEditor';
 import type { DeviceOverride, FormFactor } from '../lib/device';
 import { ParentalLock } from './ParentalLock';
 import { DiagnosticsSection } from './Diagnostics';
@@ -53,6 +54,7 @@ export default function SettingsScreen() {
         { id: 'lists', title: 'Channel lists', body: <ListsManager /> },
         { id: 'player', title: 'Player', body: <PlayerSettings prefs={prefs} all /> },
         { id: 'tabs', title: 'Start & tabs', body: <StartTabs prefs={prefs} all /> },
+        { id: 'home', title: 'Home', body: <HomeEditor compact /> },
         { id: 'filters', title: 'Filters', body: <Filters all /> },
         { id: 'parental', title: 'Parental lock', body: <ParentalLock Row={Row} /> },
         { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
