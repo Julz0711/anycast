@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createReadStream } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { PassThrough } from 'node:stream';
 import { z } from 'zod';
 import { getChannel, getEpisode, getMovie } from '../catalog/store';
@@ -37,7 +38,17 @@ function contentType(file: string): string {
 function sendHls(reply: FastifyReply, file: string, out: { text: string } | { files: string[] }) {
   reply.header('cache-control', 'no-cache').type(contentType(file));
   if ('text' in out) return reply.send(out.text);
-  if (out.files.length === 1) return reply.send(createReadStream(out.files[0]!));
+  if (out.files.length === 1) {
+    // read whole (a segment is a few MB) so a file removed by a run that just stopped (another
+    // viewer of the title seeked, or the session closed) answers 503 and the player asks again (hls.js retries 5xx, not 4xx)
+    return readFile(out.files[0]!).then(
+      (buf) => reply.send(buf),
+      (err: NodeJS.ErrnoException) => {
+        if (err.code !== 'ENOENT') throw err;
+        return reply.code(503).header('retry-after', '1').type('application/json').send({ error: 'busy', message: 'This part of the video is being prepared again' });
+      },
+    );
+  }
   const body = new PassThrough();
   void (async () => {
     for (const f of out.files) {

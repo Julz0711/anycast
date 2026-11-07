@@ -58,6 +58,8 @@ interface Run {
   exitCode: number | null;
   paused: boolean;
   completed: Map<number, string>;
+  /** segments deleted to save disk (behind playback): still in the run's playlist, but gone */
+  pruned: Set<number>;
   lease: Lease;
   /** subtitle track index -> WebVTT file this run writes */
   subs: Map<number, string>;
@@ -330,7 +332,7 @@ export class VodHlsSession extends Session {
       run.error = msg;
       this.onError(msg);
     });
-    const run: Run = { id, proc, start, exited: false, exitCode: null, paused: false, completed: new Map(), lease, subs, video, error: '' };
+    const run: Run = { id, proc, start, exited: false, exitCode: null, paused: false, completed: new Map(), pruned: new Set(), lease, subs, video, error: '' };
     proc.on('close', (code) => {
       run.exited = true;
       run.exitCode = code;
@@ -395,7 +397,7 @@ export class VodHlsSession extends Session {
       for (let m = run.start; m < top - SUB_MARGIN && m < this.count; m++) this.subsReady.add(m);
     }
     for (const n of done) {
-      if (run.completed.has(n)) continue;
+      if (run.completed.has(n) || run.pruned.has(n)) continue;
       run.completed.set(n, runSegment(run.id, n));
       if (this.onSegment && this.run === run) {
         const files = { init: path.join(this.dir, runInit(run.id)), file: path.join(this.dir, runSegment(run.id, n)) };
@@ -430,6 +432,7 @@ export class VodHlsSession extends Session {
       for (const [n, file] of run.completed) {
         if (n < this.lastRequested - KEEP_BEHIND) {
           run.completed.delete(n);
+          run.pruned.add(n);
           void unlink(path.join(this.dir, file)).catch(() => undefined);
         }
       }
@@ -463,7 +466,8 @@ export class VodHlsSession extends Session {
     const last = n === this.count - 1;
     let run = this.run;
     if (run) await this.refresh(run);
-    const reachable = run && !run.exited && n >= run.start && n <= this.maxCompleted(run) + 1 + LOOKAHEAD;
+    // a pruned slot is gone from this run: another viewer of the same title went far ahead of it
+    const reachable = run && !run.exited && n >= run.start && !run.pruned.has(n) && n <= this.maxCompleted(run) + 1 + LOOKAHEAD;
     if (!run || (!run.completed.has(n) && !reachable)) run = this.startRun(this.runStartFor(n));
     this.setPaused(run, false);
     const deadline = Date.now() + WAIT_MS;
