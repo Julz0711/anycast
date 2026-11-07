@@ -55,7 +55,7 @@ export class XtreamClient {
           signal: AbortSignal.timeout(timeoutMs),
         });
         if (res.status === 401 || res.status === 403) {
-          throw new XtreamError('Provider rejected the login (check XTREAM_USERNAME / XTREAM_PASSWORD)', 'auth');
+          throw new XtreamError('Provider rejected the login (check the username and password)', 'auth');
         }
         if (res.status >= 500) {
           lastErr = new XtreamError(`Provider responded with HTTP ${res.status}`, 'http');
@@ -91,7 +91,7 @@ export class XtreamClient {
     const hasUser = !!data && typeof data === 'object' && 'user_info' in data;
     const parsed = AuthResponse.safeParse(data);
     if (!hasUser || !parsed.success || parsed.data.user_info.auth === 0) {
-      throw new XtreamError('Provider rejected the login (check XTREAM_USERNAME / XTREAM_PASSWORD)', 'auth');
+      throw new XtreamError('Provider rejected the login (check the username and password)', 'auth');
     }
     return parsed.data;
   }

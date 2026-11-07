@@ -216,6 +216,14 @@ h1, h2, h3, p { margin: 0; }
 .auth-card .brand { padding: 0 0 1rem; font-size: 1.5rem; }
 .field { display: flex; flex-direction: column; gap: 0.375rem; font-size: 0.875rem; font-weight: 600; color: var(--text-2); }
 .form-error { color: #FFB4A8; font-size: 0.875rem; }
+.field-hint { font-weight: 400; font-size: 0.8125rem; color: var(--muted); }
+/* provider login (screens/Provider.tsx): setup screen and Settings › Provider */
+.provider-form { display: flex; flex-direction: column; gap: 1rem; max-width: 30rem; }
+.provider-form .actions { margin-top: 0.25rem; }
+.provider-pass { display: flex; gap: 0.5rem; }
+.provider-pass .input { flex: 1; min-width: 0; }
+.provider-ok { color: var(--accent); font-size: 0.875rem; font-weight: 600; }
+.provider-intro { font-size: 0.875rem; margin: 0.25rem 0 1rem; max-width: 40rem; }
 .profiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; margin-top: 2rem; }
 .profile-tile { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; width: 8rem; padding: 0.75rem; border-radius: 1rem; font-weight: 600; color: var(--text-2); }
 .profile-tile:hover, .profile-tile:focus-visible { color: var(--text); outline: none; }

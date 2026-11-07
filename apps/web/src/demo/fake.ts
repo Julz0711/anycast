@@ -6,7 +6,7 @@ import {
   ADULT_MODE_RANK, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, DEFAULT_PREFERENCES, FINISHED_THRESHOLD, LOCKED_NAME, mergePreferences, PIN_MAX_ATTEMPTS, summarizeBackup, PIN_WINDOW_MS,
   defaultAvatar, type AdultMode, type AdultStatus, type BackupFile, type Category, type RestoreMode, type UnlockMinutes,
   type Channel, type ChannelList, type Favorite, type MediaList, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
-  type Preferences, type Profile, type Progress, type Recap, type RecentChannel, RECENT_CHANNELS_MAX, type Series, type SourceStatus, type SyncEvent, type TagSummary, type TimelineInfo,
+  type Preferences, type Profile, type Progress, type Recap, type RecentChannel, RECENT_CHANNELS_MAX, type Series, type SourceStatus, type ProviderLogin, type ProviderSettings, type ProviderTestResult, type SyncEvent, type TagSummary, type TimelineInfo,
 } from '@anycast/shared';
 import { ApiError } from '../api/client';
 import { buildFixtures } from './fixtures';
@@ -336,6 +336,17 @@ const routes: [string, RegExp, Handler][] = [
     syncing: syncingUntil > Date.now(),
     counts: { live: fx.channels.length, movie: fx.movies.length, series: fx.series.length },
   })],
+  ['GET', /^\/api\/provider$/, (): ProviderSettings => ({ ...demoProvider })],
+  ['POST', /^\/api\/provider\/test$/, (_m, _q, body): ProviderTestResult => {
+    const b = body as ProviderLogin;
+    if (!b.password && !demoProvider.configured) throw new ApiError(400, 'Enter the password.');
+    return { ok: true, account: { status: 'Active', expiresAt: Date.now() + 142 * 86_400_000, maxConnections: 2 } };
+  }],
+  ['PUT', /^\/api\/provider$/, (_m, _q, body): ProviderSettings => {
+    const b = body as ProviderLogin;
+    demoProvider = { ...demoProvider, configured: true, url: b.url.trim().replace(/\/+$/, ''), username: b.username.trim(), origin: 'app', updatedAt: Date.now() };
+    return { ...demoProvider };
+  }],
   ['POST', /^\/api\/source\/sync$/, () => {
     syncingUntil = Date.now() + 4000;
     setTimeout(() => emit({ type: 'catalog-updated' }), 4000);
@@ -762,6 +773,7 @@ const emitMediaLists = (st: ProfileState) => emit({ type: 'media-lists', profile
 const emitLists = (st: ProfileState) => emit({ type: 'lists', profileId: currentPid, lists: structuredClone(st.lists) });
 
 let syncingUntil = 0;
+let demoProvider: ProviderSettings = { configured: true, url: 'http://provider.example:8080', username: 'demo', origin: 'env', envSet: true, updatedAt: Date.now() - 6 * 86_400_000 };
 const pins = new Set<string>();
 let currentPid = 'p1';
 

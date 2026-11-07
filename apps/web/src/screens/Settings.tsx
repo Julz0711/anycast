@@ -25,6 +25,7 @@ import type { DeviceOverride, FormFactor } from '../lib/device';
 import { ParentalLock } from './ParentalLock';
 import { DiagnosticsSection } from './Diagnostics';
 import { HwEncoding } from './HwEncoding';
+import { ProviderSection } from './Provider';
 import { BackupSection } from './Backup';
 import { CastSettings } from './CastSettings';
 import { resetSwipeDecks } from './Swipe';
@@ -64,6 +65,7 @@ export default function SettingsScreen() {
         { id: 'parental', title: 'Parental lock', body: <ParentalLock Row={Row} /> },
         { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
         { id: 'profiles', title: 'Profiles', body: <Profiles /> },
+        ...(isAdmin ? [{ id: 'provider', title: 'Provider', body: <ProviderSection /> }] : []),
         { id: 'source', title: 'Source & account', body: <Source /> },
         ...(isAdmin ? [{ id: 'backup', title: 'Backup & restore', body: <BackupSection Row={Row} /> }] : []),
         {
@@ -79,6 +81,7 @@ export default function SettingsScreen() {
         { id: 'player', title: 'Player', body: <PlayerSettings prefs={prefs} /> },
         { id: 'tabs', title: 'Start', body: <StartTabs prefs={prefs} /> },
         { id: 'filters', title: 'Filters', body: <Filters /> },
+        ...(isAdmin ? [{ id: 'provider', title: 'Provider', body: <ProviderSection /> }] : []),
       ];
 
   return (
@@ -665,6 +668,7 @@ function RewindBuffer() {
 
 /* ---------------- Source ---------------- */
 function Source() {
+  const isAdmin = useApp((s) => s.me?.user.isAdmin ?? false);
   const [tick, setTick] = useState(0);
   const st = useAsync(() => call('GET /api/source'), [tick]);
   const s = st.data;
@@ -678,7 +682,7 @@ function Source() {
   const acc = s.account;
   return (
     <>
-      <Row label="Provider" hint="Details stay on your server and are never shown here.">
+      <Row label="Provider" hint={isAdmin ? 'Change the login under Provider.' : 'The login stays on your server. An admin can change it.'}>
         <span className={s.configured ? 'status-ok' : 'status-bad'}>{s.configured ? 'Connected' : 'Not configured'}</span>
       </Row>
       {acc && (

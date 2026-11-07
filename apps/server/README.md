@@ -16,7 +16,7 @@ working directory and from the repo root.
 
 | Variable | Meaning |
 | --- | --- |
-| `XTREAM_URL`, `XTREAM_USERNAME`, `XTREAM_PASSWORD` | Your provider login. Stored encrypted (AES-256-GCM) in the database. Never sent to clients or written to logs. |
+| `XTREAM_URL`, `XTREAM_USERNAME`, `XTREAM_PASSWORD` | Optional: your provider login. An admin can enter it in the app instead (`PUT /api/provider`, Settings › Provider). Stored encrypted (AES-256-GCM) in the database; the password is never sent to clients or written to logs. The `.env` values are applied on the first start and whenever they change; a login entered in the app is kept while `.env` stays the same. |
 | `ANYCAST_SECRET` | 16+ random characters. The key for encrypting the provider login. Don't change it later. |
 | `ANYCAST_ADMIN_USER`, `ANYCAST_ADMIN_PASSWORD` | Creates the first account on first start (only when no account exists yet). |
 | `PORT` (8787), `HOST` (0.0.0.0) | Where the server listens. |

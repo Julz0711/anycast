@@ -35,6 +35,7 @@ import { eventRoutes } from './routes/events';
 import { listRoutes } from './routes/lists';
 import { parentalRoutes } from './routes/parental';
 import { playbackRoutes } from './routes/playback';
+import { providerRoutes } from './routes/provider';
 import { swipeRoutes } from './routes/swipe';
 import { thumbRoutes } from './routes/thumbs';
 import { userDataRoutes } from './routes/userdata';
@@ -150,6 +151,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   app.get('/api/health', async () => ({ ok: true as const, version: VERSION }));
   authRoutes(app, services);
   catalogRoutes(app, services);
+  providerRoutes(app, services);
   userDataRoutes(app, services);
   listRoutes(app, services);
   swipeRoutes(app, services);

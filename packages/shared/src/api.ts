@@ -22,6 +22,7 @@ import type { AutoBackups, BackupFile, RestoreMode, RestoreResult } from './back
 import type { Profile, ProfileImageType } from './profiles';
 import type { CastPlayRequest, CastPlayResponse, CastSettings } from './cast';
 import type { Recap, WatchKind } from './recap';
+import type { ProviderLogin, ProviderSettings, ProviderTestResult } from './provider';
 
 
 /**
@@ -305,6 +306,13 @@ export interface Api {
 
   'GET /api/source': { res: SourceStatus };
   'POST /api/source/sync': { res: { ok: true } };
+
+  /** The provider login (admins): address and user, never the password. */
+  'GET /api/provider': { res: ProviderSettings };
+  /** Tries a login against the provider without saving it (admins). Without a password, the saved one is used. */
+  'POST /api/provider/test': { body: ProviderLogin; res: ProviderTestResult };
+  /** Tests, then saves the login and starts a sync (admins). A login the provider rejects is not saved (400). */
+  'PUT /api/provider': { body: ProviderLogin; res: ProviderSettings };
 
   /** all=1 includes categories hidden by the profile's rules (for Settings) */
   'GET /api/categories': { query: { kind: 'live' | 'movie' | 'series'; all?: '1' }; res: Category[] };

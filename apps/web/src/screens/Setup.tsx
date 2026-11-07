@@ -11,6 +11,7 @@ import { useAsync } from '../lib/hooks';
 import { languageName } from '../lib/lang';
 import { BrandMark } from '../components/Icons';
 import { Skeleton } from '../components/ui';
+import { ProviderForm } from './Provider';
 
 export function SetupScreen(props: { status: SourceStatus | null; onRefresh: () => void }) {
   const rules = useApp((s) => s.hideRules);
@@ -108,15 +109,25 @@ export function SetupScreen(props: { status: SourceStatus | null; onRefresh: () 
 
 function NoCatalog(props: { status: SourceStatus | null; onRefresh: () => void }) {
   const [msg, setMsg] = useState<string | null>(null);
+  const isAdmin = useApp((st) => st.me?.user.isAdmin ?? false);
   const s = props.status;
   if (s && !s.configured) {
+    if (isAdmin) {
+      return (
+        <>
+          <h1 className="h1">Connect your TV provider</h1>
+          <p className="muted">
+            Enter the Xtream Codes details from your IPTV provider. AnyCast checks them, then loads your channels, movies and series. The password stays
+            encrypted on your server and is never shown again. You can change this later in Settings › Provider.
+          </p>
+          <ProviderForm setup current={null} onSaved={() => props.onRefresh()} />
+        </>
+      );
+    }
     return (
       <>
         <h1 className="h1">No TV source yet</h1>
-        <p className="muted">
-          The server doesn't have your provider details. Add <code>XTREAM_URL</code>, <code>XTREAM_USERNAME</code> and <code>XTREAM_PASSWORD</code> to the
-          server's <code>.env</code> and restart it. Your login stays on the server and is never shown here.
-        </p>
+        <p className="muted">AnyCast doesn't have a TV provider yet. Ask the person who set up AnyCast to sign in with the admin account and add it.</p>
         <button className="btn btn-lg" type="button" onClick={props.onRefresh}>
           Check again
         </button>
