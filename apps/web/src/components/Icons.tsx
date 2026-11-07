@@ -90,6 +90,25 @@ export const IconBackspace = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M9 5h10a2 2 0 012 2v10a2 2 0 01-2 2H9l-6-7z" /><path d="M12.5 9.5l5 5M17.5 9.5l-5 5" /></svg>
 );
 
+export const IconPlus = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 5v14M5 12h14" /></svg>
+);
+export const IconPencil = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></svg>
+);
+export const IconSwitch = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M7 7h12l-3.5-3.5M17 17H5l3.5 3.5" /></svg>
+);
+export const IconSignOut = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4" /><path d="M10 16l-4-4 4-4M6 12h10" /></svg>
+);
+export const IconUpload = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5" /><path d="M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" /></svg>
+);
+export const IconCheck = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+);
+
 /** The AnyCast mark: a rounded screen with a thin ribbon under it. */
 export const BrandMark = () => (
   <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">

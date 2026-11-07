@@ -34,13 +34,50 @@ export async function bootstrap() {
   }
 }
 
+/** This device asks "Who's watching?" every time AnyCast opens (when there is more than one profile). */
+const ASK_KEY = 'anycast.askProfile';
+export const askOnLaunch = () => readLocal(ASK_KEY) !== '0';
+export function setAskOnLaunch(on: boolean) {
+  writeLocal(ASK_KEY, on ? '1' : '0');
+}
+
+/** The profile this device used last (the picker focuses it). */
+export function lastProfileId(): string | null {
+  const me = get().me;
+  return me ? readLocal(profileKey(me.user.id)) : null;
+}
+
 export function onSignedIn(me: NonNullable<ReturnType<typeof get>['me']>) {
   set({ auth: 'authed', me });
   const stored = readLocal(profileKey(me.user.id));
-  const valid = me.profiles.find((p) => p.id === stored);
-  if (valid) selectProfile(valid.id);
-  else if (me.profiles.length === 1) selectProfile(me.profiles[0]!.id);
-  else set({ profileId: null });
+  const only = me.profiles.length === 1 ? me.profiles[0]! : undefined;
+  const valid = me.profiles.find((p) => p.id === stored) ?? only;
+  const ask = me.profiles.length > 1 && askOnLaunch();
+  if (valid && !valid.needsPin && !ask) selectProfile(valid.id);
+  else showPicker();
+}
+
+/** Updates the signed-in account's profiles (pictures, names, which need a PIN here). */
+export async function refreshMe() {
+  try {
+    const me = await call('GET /api/me');
+    if (get().auth === 'authed') set({ me });
+  } catch {
+    /* offline: keep what we have */
+  }
+}
+
+/**
+ * Shows the full-screen profile picker. Locked profiles need their PIN again on this device
+ * (like switching to them would), so the server forgets which ones this session opened.
+ */
+export function showPicker() {
+  disconnect?.();
+  disconnect = null;
+  set({ profileId: null });
+  void call('POST /api/profiles/leave', { body: {} })
+    .catch(() => undefined)
+    .then(refreshMe);
 }
 
 export function onUnauthorized() {
@@ -89,8 +126,9 @@ export function selectProfile(id: string) {
   disconnect = connectEvents(id, applyEvent, () => void loadProfileData());
 }
 
+/** The server refused the profile (gone, or locked on this device): back to the picker. */
 export function clearProfile() {
-  set({ profileId: null });
+  showPicker();
 }
 
 export async function loadProfileData() {

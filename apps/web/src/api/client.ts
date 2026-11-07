@@ -40,7 +40,7 @@ interface ClientHooks {
   profileId: () => string | null;
   caps: () => string | null;
   onUnauthorized: () => void;
-  /** 403 {error:'profile'}: the stored profile is gone or not ours */
+  /** 403 {error:'profile'}: the stored profile is gone or not ours; 403 profile_locked: it is locked on this device */
   onProfileInvalid: () => void;
   /** 403 {error:'adult_locked', mode:'locked'}: ask for the PIN; true when unlocked (the request is then retried once) */
   onAdultLocked: () => Promise<boolean>;
@@ -133,7 +133,9 @@ async function callOnce<R extends Route>(route: R, opts: CallOpts<R>): Promise<R
     } catch {
       /* not JSON */
     }
-    if (res.status === 403 && (body as { error?: string } | undefined)?.error === 'profile') hooks.onProfileInvalid();
+    const code = (body as { error?: string } | undefined)?.error;
+    // 'profile_locked' from a profile route is about the profile being edited, not the open one
+    if (res.status === 403 && (code === 'profile' || (code === 'profile_locked' && !url.startsWith('/api/profiles')))) hooks.onProfileInvalid();
     throw new ApiError(res.status, msg, body);
   }
   if (res.status === 204) return undefined as unknown as ResOf<R>;

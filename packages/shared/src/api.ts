@@ -19,8 +19,8 @@ import type { AdultMode, AdultStatus, UnlockMinutes } from './parental';
 import type { Preferences } from './settings';
 import type { TrackChoice } from './tracks';
 import type { AutoBackups, BackupFile, RestoreMode, RestoreResult } from './backup';
+import type { Profile, ProfileImageType } from './profiles';
 
-export interface Profile { id: string; name: string; }
 
 /**
  * A profile's own named, ordered list of live channels ("News", "Sport", "Kids"), LB-3.
@@ -233,10 +233,31 @@ export interface Api {
 
   /** Profiles share the user's login and the one Xtream source; each has its own favorites, progress, preferences and hide rules */
   'GET /api/profiles': { res: Profile[] };
-  'POST /api/profiles': { body: { name: string }; res: Profile };
-  'PATCH /api/profiles/:id': { body: { name: string }; res: Profile };
+  /** `avatar` defaults to a built-in picture; 409 too_many past PROFILES_MAX */
+  'POST /api/profiles': { body: { name: string; avatar?: string | null }; res: Profile };
+  /**
+   * Changes of a locked profile need it entered on this session (403 profile_locked otherwise).
+   * Picking a built-in `avatar` removes an uploaded picture; null shows the first letter.
+   */
+  'PATCH /api/profiles/:id': { body: { name?: string; avatar?: string | null }; res: Profile };
   /** cannot delete the last profile */
   'DELETE /api/profiles/:id': { res: { ok: true } };
+  /** an uploaded picture, base64 (PROFILE_IMAGE: webp, jpeg or png, at most 256 KB); 413 too large */
+  'PUT /api/profiles/:id/image': { body: { type: ProfileImageType; data: string }; res: Profile };
+  'DELETE /api/profiles/:id/image': { res: Profile };
+  /**
+   * Sets, changes (pin) or removes (pin null) the profile lock. When a lock exists it needs
+   * `currentPin`, or the account `password` (forgot the PIN). Errors are PinErrors. Other devices
+   * have to enter the new PIN.
+   */
+  'PUT /api/profiles/:id/lock': { body: { pin: string | null; currentPin?: string; password?: string }; res: Profile };
+  /**
+   * Opens a locked profile on this sign-in session. A sent PIN is always checked (PinError when
+   * wrong); without one it answers 409 pin_required unless the session already entered it.
+   */
+  'POST /api/profiles/:id/enter': { body: { pin?: string }; res: Profile };
+  /** Switching profiles: every locked profile but `keep` needs its PIN again on this session. */
+  'POST /api/profiles/leave': { body: { keep?: string }; res: { ok: true } };
 
   'GET /api/source': { res: SourceStatus };
   'POST /api/source/sync': { res: { ok: true } };

@@ -15,7 +15,7 @@ import { MediaLists } from '../media-lists';
 import type { UserData } from '../userdata';
 
 interface UserRow { id: string; username: string; password_hash: string; is_admin: number; created_at: number }
-interface ProfileRow { id: string; user_id: string; name: string; created_at: number }
+interface ProfileRow { id: string; user_id: string; name: string; created_at: number; avatar: string | null; lock_hash: string | null }
 
 /** Everything restorable, read in one consistent snapshot. */
 export function exportBackup(db: Db, now = Date.now()): BackupFile {
@@ -78,8 +78,9 @@ export function exportBackup(db: Db, now = Date.now()): BackupFile {
       mediaItems.set(r.list_id, list);
     }
 
+    const images = one<{ type: string; data: Buffer; updatedAt: number }>('SELECT profile_id, mime AS type, data, updated_at AS updatedAt FROM profile_images');
     const profilesOf = new Map<string, ProfileRow[]>();
-    for (const p of db.prepare('SELECT id, user_id, name, created_at FROM profiles ORDER BY created_at, rowid').all() as ProfileRow[]) {
+    for (const p of db.prepare('SELECT id, user_id, name, created_at, avatar, lock_hash FROM profiles ORDER BY created_at, rowid').all() as ProfileRow[]) {
       const list = profilesOf.get(p.user_id) ?? [];
       list.push(p);
       profilesOf.set(p.user_id, list);
@@ -105,6 +106,9 @@ export function exportBackup(db: Db, now = Date.now()): BackupFile {
             trackChoices: tracks.get(p.id) ?? [],
             lists: (lists.get(p.id) ?? []).map((l) => ({ ...l, channelIds: items.get(l.id) ?? [] })),
             mediaLists: (mediaLists.get(p.id) ?? []).map((l) => ({ ...l, items: mediaItems.get(l.id) ?? [] })),
+            avatar: p.avatar,
+            image: images.has(p.id) ? { ...images.get(p.id)!, data: images.get(p.id)!.data.toString('base64') } : null,
+            lockHash: p.lock_hash,
           }),
         ),
       }),
@@ -164,7 +168,8 @@ export function restoreBackup(db: Db, backup: BackupFile, opts: RestoreOptions):
       userByName: db.prepare('SELECT id FROM users WHERE username = ?'),
       insertUser: db.prepare('INSERT INTO users (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)'),
       profileOwner: db.prepare('SELECT user_id FROM profiles WHERE id = ?'),
-      insertProfile: db.prepare('INSERT INTO profiles (id, user_id, name, created_at) VALUES (?, ?, ?, ?)'),
+      insertProfile: db.prepare('INSERT INTO profiles (id, user_id, name, created_at, avatar, lock_hash) VALUES (?, ?, ?, ?, ?, ?)'),
+      image: db.prepare('INSERT OR IGNORE INTO profile_images (profile_id, mime, data, updated_at) VALUES (?, ?, ?, ?)'),
       prefs: db.prepare('INSERT OR IGNORE INTO preferences (profile_id, data) VALUES (?, ?)'),
       rules: db.prepare('INSERT OR IGNORE INTO hide_rules (profile_id, data) VALUES (?, ?)'),
       parental: db.prepare('INSERT OR IGNORE INTO parental (profile_id, mode, unlock_minutes, pin_hash, updated_at) VALUES (?, ?, ?, ?, ?)'),
@@ -208,7 +213,8 @@ export function restoreBackup(db: Db, backup: BackupFile, opts: RestoreOptions):
         const did = (r: { changes: number }) => {
           if (r.changes) changed = true;
         };
-        if (!owner) did(q.insertProfile.run(p.id, userId, p.name, p.createdAt));
+        if (!owner) did(q.insertProfile.run(p.id, userId, p.name, p.createdAt, p.avatar ?? null, p.lockHash ?? null));
+        if (p.image) did(q.image.run(p.id, p.image.type, Buffer.from(p.image.data, 'base64'), p.image.updatedAt));
         if (p.preferences) did(q.prefs.run(p.id, JSON.stringify(mergePreferences(p.preferences))));
         if (p.hideRules) did(q.rules.run(p.id, JSON.stringify(p.hideRules)));
         if (p.parental) did(q.parental.run(p.id, p.parental.mode, p.parental.unlockMinutes, p.parental.pinHash, p.parental.updatedAt));
@@ -249,7 +255,7 @@ export function restoreBackup(db: Db, backup: BackupFile, opts: RestoreOptions):
     const bare = db.prepare('SELECT u.id, u.username, u.created_at FROM users u WHERE NOT EXISTS (SELECT 1 FROM profiles p WHERE p.user_id = u.id)').all() as UserRow[];
     for (const u of bare) {
       const id = newId();
-      q.insertProfile.run(id, u.id, u.username, Date.now());
+      q.insertProfile.run(id, u.id, u.username, Date.now(), null, null);
       touched.add(id);
     }
 

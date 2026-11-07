@@ -4,7 +4,8 @@
  *
  * Included (the user's own data; it can't be fetched again):
  *   users             accounts with their argon2 password hashes and admin flag
- *   profiles          profiles of each account
+ *   profiles          profiles of each account (name, built-in picture, argon2 hash of the profile lock PIN)
+ *   profile_images    uploaded profile pictures (small, already scaled by the web app)
  *   preferences       per-profile settings (appearance, player, tabs, setup done, ...)
  *   hide_rules        per-profile hidden countries, languages and groups
  *   parental          per-profile parental lock: mode, unlock duration, argon2 hash of the PIN
@@ -19,6 +20,7 @@
  *
  * Excluded:
  *   sessions          sign-in tokens (hashed); a restore must not sign anyone in, or out of a new server
+ *   profile_entries   which sign-in sessions opened a locked profile; goes with the sessions
  *   source            the provider login (Xtream URL, user, password), encrypted with ANYCAST_SECRET:
  *                     it comes from .env, and a backup file must never carry it
  *   kv                only the last catalog / guide sync times (sync state, not user data)
@@ -38,6 +40,7 @@
 export const BACKUP_TABLES = {
   users: 'include',
   profiles: 'include',
+  profile_images: 'include',
   preferences: 'include',
   hide_rules: 'include',
   parental: 'include',
@@ -51,6 +54,7 @@ export const BACKUP_TABLES = {
   pinned_channels: 'include',
 
   sessions: 'exclude',
+  profile_entries: 'exclude',
   source: 'exclude',
   kv: 'exclude',
   categories: 'exclude',

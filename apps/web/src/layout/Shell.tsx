@@ -6,18 +6,15 @@ import { useFormFactor } from '../lib/hooks';
 import { isTypingTarget } from '../lib/misc';
 import { BrandMark } from '../components/Icons';
 import { TABS, visibleTabs } from './tabs';
-import { clearProfile } from '../store/actions';
 import { LockNowButton } from '../components/Locks';
+import { ProfileMenuButton, ProfileTab } from '../profiles/ProfileMenu';
 
 export function Shell() {
   const form = useFormFactor();
   const start = useApp((s) => s.prefs.start);
-  const me = useApp((s) => s.me);
-  const profileId = useApp((s) => s.profileId);
   const tabs = [...visibleTabs(start.tabOrder, start.hiddenTabs), 'settings' as const];
   const navigate = useNavigate();
   const loc = useLocation();
-  const profile = me?.profiles.find((p) => p.id === profileId);
 
   // Desktop keyboard shortcuts: L F M S / ,
   useEffect(() => {
@@ -43,7 +40,8 @@ export function Shell() {
           <Outlet />
         </main>
         <nav className={`tabbar${tabs.length > 5 ? ' many' : ''}`} aria-label="Main">
-          {tabs.map((id) => {
+          {/* the last tab is the profile; Settings lives on its page */}
+          {tabs.filter((id) => id !== 'settings').map((id) => {
             const t = TABS[id];
             return (
               <NavLink key={id} to={t.path} className="tab">
@@ -52,6 +50,7 @@ export function Shell() {
               </NavLink>
             );
           })}
+          <ProfileTab />
         </nav>
         <LockNowButton className="lock-now-fab lock-now" label="Lock" />
       </div>
@@ -78,14 +77,9 @@ export function Shell() {
         <div className="rail-foot rail-lock">
           <LockNowButton className="rail-profile lock-now" label="Lock adult content" />
         </div>
-        {profile && (me?.profiles.length ?? 0) > 1 && (
-          <div className="rail-foot">
-            <button type="button" className="rail-profile" onClick={clearProfile} aria-label={`Profile ${profile.name}. Switch profile`}>
-              <span className="avatar">{profile.name.slice(0, 1).toUpperCase()}</span>
-              <span className="ellipsis">{profile.name}</span>
-            </button>
-          </div>
-        )}
+        <div className="rail-foot">
+          <ProfileMenuButton />
+        </div>
       </nav>
       <main className={`main${fullBleed ? ' full' : ''}`} id="main">
         <Outlet />

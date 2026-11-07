@@ -9,7 +9,7 @@ installable PWA) to every device in the house: phone, laptop, tablet and TV brow
   buffer the server records while you watch. Pinned channels keep a buffer all the time.
 - **Movies and series** with resume, continue watching, autoplay of the next episode and thumbnail previews while scrubbing (for the parts already played).
 - **Channel lists:** your own ordered lists ("News", "Sport") as chips in Live TV; zapping follows the list.
-- **Profiles** with their own favorites, channel lists, progress, settings and language filters, synced live
+- **Profiles** like a streaming service: a full-screen "Who's watching?" picker, built-in pictures or your own photo, an optional profile PIN, and a profile menu to switch in one tap. Each profile has its own favorites, channel lists, progress, settings and language filters, synced live
   across devices.
 - **Parental lock** per profile: adult categories hidden (the default), locked behind a 4–6 digit
   PIN, or shown. The server enforces it, not just the app.

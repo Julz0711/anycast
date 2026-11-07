@@ -45,7 +45,11 @@ export const test = base.extend<{ profileOptions: ProfileOptions; profile: TestP
     const contexts: BrowserContext[] = [];
     const device = async () => {
       const ctx = await browser.newContext({ baseURL, storageState, serviceWorkers: 'block', viewport: { width: 1280, height: 800 } });
-      await ctx.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [`anycast.profile.${fx.userId}`, id] as const);
+      await ctx.addInitScript(([key, value]) => {
+        window.localStorage.setItem(key, value);
+        // open straight into the test's profile, not the Who's watching picker
+        window.localStorage.setItem('anycast.askProfile', '0');
+      }, [`anycast.profile.${fx.userId}`, id] as const);
       contexts.push(ctx);
       return ctx.newPage();
     };

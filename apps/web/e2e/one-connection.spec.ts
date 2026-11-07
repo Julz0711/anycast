@@ -19,7 +19,11 @@ async function makeProfile(name: string) {
 
 async function device(browser: Browser, profileId: string): Promise<Page> {
   const ctx = await browser.newContext({ baseURL: one.base, storageState: one.state, serviceWorkers: 'block', viewport: { width: 1280, height: 800 } });
-  await ctx.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [`anycast.profile.${one.userId}`, profileId] as const);
+  await ctx.addInitScript(([key, value]) => {
+    window.localStorage.setItem(key, value);
+    // open straight into the profile, not the Who's watching picker
+    window.localStorage.setItem('anycast.askProfile', '0');
+  }, [`anycast.profile.${one.userId}`, profileId] as const);
   return ctx.newPage();
 }
 
