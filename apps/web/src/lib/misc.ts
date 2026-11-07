@@ -14,9 +14,14 @@ export function toneFor(key: string): string {
   return TONES[hashString(key) % TONES.length]!;
 }
 
-/** "Arena Sport 1" -> "AS1", "News 24" -> "N24" */
+/** Quality and codec words that say nothing about the channel ("ABC HD" is "ABC"). */
+const NOISE = /^(u?hd|fhd|sd|4k|8k|uhd|hq|lq|low|raw|hevc|h26[45]|1080p?|720p?|2160p?|50fps|60fps|backup|vip|multi|ᴴᴰ)$/i;
+
+/** "Arena Sport 1" -> "AS1", "News 24" -> "N24", "ABC HD" -> "ABC" */
 export function initials(name: string): string {
-  const words = name.replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean);
+  const all = name.replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean);
+  const kept = all.filter((w) => !NOISE.test(w));
+  const words = kept.length ? kept : all;
   if (words.length === 0) return '?';
   if (words.length === 1) return words[0]!.slice(0, 3).toUpperCase();
   return words

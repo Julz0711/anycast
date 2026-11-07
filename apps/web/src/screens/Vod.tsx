@@ -1,6 +1,6 @@
 /** Shared browse screen for Movies and Series: Continue Watching, Favorites, category rows, virtualized poster grid. */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Category, Movie, Series, VodQuery, VodSort } from '@anycast/shared';
 import { useApp } from '../store/app';
@@ -11,6 +11,7 @@ import { readLocal, writeLocal } from '../lib/storage';
 import { PosterCard } from '../components/cards';
 import { Empty, Skeleton } from '../components/ui';
 import { CategoryChips } from '../components/CategoryChips';
+import { SearchButton } from '../components/PageHead';
 import { IconSearch } from '../components/Icons';
 import { catLabel } from './Live';
 
@@ -80,7 +81,6 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
   const version = useApp((s) => s.catalogVersion);
   const favIds = useApp((s) => s.favorites.filter((f) => f.kind === kind).sort((a, b) => b.addedAt - a.addedAt).map((f) => f.id).join(','));
   const cats = useAsync(() => visibleCategories(kind, rules), [kind, rules, version]);
-  const hiddenSearch = useApp((s) => s.prefs.start.hiddenTabs.includes('search'));
   const [cat, setCat] = useState(() => readLocal(`anycast.cat.${kind}`) ?? 'home');
   const navigate = useNavigate();
   const pick = (id: string) => {
@@ -107,9 +107,7 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
       <div className="page-head">
         <h1 className="h1">{props.title}</h1>
         {form !== 'large' ? (
-          hiddenSearch && <Link to="/search" className="icon-btn" aria-label="Search">
-            <IconSearch />
-          </Link>
+          <SearchButton />
         ) : (
           <label className="search-box">
             <IconSearch />

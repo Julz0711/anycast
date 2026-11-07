@@ -7,20 +7,21 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { normalizeHomeSections, type Episode, type HomeSectionId, type LiveChannelWithNow, type Movie, type Progress, type Series } from '@anycast/shared';
 import { useApp } from '../store/app';
-import { forgetRecentChannels, setZapList } from '../store/actions';
+import { forgetRecentChannels, saveProgress, setZapList, toast } from '../store/actions';
 import { whenUnlocked } from '../store/parental';
-import { cachedGet } from '../api/client';
+import { cachedGet, clearApiCache } from '../api/client';
 import { resolveItems } from '../api/catalog';
 import { useAsync, useFormFactor, useNow } from '../lib/hooks';
 import { writeLocal } from '../lib/storage';
-import { fmtClock, fmtDuration, fmtRelativeAgo } from '../lib/time';
+import { fmtClock, fmtRelativeAgo } from '../lib/time';
 import { toneFor } from '../lib/misc';
-import { Art, ChannelRow, ContinueCard, PosterCard, UpNextCard } from '../components/cards';
+import { Art, ChannelRow, ContinueCard, PosterCard, timeLeft, UpNextCard } from '../components/cards';
 import { Empty, LogoTile, ProgressBar, Skeleton } from '../components/ui';
 import { IconClose, IconPlay } from '../components/Icons';
 import { HOME_SECTIONS, HomeEditor } from '../components/HomeEditor';
 import { prefetchPlayer } from '../player/prefetch';
 import { NewEpisodeCards, useNewEpisodes } from '../components/NewEpisodes';
+import { PhoneHeadActions } from '../components/PageHead';
 import '../theme/home.css';
 
 type ContMovie = Movie & { progress: Progress };
@@ -57,9 +58,11 @@ export function HomeScreen() {
 
   /* ---------- data ---------- */
   const needCont = want('continue') || want('next') || home.showHero;
+  // a card's menu changed progress: load Continue watching again once the server has it
+  const [contBump, setContBump] = useState(0);
   const cont = useAsync(
     () => (needCont ? cachedGet('GET /api/continue', {}, 10_000) : Promise.resolve({ movies: [], episodes: [] })),
-    [needCont, progressCount, progressSum, version],
+    [needCont, progressCount, progressSum, version, contBump],
   );
   const contItems = useMemo<ContItem[]>(() => {
     if (!cont.data) return [];
@@ -129,9 +132,13 @@ export function HomeScreen() {
   const lastCh = recentRows[0];
   const heroChannel = lastCh && (!lastCont || (watchedAt.get(lastCh.id) ?? 0) > updated(lastCont));
 
+  // the hero already shows the newest item: the row starts with the next one
+  const heroCont = home.showHero && !heroChannel ? lastCont : undefined;
+  const contRow = heroCont ? contItems.slice(1) : contItems;
+
   const loaded = (!want('newEpisodes') || !!newEps.data) && (!needCont || !!cont.data) && (!needRecent || !!recent.data) && (!needFavs || !!favs.data) && (!needWl || !!wl.data);
   const counts: Record<HomeSectionId, number> = {
-    continue: contItems.length,
+    continue: contRow.length + (heroCont ? 1 : 0),
     newEpisodes: newEps.data?.length ?? 0,
     recent: recentRows.length,
     next: upNext.length,
@@ -140,21 +147,46 @@ export function HomeScreen() {
   };
   const nothing = loaded && sections.every((s) => counts[s] === 0);
 
+  /** Continue watching menu: mark as watched (to the end) or remove (back to the start). */
+  const contActions = (p: { kind: 'movie' | 'episode'; id: string; seriesId?: string; duration: number }) => {
+    const save = (position: number, done: string) =>
+      void saveProgress({ kind: p.kind, id: p.id, position, duration: p.duration, ...(p.seriesId ? { seriesId: p.seriesId } : {}) }).then(() => {
+        clearApiCache('/api/continue');
+        setContBump((n) => n + 1);
+        toast(done);
+      });
+    return [
+      { label: 'Mark as watched', onSelect: () => save(p.duration, 'Marked as watched') },
+      { label: 'Remove from Continue watching', onSelect: () => save(0, 'Removed from Continue watching') },
+    ];
+  };
+
   const seeAll = (n: number, to: string) => (n > limit ? <Link to={to}>See all</Link> : null);
 
   const render = (id: HomeSectionId) => {
     const title = HOME_SECTIONS[id].title;
     switch (id) {
       case 'continue':
-        if (cont.data && contItems.length === 0) return null;
+        if (cont.data && contRow.length === 0) return null;
         return (
           <Section key={id} id={id} title={title}>
             <div className="shelf wide" data-nav-row="home-continue">
               {!cont.data
                 ? Array.from({ length: 3 }, (_, i) => <Skeleton key={i} h="auto" r="0.75rem" style={{ aspectRatio: '16 / 9' }} />)
-                : contItems.slice(0, limit).map((x) =>
+                : contRow.slice(0, limit).map((x) =>
                     x.kind === 'movie' ? (
-                      <ContinueCard key={`m${x.m.id}`} to={`/play/movie/${x.m.id}`} id={x.m.id} title={x.m.name} subtitle="Movie" poster={x.m.poster} position={x.m.progress.position} duration={x.m.progress.duration} locked={x.m.locked} />
+                      <ContinueCard
+                        key={`m${x.m.id}`}
+                        to={`/play/movie/${x.m.id}`}
+                        id={x.m.id}
+                        title={x.m.name}
+                        subtitle="Movie"
+                        poster={x.m.poster}
+                        position={x.m.progress.position}
+                        duration={x.m.progress.duration}
+                        locked={x.m.locked}
+                        actions={contActions({ kind: 'movie', id: x.m.id, duration: x.m.progress.duration })}
+                      />
                     ) : (
                       <ContinueCard
                         key={`e${x.e.id}`}
@@ -166,6 +198,7 @@ export function HomeScreen() {
                         position={x.e.progress.position}
                         duration={x.e.progress.duration}
                         locked={x.e.series.locked}
+                        actions={contActions({ kind: 'episode', id: x.e.id, seriesId: x.e.series.id, duration: x.e.progress.duration })}
                       />
                     ),
                   )}
@@ -285,9 +318,11 @@ export function HomeScreen() {
             {name ? `, ${name}` : ''}
           </h1>
         </div>
-        <button type="button" className="btn" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>
-          {editing ? 'Done' : 'Customize'}
-        </button>
+        <PhoneHeadActions profile>
+          <button type="button" className="btn" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>
+            {editing ? 'Done' : 'Customize'}
+          </button>
+        </PhoneHeadActions>
       </div>
 
       {editing && (
@@ -349,7 +384,6 @@ function ContinueHero({ item }: { item: ContItem }) {
   const locked = movie ? movie.locked : ep!.series.locked;
   const to = movie ? `/play/movie/${movie.id}` : `/play/episode/${ep!.id}?series=${ep!.series.id}`;
   const detail = movie ? `/movies/${movie.id}` : `/series/${ep!.series.id}`;
-  const left = p.duration - p.position;
   const navigate = useNavigate();
   const showArt = useApp((s) => s.prefs.appearance.showArtwork) && !!poster && !locked;
   return (
@@ -365,7 +399,7 @@ function ContinueHero({ item }: { item: ContItem }) {
         <div className="muted home-hero-sub">{ep ? `${epLabel(ep)} · ${ep.title}` : 'Movie'}</div>
         <div className="home-hero-progress">
           <ProgressBar value={p.position / p.duration} label={`${Math.round((p.position / p.duration) * 100)}% watched`} />
-          <span className="muted tabnum">{left < 3600 ? `${Math.max(1, Math.round(left / 60))} min left` : `${fmtDuration(p.position)} of ${fmtDuration(p.duration)}`}</span>
+          <span className="muted tabnum">{timeLeft(p.position, p.duration)}</span>
         </div>
         <div className="actions" data-nav-row="home-hero">
           <button type="button" className="btn btn-primary btn-lg" onMouseEnter={prefetchPlayer} onClick={() => whenUnlocked(locked, () => navigate(to))} data-nav-autofocus="">

@@ -1,7 +1,7 @@
 /** Small shared UI primitives: Segmented, Toggle, Chips, Skeleton, ProgressBar, LogoTile, Empty. */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { initials } from '../lib/misc';
-import { IconLock } from './Icons';
+import { IconChevron, IconLock } from './Icons';
 
 export function Segmented<T extends string | number>(props: {
   value: T;
@@ -37,9 +37,54 @@ export function Toggle(props: { checked: boolean; onChange: (v: boolean) => void
   );
 }
 
+/** Which ends of a horizontal scroller have more content past them. */
+function useScrollEnds(ref: React.RefObject<HTMLElement>) {
+  const [ends, setEnds] = useState({ left: false, right: false });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const left = el.scrollLeft > 4;
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+      setEnds((e) => (e.left === left && e.right === right ? e : { left, right }));
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
+  });
+  return ends;
+}
+
 export function Chips<T extends string>(props: { items: { id: T; label: string; locked?: boolean }[]; value: T; onChange: (v: T) => void; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const ends = useScrollEnds(ref);
+  // mouse users get arrows at the ends; touch and the keyboard scroll the row themselves
+  const page = (dir: 1 | -1) => ref.current?.scrollBy({ left: dir * ref.current.clientWidth * 0.8, behavior: 'smooth' });
   return (
-    <div className="chips" role="toolbar" aria-label={props.label} data-nav-row={`chips-${props.label}`}>
+    <div className={`chips-wrap${ends.left ? ' more-left' : ''}${ends.right ? ' more-right' : ''}`}>
+      {ends.left && (
+        <button type="button" className="chips-arrow left" tabIndex={-1} aria-label={`Scroll ${props.label} left`} onClick={() => page(-1)}>
+          <IconChevron style={{ transform: 'rotate(180deg)' }} />
+        </button>
+      )}
+      <ChipRow {...props} rowRef={ref} />
+      {ends.right && (
+        <button type="button" className="chips-arrow right" tabIndex={-1} aria-label={`Scroll ${props.label} right`} onClick={() => page(1)}>
+          <IconChevron />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ChipRow<T extends string>(props: { items: { id: T; label: string; locked?: boolean }[]; value: T; onChange: (v: T) => void; label: string; rowRef: React.RefObject<HTMLDivElement> }) {
+  return (
+    <div ref={props.rowRef} className="chips" role="toolbar" aria-label={props.label} data-nav-row={`chips-${props.label}`}>
       {props.items.map((c) => (
         <button key={c.id} type="button" className="chip" aria-pressed={c.id === props.value} onClick={() => props.onChange(c.id)} aria-label={c.locked ? `${c.label}, locked` : undefined}>
           {c.locked && <IconLock className="ico lock-mark" />}

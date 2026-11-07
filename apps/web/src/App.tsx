@@ -8,6 +8,7 @@ import { Shell, Toasts } from './layout/Shell';
 import { LiveScreen } from './screens/Live';
 import { HomeScreen } from './screens/Home';
 import { MoviesScreen, MovieDetail } from './screens/Movies';
+import { LibraryIndex } from './components/PageHead';
 import { SeriesScreen } from './screens/Series';
 import { SeriesDetailScreen } from './screens/SeriesDetail';
 import { SearchScreen } from './screens/Search';
@@ -139,6 +140,7 @@ function AuthedRoutes() {
             <Route path="/series/:id" element={<SeriesDetailScreen />} />
             <Route path="/favorites" element={<FavoritesIndex />} />
             <Route path="/favorites/:tab" element={<FavoritesScreen />} />
+            <Route path="/library" element={<LibraryIndex />} />
             <Route path="/lists" element={<ListsIndex />} />
             <Route path="/lists/:id" element={<ListsScreen />} />
             <Route path="/search" element={<SearchScreen />} />

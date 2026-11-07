@@ -1,13 +1,13 @@
 /** Responsive shell: left rail on desktop/tablet/TV, bottom tab bar on phones. */
 import { useEffect } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../store/app';
 import { useFormFactor } from '../lib/hooks';
 import { isTypingTarget } from '../lib/misc';
 import { BrandMark } from '../components/Icons';
-import { TABS, visibleTabs } from './tabs';
+import { TABS, tabMatches, visibleTabs } from './tabs';
 import { LockNowButton } from '../components/Locks';
-import { ProfileMenuButton, ProfileTab } from '../profiles/ProfileMenu';
+import { ProfileMenuButton } from '../profiles/ProfileMenu';
 
 export function Shell() {
   const form = useFormFactor();
@@ -32,6 +32,7 @@ export function Shell() {
   }, [form, tabs, navigate]);
 
   const fullBleed = /^\/live\/?$/.test(loc.pathname);
+  const phoneTabs = tabs.filter((id) => id !== 'settings' && id !== 'search');
 
   if (form === 'phone') {
     return (
@@ -39,18 +40,17 @@ export function Shell() {
         <main className={`main${fullBleed ? ' full' : ''}`} id="main">
           <Outlet />
         </main>
-        <nav className={`tabbar${tabs.length > 5 ? ' many' : ''}`} aria-label="Main">
-          {/* the last tab is the profile; Settings lives on its page */}
-          {tabs.filter((id) => id !== 'settings').map((id) => {
+        {/* Search is a button on each page, the profile and Settings sit at the top of Home and Library */}
+        <nav className={`tabbar${phoneTabs.length > 5 ? ' many' : ''}`} aria-label="Main">
+          {phoneTabs.map((id) => {
             const t = TABS[id];
             return (
-              <NavLink key={id} to={t.path} className="tab">
+              <Link key={id} to={t.path} className="tab" aria-current={tabMatches(id, loc.pathname) ? 'page' : undefined}>
                 <t.Icon />
                 <span>{t.short}</span>
-              </NavLink>
+              </Link>
             );
           })}
-          <ProfileTab />
         </nav>
         <LockNowButton className="lock-now-fab lock-now" label="Lock" />
       </div>
@@ -67,11 +67,11 @@ export function Shell() {
         {tabs.map((id) => {
           const t = TABS[id];
           return (
-            <NavLink key={id} to={t.path} className="rail-link">
+            <Link key={id} to={t.path} className="rail-link" aria-current={tabMatches(id, loc.pathname) ? 'page' : undefined}>
               <t.Icon />
               <span className="lbl">{t.label}</span>
               {form === 'large' && <span className="key" aria-hidden="true">{t.key}</span>}
-            </NavLink>
+            </Link>
           );
         })}
         <div className="rail-foot rail-lock">

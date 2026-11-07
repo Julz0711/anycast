@@ -88,11 +88,11 @@ test.describe('channels without guide data', () => {
     await page.goto('/live');
     await page.getByRole('toolbar', { name: 'Channel groups' }).getByRole('button', { name: chip(ch.category), exact: true }).click();
 
-    // Extended: one block with the channel name, and its guide is never asked for
+    // Extended: one quiet block, and its guide is never asked for
     const guide = page.getByRole('grid', { name: 'TV guide' });
-    const block = guide.getByRole('gridcell', { name: `${ch.name}, no guide data, watch live` });
+    const block = guide.getByRole('gridcell', { name: `${ch.name}, no guide, watch live` });
     await expect(block).toBeVisible();
-    await expect(block).toContainText('No guide data');
+    await expect(block).toContainText('No guide · Watch live');
     await expect.poll(() => asked.length).toBeGreaterThan(0);
     expect(asked).not.toContain(ch.id);
 
@@ -102,8 +102,8 @@ test.describe('channels without guide data', () => {
     await expect(row).toBeVisible();
 
     // the quick filter hides channels without a guide (and is a synced preference)
-    await page.getByRole('button', { name: 'Only channels with a guide' }).click();
-    await expect(page.getByRole('button', { name: 'Only channels with a guide' })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'With guide' }).click();
+    await expect(page.getByRole('button', { name: 'With guide' })).toHaveAttribute('aria-pressed', 'true');
     await expect(row).toHaveCount(0);
     await expect.poll(async () => ((await (await profile.api.get('/api/preferences')).json()) as { live: { guideOnlyWithEpg?: boolean } }).live.guideOnlyWithEpg).toBe(true);
   });

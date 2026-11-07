@@ -16,6 +16,8 @@ installable PWA) to every device in the house: phone, laptop, tablet and TV brow
   by year and rating; Recently added rows; New episodes of the series you follow on Home and on
   the series page; movie pages with backdrop, genre, cast, director and trailer. Artwork is kept on
   the server (DATA_DIR/art, 512 MB) so slow provider image hosts are asked once.
+- **Five tabs on the phone:** Home, Live, Movies, Series and Library (Favorites and Lists in one
+  place); Search is a button on every page and your profile sits at the top of Home and Library.
 - **Channel lists:** your own ordered lists ("News", "Sport") as chips in Live TV; zapping follows the list.
 - **Profiles** like a streaming service: a full-screen "Who's watching?" picker, built-in pictures or your own photo, an optional profile PIN, and a profile menu to switch in one tap. Each profile has its own favorites, channel lists, progress, settings and language filters, synced live
   across devices.

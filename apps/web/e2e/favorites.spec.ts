@@ -12,10 +12,11 @@ test('favorites: star a channel and a movie, find them under Favorites, unstar t
   await page.getByRole('button', { name: 'Add favorite' }).click();
   await expect(page.getByRole('button', { name: 'Favorite', exact: true })).toHaveAttribute('aria-pressed', 'true');
 
-  // the F shortcut opens Favorites, on Live the first time
-  await page.keyboard.press('f');
+  // the B shortcut opens Library, on Favorites › Live the first time
+  await page.keyboard.press('b');
   await expect(page).toHaveURL(/\/favorites\/live$/);
-  await expect(page.getByRole('heading', { name: 'Favorites', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Library', level: 1 })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Library' }).getByRole('link', { name: 'Favorites' })).toHaveAttribute('aria-current', 'page');
   const tabs = page.getByRole('radiogroup', { name: 'Favorites type' });
   await expect(tabs.getByRole('radio', { name: 'Live 1' })).toHaveAttribute('aria-checked', 'true');
   await expect(tabs.getByRole('radio', { name: 'Movies 1' })).toBeVisible();

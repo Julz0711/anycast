@@ -16,6 +16,7 @@ import { ChannelRow, PosterCard } from '../components/cards';
 import { Empty, Segmented, Skeleton } from '../components/ui';
 import { IconStar } from '../components/Icons';
 import { PosterSkeleton } from './Vod';
+import { LibraryHead } from '../components/PageHead';
 import { catLabel } from './Live';
 
 type Tab = 'live' | 'movies' | 'series';
@@ -41,7 +42,6 @@ export function FavoritesIndex() {
 export function FavoritesScreen() {
   const { tab: param } = useParams();
   const navigate = useNavigate();
-  const form = useFormFactor();
   const version = useApp((s) => s.catalogVersion);
   const favorites = useApp((s) => s.favorites);
   const [sort, setSort] = useState<Sort>(() => (readLocal(SORT_KEY) === 'az' ? 'az' : 'recent'));
@@ -99,7 +99,7 @@ export function FavoritesScreen() {
       label="Sort favorites"
       value={sort}
       options={[
-        { value: 'recent', label: form === 'phone' ? 'Recent' : 'Recently added' },
+        { value: 'recent', label: 'Recently added' },
         { value: 'az', label: 'A–Z' },
       ]}
       onChange={pickSort}
@@ -108,10 +108,7 @@ export function FavoritesScreen() {
 
   return (
     <div className="fav-screen">
-      <div className="page-head">
-        <h1 className="h1">Favorites</h1>
-        {form === 'phone' && sortSeg}
-      </div>
+      <LibraryHead />
       <div className="fav-bar">
         <Segmented
           size="lg"
@@ -121,7 +118,7 @@ export function FavoritesScreen() {
           options={(['live', 'movies', 'series'] as const).map((t) => ({ value: t, label: TAB_LABEL[t], count: count(t) }))}
           onChange={pickTab}
         />
-        {form !== 'phone' && sortSeg}
+        {sortSeg}
       </div>
       {err && !cur ? (
         <Empty title="Couldn't load favorites">

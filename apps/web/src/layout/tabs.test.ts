@@ -2,50 +2,52 @@ import { describe, expect, test } from 'vitest';
 import { DEFAULT_PREFERENCES, mergePreferences, normalizeTabOrder } from '@anycast/shared';
 import { visibleTabs } from './tabs';
 
-const DEFAULT = ['home', 'search', 'favorites', 'lists', 'live', 'movies', 'series'];
+const DEFAULT = ['home', 'search', 'live', 'movies', 'series', 'library'];
 
 describe('tab order migration', () => {
-  test('default: Home, Search, Favorites, Lists, Live TV, Movies, Series', () => {
+  test('default: Home, Search, Live TV, Movies, Series, Library', () => {
     expect(DEFAULT_PREFERENCES.start.tabOrder).toEqual(DEFAULT);
     expect(mergePreferences({}).start.tabOrder).toEqual(DEFAULT);
   });
 
   test('an untouched old default becomes the new default', () => {
-    expect(normalizeTabOrder(['live', 'favorites', 'movies', 'series', 'search'])).toEqual(DEFAULT);
-    expect(normalizeTabOrder(['live', 'movies', 'series', 'search'])).toEqual(DEFAULT);
-    expect(normalizeTabOrder(['search', 'favorites', 'lists', 'live', 'movies', 'series'])).toEqual(DEFAULT);
+    for (const old of [
+      ['live', 'favorites', 'movies', 'series', 'search'],
+      ['live', 'movies', 'series', 'search'],
+      ['search', 'favorites', 'lists', 'live', 'movies', 'series'],
+      ['home', 'search', 'favorites', 'lists', 'live', 'movies', 'series'],
+    ]) {
+      expect(normalizeTabOrder(old)).toEqual(DEFAULT);
+    }
     expect(mergePreferences({ start: { tabOrder: ['live', 'favorites', 'movies', 'series', 'search'] } }).start.tabOrder).toEqual(DEFAULT);
   });
 
-  test('a custom order saved before Favorites existed gets it after Live TV, and Lists after Favorites', () => {
-    expect(normalizeTabOrder(['series', 'search', 'live', 'movies'])).toEqual(['home', 'series', 'search', 'live', 'favorites', 'lists', 'movies']);
-    expect(mergePreferences({ start: { tabOrder: ['movies', 'live', 'series', 'search'] } }).start.tabOrder).toEqual(['home', 'movies', 'live', 'favorites', 'lists', 'series', 'search']);
+  test('Favorites and Lists become Library at the place of the first of them', () => {
+    expect(normalizeTabOrder(['live', 'movies', 'home', 'series', 'search', 'favorites', 'lists'])).toEqual(['live', 'movies', 'home', 'series', 'search', 'library']);
+    expect(normalizeTabOrder(['lists', 'live', 'favorites', 'movies', 'series', 'search', 'home'])).toEqual(['library', 'live', 'movies', 'series', 'search', 'home']);
   });
 
-  test('a custom order with Favorites gets Lists right after it', () => {
-    expect(normalizeTabOrder(['search', 'favorites', 'live', 'movies', 'series'])).toEqual(['home', 'search', 'favorites', 'lists', 'live', 'movies', 'series']);
-    expect(normalizeTabOrder(['movies', 'series', 'favorites', 'live', 'search'])).toEqual(['home', 'movies', 'series', 'favorites', 'lists', 'live', 'search']);
-  });
-
-  test('a saved order that has Lists keeps its place', () => {
-    expect(normalizeTabOrder(['lists', 'live', 'favorites', 'movies', 'series', 'search'])).toEqual(['home', 'lists', 'live', 'favorites', 'movies', 'series', 'search']);
+  test('a custom order saved before Library existed gets it at the end, and Home first', () => {
+    expect(normalizeTabOrder(['series', 'search', 'live', 'movies'])).toEqual(['home', 'series', 'search', 'live', 'movies', 'library']);
   });
 
   test('missing, unknown and repeated tabs are repaired', () => {
-    expect(normalizeTabOrder(['movies', 'bogus', 'movies'])).toEqual(['home', 'movies', 'search', 'live', 'favorites', 'lists', 'series']);
+    expect(normalizeTabOrder(['movies', 'bogus', 'movies'])).toEqual(['home', 'movies', 'search', 'live', 'series', 'library']);
     expect(normalizeTabOrder(undefined)).toEqual(DEFAULT);
     const p = mergePreferences({ start: { tabOrder: 'x', hiddenTabs: ['search', 'nope'], startTab: 'gone' } });
     expect(p.start.hiddenTabs).toEqual(['search']);
     expect(p.start.startTab).toBe('home');
   });
 
-  test('a saved order keeps its place and gets Home first; a custom order with Home keeps it where it is', () => {
-    expect(normalizeTabOrder(['live', 'movies', 'home', 'series', 'search', 'favorites', 'lists'])).toEqual(['live', 'movies', 'home', 'series', 'search', 'favorites', 'lists']);
+  test('Library is hidden only when both Favorites and Lists were; a start tab on either opens Library', () => {
+    expect(mergePreferences({ start: { hiddenTabs: ['favorites'] } }).start.hiddenTabs).toEqual([]);
+    expect(mergePreferences({ start: { hiddenTabs: ['lists', 'favorites', 'search'] } }).start.hiddenTabs).toEqual(['search', 'library']);
+    expect(mergePreferences({ start: { startTab: 'lists' }, home: {} }).start.startTab).toBe('library');
   });
 
-  test('hidden tabs stay hidden; new tabs show unless hidden', () => {
-    expect(visibleTabs(['live', 'movies', 'series', 'search'], ['search'])).toEqual(['home', 'favorites', 'lists', 'live', 'movies', 'series']);
-    expect(visibleTabs(['live', 'movies', 'series', 'search'], ['favorites', 'lists'])).toEqual(['home', 'search', 'live', 'movies', 'series']);
+  test('hidden tabs stay hidden', () => {
+    expect(visibleTabs(['live', 'movies', 'series', 'search'], ['search'])).toEqual(['home', 'live', 'movies', 'series', 'library']);
+    expect(visibleTabs(['live', 'movies', 'series', 'search'], ['library'])).toEqual(['home', 'search', 'live', 'movies', 'series']);
   });
 });
 
