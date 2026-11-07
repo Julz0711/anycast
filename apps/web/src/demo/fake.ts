@@ -347,6 +347,7 @@ const routes: [string, RegExp, Handler][] = [
     const p = page(items, q);
     return { total: p.total, items: p.items.map((c) => mask(st, withNow(c, now))) };
   }],
+  ['GET', /^\/api\/channels\/([^/]+)\/variants$/, (m, _q, _b, st) => [mask(st, withNow(findChannel(decodeURIComponent(m[1]!)), Date.now()))]],
   ['GET', /^\/api\/epg$/, (_m, q) => {
     const ids = (q.get('channelIds') ?? '').split(',').filter(Boolean);
     const from = Number(q.get('from'));

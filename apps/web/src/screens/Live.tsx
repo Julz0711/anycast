@@ -48,7 +48,7 @@ export function LiveScreen() {
 
   const favs = useAsync(
     (signal) => (favIds ? resolveItems('live', favIds.split(','), { signal, fresh: true }) : Promise.resolve([])),
-    [favIds, version],
+    [favIds, version, live.mergeVariants],
   );
   const favChannels = ((favs.data ?? []) as LiveChannelWithNow[]).filter((c) => !live.guideOnlyWithEpg || c.hasEpg);
 
@@ -76,7 +76,7 @@ export function LiveScreen() {
   };
 
   const paged = usePagedList<LiveChannelWithNow>(
-    `${cat}|${version}|${cat === 'fav' ? favIds : ''}|${listKey}|${onlyEpg ? 'epg' : ''}`,
+    `${cat}|${version}|${cat === 'fav' ? favIds : ''}|${listKey}|${onlyEpg ? 'epg' : ''}|${live.mergeVariants ? 'merge' : ''}`,
     async (offset, limit, signal) => {
       if (cat.startsWith(LIST_PREFIX)) {
         const id = cat.slice(LIST_PREFIX.length);
@@ -152,7 +152,7 @@ export function LiveScreen() {
             ))}
           </div>
         ) : (
-          <CategoryChips label="Channel groups" noun="groups" lead={lead} categories={catChips} value={cat} onChange={pick} />
+          <CategoryChips kind="live" label="Channel groups" noun="groups" lead={lead} categories={catChips} value={cat} onChange={pick} />
         )}
         {list && (
           <div className="list-bar">

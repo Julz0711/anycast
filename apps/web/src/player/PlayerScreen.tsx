@@ -23,6 +23,7 @@ import { Ribbon, VodBar } from './Timeline';
 import { useThumbIndex } from './thumbs';
 import { hasTrackChoice, playingTracks, reloadTracks as keepTracks, renditionOf, subtitleAction, type TrackRequest } from './tracks';
 import { TracksMenu } from './TracksMenu';
+import { useVariants, useVersionFallback, VersionsMenu, versionLabel } from './variants';
 import { IconBack, IconClose, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock } from '../components/Icons';
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
@@ -111,7 +112,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const [notice, setNotice] = useState<string | null>(null);
   const [chrome, setChrome] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
-  const [menu, setMenu] = useState<null | 'tracks' | 'jump'>(null);
+  const [menu, setMenu] = useState<null | 'tracks' | 'jump' | 'versions'>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [ripple, setRipple] = useState<{ side: 'l' | 'r'; text: string; key: number } | null>(null);
   const dragging = useRef(false);
@@ -449,6 +450,10 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const atLive = isLive && behind < LIVE_SLACK_MS;
   const atLiveRef = useRef(atLive);
   atLiveRef.current = atLive;
+  // other versions of the channel (HD, FHD, RAW…): a Version menu, and the next one plays when this one fails
+  const variants = useVariants(id, isLive);
+  const version = variants.find((v) => v.id === id);
+  useVersionFallback({ live: isLive, atLive: (lastLoad.current?.at ?? null) === null, id, error, variants, go });
   if (casting) lastCast.current = { position, behind: !atLive, vod: ccTime };
   else if (info) lastLocal.current = { position, behind: !atLive, vod: ct };
   const span = (form === 'phone' ? 3 : 4) * 3_600_000;
@@ -1258,6 +1263,11 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
               <IconClock /> Keep a rewind buffer
             </button>
           )}
+          {variants.length > 1 && (
+            <button type="button" className="btn" onClick={() => setMenu(menu === 'versions' ? null : 'versions')} aria-expanded={menu === 'versions'}>
+              Version{version ? ` · ${versionLabel(version)}` : ''}
+            </button>
+          )}
           {hasTracks && (
             <button type="button" className="btn" onClick={() => setMenu(menu === 'tracks' ? null : 'tracks')} aria-expanded={menu === 'tracks'}>
               <IconTracks /> Audio &amp; subtitles
@@ -1299,6 +1309,17 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
               setMenu(null);
               return null;
             }}
+          />
+        )}
+        {menu === 'versions' && (
+          <VersionsMenu
+            variants={variants}
+            current={id}
+            onPick={(v) => {
+              setMenu(null);
+              if (v !== id) go(`/play/live/${encodeURIComponent(v)}`);
+            }}
+            onClose={() => setMenu(null)}
           />
         )}
         {menu === 'tracks' && tracks && (

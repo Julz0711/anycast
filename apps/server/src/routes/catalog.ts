@@ -2,7 +2,7 @@ import type { ItemsById, LiveChannelWithNow, MediaKind, SeriesDetail, SourceStat
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
-  countsByKind, EMPTY_RULES, type CountCache, epgFor, getSeries, itemsByIds, listCategories, listEpisodes, nowNext, pageChannels, pageMovies, pageSeries,
+  asGroup, channelVariants, countsByKind, EMPTY_RULES, type CountCache, epgFor, getSeries, itemsByIds, listCategories, listEpisodes, nowNext, pageChannels, pageMovies, pageSeries,
   toChannel, toEpisode, toMovie, toSeries, visibleChannels,
 } from '../catalog/store';
 import { auth, type Services } from '../context';
@@ -32,6 +32,7 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
     const adult = s.parental.view(parentalCtx(req));
     return { adult, rules: adult.rules(s.userData.hideRules(auth(req).profileId), opts) };
   };
+  const mergeOn = (req: Parameters<typeof auth>[0]) => s.userData.preferences(auth(req).profileId).live.mergeVariants;
 
   // page totals only change with a sync: kept per finished catalog and guide sync, never while one runs
   let counts: { key: string; map: CountCache } = { key: '', map: new Map() };
@@ -101,7 +102,7 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
   app.get('/api/live', async (req) => {
     const q = PageQuery.parse(req.query);
     const { adult, rules } = scope(req);
-    const page = pageChannels(s.db, rules, q, countCache());
+    const page = pageChannels(s.db, rules, { ...q, merge: mergeOn(req) }, countCache());
     const now = Date.now();
     const items: LiveChannelWithNow[] = page.items.map((c) => adult.item({ ...c, ...nowNext(s.db, { id: c.id, epg_channel_id: c.epgChannelId }, now) }));
     return { items, total: page.total };
@@ -111,9 +112,10 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
     const q = ItemsQuery.safeParse(req.query);
     if (!q.success) return reply.code(400).send({ error: 'bad_request', message: 'live, movie and series are comma-separated id lists' });
     const { adult, rules: r } = scope(req);
+    const merge = mergeOn(req);
     const now = Date.now();
     return {
-      live: itemsByIds(s.db, 'live', q.data.live, r).map((c) => adult.item({ ...toChannel(c), ...nowNext(s.db, c, now) })),
+      live: itemsByIds(s.db, 'live', q.data.live, r).map((c) => adult.item({ ...toChannel(merge ? asGroup(c) : c), ...nowNext(s.db, c, now) })),
       movies: itemsByIds(s.db, 'movie', q.data.movie, r).map((m) => adult.item(toMovie(m))),
       series: itemsByIds(s.db, 'series', q.data.series, r).map((x) => adult.item(toSeries(x))),
     };
@@ -138,6 +140,14 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
     const out = epgFor(s.db, channels, q.data.from, to);
     for (const c of channels) out[c.id] = adult.programs(out[c.id] ?? [], c.category_id);
     return out;
+  });
+
+  app.get<{ Params: { id: string } }>('/api/channels/:id/variants', async (req, reply) => {
+    const { adult, rules } = scope(req);
+    const rows = channelVariants(s.db, req.params.id, rules);
+    if (!rows.length) return reply.code(404).send({ error: 'not_found', message: 'Channel not found' });
+    const now = Date.now();
+    return rows.map((c) => adult.item({ ...toChannel(c), ...nowNext(s.db, c, now) }));
   });
 
   app.get('/api/movies', async (req) => {
@@ -176,7 +186,7 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
   app.get('/api/search', async (req) => {
     const q = z.object({ q: z.string().max(200).catch('') }).parse(req.query);
     const { adult, rules } = scope(req, { search: true });
-    const res = search(s.db, q.q, rules);
+    const res = search(s.db, q.q, rules, undefined, { merge: mergeOn(req) });
     return { live: res.live.map((x) => adult.item(x)), movies: res.movies.map((x) => adult.item(x)), series: res.series.map((x) => adult.item(x)) };
   });
 }

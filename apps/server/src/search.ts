@@ -7,7 +7,7 @@
  * that start with the query first.
  */
 import type { HideRules, MediaKind, SearchResults } from '@anycast/shared';
-import { hideClause, KIND_INDEX, KIND_TABLE, toChannel, toMovie, toSeries, type ChannelRow, type MovieRow, type SeriesRow } from './catalog/store';
+import { asGroup, hideClause, KIND_INDEX, KIND_TABLE, toChannel, toMovie, toSeries, type ChannelRow, type MovieRow, type SeriesRow } from './catalog/store';
 import type { Db } from './db';
 
 /** visible matches ranked per kind and query */
@@ -30,12 +30,31 @@ function toFtsQuery(tokens: string[]): string | null {
   return tokens.map((t) => `"${t}"*`).join(' ');
 }
 
-export function search(db: Db, q: string, rules: HideRules, limit = SEARCH_LIMIT): SearchResults {
+/** One channel per group of duplicates, at the place of the group's first hit, as its best ranked visible version. */
+function mergeVariants(rows: ChannelRow[], limit: number): ChannelRow[] {
+  const out: ChannelRow[] = [];
+  const at = new Map<string, number>();
+  for (const r of rows) {
+    const key = r.group_size > 1 ? r.group_key : null;
+    if (!key) {
+      out.push(r);
+      continue;
+    }
+    const i = at.get(key);
+    if (i === undefined) {
+      at.set(key, out.length);
+      out.push(r);
+    } else if (r.variant_rank < out[i]!.variant_rank) out[i] = r;
+  }
+  return out.slice(0, limit);
+}
+
+export function search(db: Db, q: string, rules: HideRules, limit = SEARCH_LIMIT, opts: { merge?: boolean } = {}): SearchResults {
   const tokens = tokensOf(q);
   const fts = toFtsQuery(tokens);
   if (!fts) return { live: [], movies: [], series: [] };
   const lead = tokens[0]!;
-  const run = <R>(kind: MediaKind) => {
+  const run = <R>(kind: MediaKind, n = limit) => {
     const hide = hideClause(rules, 't');
     // rowid = item rowid * 4 + kind; the kind test on the rowid needs no column read
     return db
@@ -46,10 +65,10 @@ export function search(db: Db, q: string, rules: HideRules, limit = SEARCH_LIMIT
            LIMIT ${CANDIDATES}
          ) ORDER BY (instr(lower(name), ?) = 1) DESC, _rank, length(name) LIMIT ?`,
       )
-      .all(fts, KIND_INDEX[kind], ...hide.params, lead, limit) as R[];
+      .all(fts, KIND_INDEX[kind], ...hide.params, lead, n) as R[];
   };
   return {
-    live: run<ChannelRow>('live').map(toChannel),
+    live: (opts.merge ? mergeVariants(run<ChannelRow>('live', CANDIDATES), limit).map(asGroup) : run<ChannelRow>('live')).map(toChannel),
     movies: run<MovieRow>('movie').map(toMovie),
     series: run<SeriesRow>('series').map(toSeries),
   };

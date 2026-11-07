@@ -306,4 +306,16 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (profile_id, channel_id)
   ) WITHOUT ROWID;
   `,
+  `
+  -- duplicate channels (catalog/variants.ts): group = language + name without quality tags;
+  -- variant_rank 0 is the channel a group shows first; set after every catalog sync
+  ALTER TABLE channels ADD COLUMN group_key TEXT;
+  ALTER TABLE channels ADD COLUMN group_name TEXT;
+  ALTER TABLE channels ADD COLUMN group_number INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE channels ADD COLUMN quality TEXT;
+  ALTER TABLE channels ADD COLUMN variant_rank INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE channels ADD COLUMN group_size INTEGER NOT NULL DEFAULT 1;
+  CREATE INDEX IF NOT EXISTS channels_group ON channels(group_key, variant_rank);
+  CREATE INDEX IF NOT EXISTS channels_group_number ON channels(group_number, country, language, category_id, has_epg);
+  `,
 ];

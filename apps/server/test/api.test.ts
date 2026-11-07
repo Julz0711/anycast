@@ -2,6 +2,7 @@ import type { Favorite, HideRules, ItemsById, Me, Page, Profile, SyncEvent } fro
 import type { InjectOptions } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createMockXtream, login, makeApp, ADMIN } from './helpers';
+import { groupVariants } from '../src/catalog/variants';
 
 const CREDS = { username: 'mock-user-5521', password: 'mock-pass-8873' };
 let mock: Awaited<ReturnType<typeof createMockXtream>>;
@@ -174,6 +175,50 @@ describe('catalog', () => {
     const t = await json<{ countries: { country: string; count: number }[]; languages: { language: string }[] }>({ url: '/api/tags' });
     expect(t.countries[0]!.country).toBe('de');
     expect(t.languages.map((l) => l.language)).toContain('ar');
+  });
+});
+
+describe('duplicate channels', () => {
+  beforeAll(() => {
+    // the small mock has every channel once: add one channel in three versions
+    const db = built.services.db;
+    const base = db.prepare("SELECT * FROM channels WHERE language = 'en' ORDER BY number LIMIT 1").get() as Record<string, unknown>;
+    const insert = db.prepare(
+      `INSERT INTO channels (id, name, raw_name, number, category_id, logo, country, language, archive_days, epg_channel_id, gen)
+       VALUES (?, ?, ?, ?, ?, NULL, ?, 'en', ?, NULL, ?) RETURNING rowid`,
+    );
+    const fts = db.prepare("INSERT INTO search_fts (rowid, name, kind, item_id) VALUES (?, ?, 'live', ?)");
+    [['dup1', 'Zebra News HD', 0], ['dup2', 'Zebra News FHD', 0], ['dup3', 'Zebra News RAW', 3]].forEach(([id, name, archive], i) => {
+      const { rowid } = insert.get(id, name, name, 9000 + i, base.category_id, base.country, archive, base.gen) as { rowid: number };
+      fts.run(rowid * 4, name, id);
+    });
+    groupVariants(db);
+  });
+
+  test('lists and search show one channel per group under its plain name; the variants route lists the rest', async () => {
+    const res = await json<{ live: { id: string; name: string; variants?: number; quality?: string | null }[] }>({ url: '/api/search?q=zebra' });
+    expect(res.live.map((c) => c.name)).toEqual(['Zebra News']);
+    const grouped = res.live[0]!;
+    expect(grouped).toMatchObject({ id: 'dup2', quality: 'FHD', variants: 2 });
+    const variants = await json<{ id: string; name: string; quality: string | null }[]>({ url: `/api/channels/${grouped.id}/variants` });
+    expect(variants.map((v) => v.quality)).toEqual(['FHD', 'HD', 'RAW']);
+
+    const page = await json<Page<{ name: string; language: string | null }>>({ url: '/api/live?limit=500' });
+    const keys = page.items.map((c) => `${c.language}|${c.name}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  test('turning merging off shows every version again', async () => {
+    const merged = await json<Page<unknown>>({ url: '/api/live?limit=1' });
+    await call({ method: 'PUT', url: '/api/preferences', payload: { live: { mergeVariants: false } } });
+    const all = await json<Page<unknown>>({ url: '/api/live?limit=1' });
+    await call({ method: 'PUT', url: '/api/preferences', payload: { live: { mergeVariants: true } } });
+    expect(all.total).toBeGreaterThan(merged.total);
+  });
+
+  test('categories have tidy names', async () => {
+    const cats = await json<{ name: string }[]>({ url: '/api/categories?kind=live' });
+    for (const c of cats) expect(c.name).not.toMatch(/^[\s·|[]|\|/);
   });
 });
 

@@ -1,6 +1,7 @@
 /** Read side of the catalog: row mapping and hide-rule-aware queries. */
 import type { Category, Channel, EpgProgram, Episode, HideRules, MediaKind, Movie, Series } from '@anycast/shared';
 import type { Db } from '../db';
+import { cleanEpisodeTitle } from './names';
 
 export const KIND_INDEX: Record<MediaKind, number> = { live: 0, movie: 1, series: 2 };
 export const KIND_TABLE: Record<MediaKind, 'channels' | 'movies' | 'series'> = { live: 'channels', movie: 'movies', series: 'series' };
@@ -12,6 +13,8 @@ export interface ChannelRow {
   country: string | null; language: string | null; archive_days: number; epg_channel_id: string | null;
   /** 1 when the stored guide has programmes for the channel */
   has_epg: number;
+  /** duplicate channels (variants.ts) */
+  group_key: string | null; group_name: string | null; group_number: number; quality: string | null; variant_rank: number; group_size: number;
 }
 export interface MovieRow {
   id: string; name: string; raw_name: string; category_id: string; poster: string | null; year: number | null;
@@ -35,6 +38,7 @@ export const artUrl = (kind: MediaKind, id: string, raw: string | null) => (raw 
 export const toChannel = (r: ChannelRow): Channel => ({
   id: r.id, name: r.name, rawName: r.raw_name, number: r.number, categoryId: r.category_id, logo: artUrl('live', r.id, r.logo),
   country: r.country, language: r.language, archiveDays: r.archive_days, epgChannelId: r.epg_channel_id, hasEpg: r.has_epg === 1,
+  quality: r.quality ?? null, variants: Math.max(0, (r.group_size ?? 1) - 1),
 });
 export const toMovie = (r: MovieRow): Movie => ({
   id: r.id, name: r.name, rawName: r.raw_name, categoryId: r.category_id, poster: artUrl('movie', r.id, r.poster), year: r.year,
@@ -45,7 +49,7 @@ export const toSeries = (r: SeriesRow): Series => ({
   rating: r.rating, plot: r.plot, country: r.country, language: r.language,
 });
 export const toEpisode = (r: EpisodeRow): Episode => ({
-  id: r.id, seriesId: r.series_id, season: r.season, episode: r.episode, title: r.title, plot: r.plot,
+  id: r.id, seriesId: r.series_id, season: r.season, episode: r.episode, title: cleanEpisodeTitle(r.title, null, r.episode), plot: r.plot,
   duration: r.duration, container: r.container,
 });
 
@@ -78,7 +82,23 @@ export function listCategories(db: Db, kind: MediaKind, rules: HideRules): Categ
   return rows.filter((r) => !categoryHidden(rules, r)).map((r) => ({ ...r, adult: r.adult === 1 }));
 }
 
-export interface PageQuery { categoryId?: string; offset: number; limit: number; hasEpg?: boolean }
+export interface PageQuery {
+  categoryId?: string; offset: number; limit: number; hasEpg?: boolean;
+  /** channels: one per group of duplicates (variants.ts) */
+  merge?: boolean;
+}
+
+/**
+ * SQL fragment that keeps one channel per group of duplicates: the best ranked one the rules let
+ * the profile see (within `categoryId` when browsing one category). `alias` is the outer channel.
+ */
+export function variantClause(rules: HideRules, alias: string, sameCategory: boolean): { sql: string; params: string[] } {
+  const hide = hideClause(rules, 'v');
+  return {
+    sql: `(${alias}.group_size = 1 OR NOT EXISTS (SELECT 1 FROM channels v WHERE v.group_key = ${alias}.group_key AND v.variant_rank < ${alias}.variant_rank AND ${hide.sql}${sameCategory ? ` AND v.category_id = ${alias}.category_id` : ''}))`,
+    params: hide.params,
+  };
+}
 
 /**
  * Page totals by query. Counting the visible rows of a 140k movie list with hidden categories
@@ -87,6 +107,9 @@ export interface PageQuery { categoryId?: string; offset: number; limit: number;
  */
 export type CountCache = Map<string, number>;
 const COUNT_CACHE_MAX = 5000;
+
+/** A channel as one row of a merged list: named after its group ("BBC One", not "BBC One FHD"). */
+export const asGroup = (r: ChannelRow): ChannelRow => (r.group_size > 1 && r.group_name ? { ...r, name: r.group_name, number: r.group_number || r.number } : r);
 
 function page<R, T>(db: Db, table: string, order: string, rules: HideRules, q: PageQuery, map: (r: R) => T, counts?: CountCache) {
   const hide = hideClause(rules, 't');
@@ -98,6 +121,11 @@ function page<R, T>(db: Db, table: string, order: string, rules: HideRules, q: P
   }
   // "+ 0": an equality on an index column makes SQLite sort the ties itself instead of walking the index in order
   if (q.hasEpg && table === 'channels') where.push('t.has_epg + 0 = 1');
+  if (q.merge && table === 'channels') {
+    const v = variantClause(rules, 't', Boolean(q.categoryId));
+    where.push(v.sql);
+    params.push(...v.params);
+  }
   const w = where.join(' AND ');
   const countSql = `SELECT count(*) AS n FROM ${table} t WHERE ${w}`;
   const key = counts && `${countSql}\n${JSON.stringify(params)}`;
@@ -116,11 +144,24 @@ function page<R, T>(db: Db, table: string, order: string, rules: HideRules, q: P
 // Orders spell out the list index columns (see migrations) so pages are a plain walk of the index,
 // even deep into a 140k item list; the trailing rowid makes the order total.
 const CHANNEL_ORDER = 't.number, t.country, t.language, t.category_id, t.has_epg, t.rowid';
+/** merged lists: a group sits at the place of its lowest numbered version */
+const GROUP_ORDER = 't.group_number, t.country, t.language, t.category_id, t.has_epg, t.rowid';
 const ADDED_ORDER = 't.added DESC, t.country, t.language, t.category_id, t.rowid';
 export const pageChannels = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) =>
-  page(db, 'channels', CHANNEL_ORDER, rules, q, toChannel, counts);
+  page(db, 'channels', q.merge ? GROUP_ORDER : CHANNEL_ORDER, rules, q, (r: ChannelRow) => toChannel(q.merge ? asGroup(r) : r), counts);
 export const pageMovies = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) => page(db, 'movies', ADDED_ORDER, rules, q, toMovie, counts);
 export const pageSeries = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) => page(db, 'series', ADDED_ORDER, rules, q, toSeries, counts);
+
+/** Every version of a channel visible under the rules, best first (the channel itself included). */
+export function channelVariants(db: Db, id: string, rules: HideRules): ChannelRow[] {
+  const c = getChannel(db, id);
+  if (!c) return [];
+  if (!c.group_key || c.group_size <= 1) return [c];
+  const hide = hideClause(rules, 't');
+  return db
+    .prepare(`SELECT t.* FROM channels t WHERE t.group_key = ? AND ${hide.sql} ORDER BY t.variant_rank`)
+    .all(c.group_key, ...hide.params) as ChannelRow[];
+}
 
 export const getChannel = (db: Db, id: string) => db.prepare('SELECT * FROM channels WHERE id = ?').get(id) as ChannelRow | undefined;
 export const getMovie = (db: Db, id: string) => db.prepare('SELECT * FROM movies WHERE id = ?').get(id) as MovieRow | undefined;

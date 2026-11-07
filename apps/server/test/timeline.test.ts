@@ -5,7 +5,7 @@ import { archiveSource, buildTimeline, gapAt, LIVE_EDGE_MS, mergeRanges, sourceA
 
 const NOW = Date.UTC(2026, 10, 1, 12);
 const channel = (archive_days: number): ChannelRow => ({
-  id: '7', name: 'X', raw_name: 'X', number: 1, category_id: 'l1', logo: null, country: null, language: null, archive_days, epg_channel_id: null, has_epg: 0,
+  id: '7', name: 'X', raw_name: 'X', number: 1, category_id: 'l1', logo: null, country: null, language: null, archive_days, epg_channel_id: null, has_epg: 0, group_key: null, group_name: null, group_number: 1, quality: null, variant_rank: 0, group_size: 1,
 });
 
 test('archive channel: archive range then live edge, no gaps', () => {

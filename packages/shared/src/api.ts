@@ -277,6 +277,8 @@ export interface Api {
   /** hidden items already filtered out for the current profile; hasEpg=1: only channels with guide data */
   'GET /api/live': { query: { categoryId?: string; offset?: number; limit?: number; hasEpg?: '1' }; res: Page<LiveChannelWithNow> };
   /** hidden channels are left out, except channels in one of the profile's lists */
+  /** The other versions of a channel (same name, other quality), best first; the channel itself included. */
+  'GET /api/channels/:id/variants': { res: Channel[] };
   'GET /api/epg': { query: { channelIds: string; from: number; to: number }; res: Record<string, EpgProgram[]> };
   'GET /api/movies': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Movie> };
   'GET /api/series': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Series> };

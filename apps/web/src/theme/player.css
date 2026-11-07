@@ -171,3 +171,8 @@
 .mini-progress i { display: block; height: 100%; background: var(--accent); }
 [data-form="phone"] .mini-row { padding-left: 0.5rem; }
 [data-form="phone"] .mini-btn { width: 2rem; height: 2rem; }
+/* channel versions (HD, FHD, RAW…) */
+.pl-versions .pl-menu-col { min-width: min(22rem, 100%); flex: 1; }
+.pl-versions-list { display: flex; flex-direction: column; gap: 0.125rem; max-height: 16rem; overflow-y: auto; }
+.pl-version-best { color: var(--muted); font-weight: 500; }
+.pl-versions-hint { margin-top: 0.5rem; }
