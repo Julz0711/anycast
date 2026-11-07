@@ -296,6 +296,9 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
       <Row label="Autoplay next episode" hint={p.autoplayNext ? `Starts after a ${p.autoplayCountdown} s countdown.` : 'Off: playback stops at the end of an episode.'}>
         <Toggle label="Autoplay next episode" checked={p.autoplayNext} onChange={(v) => setPref('player', { autoplayNext: v })} />
       </Row>
+      <Row label="Mini player" hint={p.miniPlayer ? 'Leaving the player keeps it playing in a corner while you browse. Drag it to any corner.' : 'Off: leaving the player stops playback.'}>
+        <Toggle label="Mini player" checked={p.miniPlayer} onChange={(v) => setPref('player', { miniPlayer: v })} />
+      </Row>
       {all && (
         <>
           <Row label="Countdown before next episode">
