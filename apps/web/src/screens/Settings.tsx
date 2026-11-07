@@ -27,6 +27,7 @@ import { DiagnosticsSection } from './Diagnostics';
 import { HwEncoding } from './HwEncoding';
 import { BackupSection } from './Backup';
 import { CastSettings } from './CastSettings';
+import { resetSwipeDecks } from './Swipe';
 import '../theme/settings.css';
 
 type P = Preferences;
@@ -57,6 +58,7 @@ export default function SettingsScreen() {
         { id: 'casting', title: 'Casting', body: <CastSettings Row={Row} /> },
         { id: 'tabs', title: 'Start & tabs', body: <StartTabs prefs={prefs} all /> },
         { id: 'home', title: 'Home', body: <HomeEditor compact /> },
+        { id: 'swipe', title: 'Swipe', body: <SwipeSettings /> },
         { id: 'filters', title: 'Filters', body: <Filters all /> },
         { id: 'parental', title: 'Parental lock', body: <ParentalLock Row={Row} /> },
         { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
@@ -681,6 +683,36 @@ function Source() {
 }
 
 /* ---------------- About ---------------- */
+/* ---------------- Swipe ---------------- */
+function SwipeSettings() {
+  const passed = useAsync(() => call('GET /api/swipe/passed'), []);
+  const [busy, setBusy] = useState(false);
+  const n = passed.data?.passed;
+  const bringBack = async () => {
+    setBusy(true);
+    try {
+      await call('DELETE /api/swipe/passed');
+      resetSwipeDecks();
+      passed.reload();
+      toast('Passed titles are back in the deck', 'info');
+    } catch (e) {
+      toast(`Couldn't bring them back: ${errorMessage(e)}`, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Row
+      label="Passed titles"
+      hint={n === undefined ? 'Movies and series you swiped away. They no longer come up in Swipe.' : `${n.toLocaleString()} ${n === 1 ? 'title' : 'titles'} you swiped away. They no longer come up in Swipe.`}
+    >
+      <button type="button" className="btn" disabled={busy || !n} onClick={() => void bringBack()}>
+        Bring them back
+      </button>
+    </Row>
+  );
+}
+
 function About() {
   const health = useAsync(() => call('GET /api/health'), []);
   const caps = useMemo(() => {

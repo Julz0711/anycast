@@ -35,6 +35,7 @@ import { eventRoutes } from './routes/events';
 import { listRoutes } from './routes/lists';
 import { parentalRoutes } from './routes/parental';
 import { playbackRoutes } from './routes/playback';
+import { swipeRoutes } from './routes/swipe';
 import { thumbRoutes } from './routes/thumbs';
 import { userDataRoutes } from './routes/userdata';
 import { SourceService } from './source';
@@ -151,6 +152,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   catalogRoutes(app, services);
   userDataRoutes(app, services);
   listRoutes(app, services);
+  swipeRoutes(app, services);
   playbackRoutes(app, services);
   castRoutes(app, services);
   bufferRoutes(app, services);
