@@ -342,4 +342,14 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS series_year ON series(year DESC, country, language, category_id);
   CREATE INDEX IF NOT EXISTS series_rating ON series(rating DESC, country, language, category_id);
   `,
+  `
+  -- Swipe (swipe.ts): movies and series a profile swiped away; they don't come up in the deck again
+  CREATE TABLE IF NOT EXISTS swipe_passed (
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    passed_at INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, kind, item_id)
+  ) WITHOUT ROWID;
+  `,
 ];

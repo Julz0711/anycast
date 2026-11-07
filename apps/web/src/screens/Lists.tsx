@@ -5,7 +5,7 @@
  * tab and the sort order are remembered per device.
  */
 import { useCallback, useMemo, useState } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { CHANNEL_LIST_LIMITS, MEDIA_LIST_LIMITS, type ChannelList, type LiveChannelWithNow, type MediaList, type Movie, type Series } from '@anycast/shared';
 import { LibraryHead } from '../components/PageHead';
 import { useApp } from '../store/app';
@@ -17,7 +17,7 @@ import { useAsync, useFormFactor, useNow } from '../lib/hooks';
 import { readLocal, writeLocal } from '../lib/storage';
 import { ChannelRow, PosterCard } from '../components/cards';
 import { Empty, Segmented, Skeleton } from '../components/ui';
-import { IconBookmark, IconClose, IconLive, IconMovie } from '../components/Icons';
+import { IconBookmark, IconClose, IconLive, IconMovie, IconSwipe } from '../components/Icons';
 import { Sheet } from '../components/lists';
 import { ListEditorSheet } from '../components/ListEditor';
 import { PosterSkeleton } from './Vod';
@@ -231,6 +231,11 @@ function MediaPanel(props: { list: MediaList; sort: Sort; sortControl: React.Rea
               </button>
             </>
           )}
+          {list.builtin && n > 0 && (
+            <Link to="/swipe" className="btn">
+              <IconSwipe /> Swipe for more
+            </Link>
+          )}
           <span className="lt-grow" />
           {n > 1 && props.sortControl}
         </div>
@@ -242,7 +247,10 @@ function MediaPanel(props: { list: MediaList; sort: Sort; sortControl: React.Rea
       ) : n === 0 ? (
         list.builtin ? (
           <Empty title="Nothing to watch later yet">
-            <p>Open a movie or a series and tap Watch later, and it will wait for you here.</p>
+            <p>Open a movie or a series and tap Watch later, and it will wait for you here. Or swipe through random picks and keep the ones you like.</p>
+            <Link to="/swipe" className="btn btn-primary">
+              <IconSwipe /> Start swiping
+            </Link>
           </Empty>
         ) : (
           <Empty title="This list is empty">

@@ -23,6 +23,8 @@ interface ProfileState {
   lists: ChannelList[];
   mediaLists: MediaList[];
   recent: RecentChannel[];
+  /** Swipe: "kind:id" of passed titles */
+  passed: Set<string>;
   adult: { mode: AdultMode; pin: string | null; unlockMinutes: UnlockMinutes; unlockedUntil: number | null; failures: number[] };
 }
 
@@ -123,6 +125,7 @@ function state(pid: string | null): ProfileState {
         },
         ...(id === 'p1' ? [{ id: 'ml1', name: 'Date night', builtin: null, items: [{ kind: 'movie' as const, id: 'm7', addedAt: now }, { kind: 'movie' as const, id: 'm108', addedAt: now }] }] : []),
       ],
+      passed: new Set(),
       recent: id === 'p1' ? [ch(104), ch(131), ch(112), ch(121), ch(107), ch(141)].map((cid, i) => ({ id: cid, watchedAt: now - (i + 1) * 2_400_000 })) : [],
       adult: { mode: 'locked', pin: '1234', unlockMinutes: 30, unlockedUntil: null, failures: [] },
     };
@@ -645,6 +648,40 @@ const routes: [string, RegExp, Handler][] = [
       .map((x) => ({ kind: x.kind, id: x.id, addedAt: before.get(`${x.kind}:${x.id}`) ?? Date.now() }));
     emitMediaLists(st);
     return l;
+  }],
+  ['GET', /^\/api\/swipe$/, (_m, q, _b, st) => {
+    const kind = q.get('kind') ?? 'all';
+    const cat = kind === 'all' ? null : q.get('categoryId');
+    const min = Number(q.get('minRating') ?? 0);
+    const limit = Number(q.get('limit') ?? 20);
+    const skip = new Set((q.get('skip') ?? '').split(',').filter(Boolean));
+    const listed = new Set(st.mediaLists.flatMap((l) => l.items.map((x) => `${x.kind}:${x.id}`)));
+    const ok = (k: string, x: Movie | Series) =>
+      !!x.poster && !hidden(rulesOf(st, true), x) && (!cat || x.categoryId === cat) && (!min || (x.rating ?? 0) >= min) && !st.passed.has(`${k}:${x.id}`) && !listed.has(`${k}:${x.id}`);
+    const pool = [
+      ...(kind !== 'series' ? fx.movies.filter((x) => ok('movie', x)).map((item) => ({ kind: 'movie' as const, item })) : []),
+      ...(kind !== 'movie' ? fx.series.filter((x) => ok('series', x)).map((item) => ({ kind: 'series' as const, item })) : []),
+    ];
+    const open = pool.filter((c) => !skip.has(`${c.kind}:${c.item.id}`));
+    for (let i = open.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [open[i], open[j]] = [open[j]!, open[i]!];
+    }
+    return { cards: open.slice(0, limit), left: pool.length };
+  }],
+  ['GET', /^\/api\/swipe\/passed$/, (_m, _q, _b, st) => ({ passed: st.passed.size })],
+  ['POST', /^\/api\/swipe\/passed$/, (_m, _q, body, st) => {
+    const b = body as { kind: string; id: string };
+    st.passed.add(`${b.kind}:${b.id}`);
+    return { passed: st.passed.size };
+  }],
+  ['DELETE', /^\/api\/swipe\/passed\/([^/]+)\/([^/]+)$/, (m, _q, _b, st) => {
+    st.passed.delete(`${m[1]}:${decodeURIComponent(m[2]!)}`);
+    return { passed: st.passed.size };
+  }],
+  ['DELETE', /^\/api\/swipe\/passed$/, (_m, _q, _b, st) => {
+    st.passed.clear();
+    return { passed: 0 };
   }],
   ['GET', /^\/api\/hide-rules$/, (_m, _q, _b, st) => st.rules],
   ['PUT', /^\/api\/hide-rules$/, (_m, _q, body, st) => {
