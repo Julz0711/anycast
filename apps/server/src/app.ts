@@ -11,6 +11,7 @@ import { DEFAULT_BUFFER, VERSION, type Config } from './config';
 import { CastLinks, rewriteCastUrl } from './cast';
 import type { Services } from './context';
 import { openDb } from './db';
+import { ensureVariants } from './catalog/variants';
 import { EventBus } from './events';
 import { HlsError } from './playback/hls';
 import { ConnectionBusyError, TakenOverError } from './playback/claims';
@@ -59,6 +60,7 @@ export interface BuiltApp {
 
 export async function buildApp(config: Config, opts: BuildOptions = {}): Promise<BuiltApp> {
   const db = openDb(path.join(config.dataDir, 'anycast.db'));
+  ensureVariants(db);
   const source = new SourceService(db, config.secret);
   source.seed(config.xtream);
 

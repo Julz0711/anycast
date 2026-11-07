@@ -32,6 +32,10 @@ export interface Channel {
   epgChannelId: string | null;
   /** The guide has programmes for this channel (many panels have guide data for few channels) */
   hasEpg: boolean;
+  /** Quality from the name ("FHD", "HD", "4K", "SD", "HQ", "LOW", "RAW"), null when the name has none */
+  quality?: string | null;
+  /** How many other versions of this channel the provider has ("BBC One FHD" and "BBC One RAW" for "BBC One HD") */
+  variants?: number;
   /** in a locked adult category: name is LOCKED_NAME and artwork, plot and guide are withheld */
   locked?: boolean;
 }

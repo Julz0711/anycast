@@ -13,7 +13,9 @@ import type { XtreamClient } from '../xtream/client';
 import type { XCategory, XLiveStream, XSeries, XVodStream } from '../xtream/schemas';
 import { parseXmltv } from '../xtream/xmltv';
 import { KIND_INDEX, KIND_TABLE, refreshHasEpg } from './store';
+import { cleanCategoryName, cleanEpisodeTitle, splitTitle } from './names';
 import { tagCategory, tagItem, type Tag } from './tagger';
+import { groupVariants } from './variants';
 
 const BATCH = 2000;
 /** About the longest stretch a sync keeps the event loop (parsing plus writing one transaction). */
@@ -30,14 +32,6 @@ const yieldLoop = () => new Promise<void>((r) => setImmediate(r));
 
 const CATEGORY_PREFIX: Record<MediaKind, string> = { live: 'l', movie: 'm', series: 's' };
 const categoryId = (kind: MediaKind, providerId: string | null) => `${CATEGORY_PREFIX[kind]}${providerId ?? '0'}`;
-
-/** "Title (2019)", "Title - 2019", "Title [2019]" -> year and title without it */
-function splitYear(name: string): { name: string; year: number | null } {
-  const m = /\s*(?:\((\d{4})\)|\[(\d{4})\]|[-–]\s*(\d{4}))\s*$/.exec(name);
-  const y = m ? Number(m[1] ?? m[2] ?? m[3]) : NaN;
-  if (!m || y < 1900 || y > 2100) return { name, year: null };
-  return { name: name.slice(0, m.index).trim() || name, year: y };
-}
 
 const rating = (r: number | null) => (r && r > 0 ? Math.round(r * 10) / 10 : null);
 
@@ -224,8 +218,10 @@ export class CatalogSync {
       await this.writeSeries(client.seriesIter(), gen, catTags);
       phase('series');
       this.prune(gen);
-      refreshHasEpg(this.db);
       phase('prune');
+      groupVariants(this.db);
+      refreshHasEpg(this.db);
+      phase('variants');
       kvSet(this.db, 'lastCatalogSync', String(Date.now()));
       this.log.info({ ms: Date.now() - started, phases }, 'catalog sync finished');
       this.bus.emit({ type: 'catalog-updated' });
@@ -246,7 +242,7 @@ export class CatalogSync {
       const id = categoryId(kind, c.category_id);
       const tag = tagCategory(c.category_name);
       tags.set(id, tag);
-      stmt.run(id, kind, c.category_name.trim(), tag.country, tag.language, tag.adult ? 1 : 0, sort++, gen);
+      stmt.run(id, kind, cleanCategoryName(c.category_name), tag.country, tag.language, tag.adult ? 1 : 0, sort++, gen);
     });
   }
 
@@ -287,7 +283,7 @@ export class CatalogSync {
     await inBatches(this.db, streams, (s) => {
       const cat = categoryId('movie', s.category_id);
       const tag = tagItem(s.name, catTags.get(cat) ?? null);
-      const split = splitYear(tag.name);
+      const split = splitTitle(tag.name);
       const before = fts.before(s.stream_id);
       const row = stmt.get({
         id: s.stream_id, name: split.name, raw: s.name.trim(), cat, poster: s.stream_icon || null,
@@ -312,7 +308,7 @@ export class CatalogSync {
     await inBatches(this.db, list, (s) => {
       const cat = categoryId('series', s.category_id);
       const tag = tagItem(s.name, catTags.get(cat) ?? null);
-      const split = splitYear(tag.name);
+      const split = splitTitle(tag.name);
       const release = s.releaseDate ?? s.release_date;
       const year = s.year ?? split.year ?? (release && /^\d{4}/.test(release) ? Number(release.slice(0, 4)) : null);
       const before = fts.before(s.series_id);
@@ -430,6 +426,7 @@ export class CatalogSync {
 
   private async fetchEpisodes(seriesId: string): Promise<void> {
     const info = await this.requireClient().seriesInfo(seriesId);
+    const seriesName = (this.db.prepare('SELECT name FROM series WHERE id = ?').pluck().get(seriesId) as string | undefined) ?? null;
     const insert = this.db.prepare(
       `INSERT INTO episodes (id, series_id, season, episode, title, plot, duration, container) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET series_id = excluded.series_id, season = excluded.season, episode = excluded.episode,
@@ -442,7 +439,8 @@ export class CatalogSync {
         .run(seriesId, ...ids);
       info.episodes.forEach((e, i) => {
         insert.run(
-          e.id, seriesId, e.season, e.episode_num ?? i + 1, e.title?.trim() || `Episode ${e.episode_num ?? i + 1}`,
+          e.id, seriesId, e.season, e.episode_num ?? i + 1,
+          e.title?.trim() ? cleanEpisodeTitle(e.title, seriesName, e.episode_num ?? i + 1) : `Episode ${e.episode_num ?? i + 1}`,
           e.info.plot, e.info.duration_secs ?? parseDuration(e.info.duration), e.container_extension?.toLowerCase() ?? null,
         );
       });

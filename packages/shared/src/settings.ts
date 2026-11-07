@@ -77,6 +77,8 @@ export interface Preferences {
     guideHoursVisible: 2 | 3 | 4 | 6;
     /** Live TV lists and the guide show only channels that have guide data */
     guideOnlyWithEpg: boolean;
+    /** one row per channel when the provider has it in several versions (HD, FHD, RAW…) */
+    mergeVariants: boolean;
   };
   player: {
     skipBackSeconds: 5 | 10 | 15 | 30;
@@ -113,6 +115,10 @@ export interface Preferences {
     /** most cards a row shows before "See all" */
     rowLimit: 6 | 12 | 24;
   };
+  /** Category chips: pinned categories (ids of every kind, in the user's order) come first */
+  categories: {
+    pinned: string[];
+  };
   settingsMode: 'basic' | 'all';
   /** First-run setup (language filter) finished or skipped for this profile */
   setupDone: boolean;
@@ -137,6 +143,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     reopenLastChannel: false,
     guideHoursVisible: 3,
     guideOnlyWithEpg: false,
+    mergeVariants: true,
   },
   player: {
     skipBackSeconds: 10,
@@ -160,6 +167,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
     showHero: true,
     favoritesWithGuideOnly: false,
     rowLimit: 12,
+  },
+  categories: {
+    pinned: [],
   },
   settingsMode: 'basic',
   setupDone: false,
@@ -193,5 +203,7 @@ export function mergePreferences(partial: unknown): Preferences {
   home.sections = normalizeHomeSections(home.sections);
   home.hiddenSections = Array.isArray(home.hiddenSections) ? home.sections.filter((t) => home.hiddenSections.includes(t)) : [];
   if (![6, 12, 24].includes(home.rowLimit)) home.rowLimit = DEFAULT_PREFERENCES.home.rowLimit;
+  const pinned = prefs.categories.pinned;
+  prefs.categories.pinned = Array.isArray(pinned) ? [...new Set(pinned.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 200) : [];
   return prefs;
 }

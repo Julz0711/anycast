@@ -228,6 +228,9 @@ function LiveSettings({ prefs, form, all }: { prefs: P; form: FormFactor; all?: 
       <Row label={`Live TV layout · this ${FORM_NAME[form]}`} hint="Simple is a channel list with now and next. Extended is the full guide grid." stack>
         <LayoutPreviews value={l[LAYOUT_KEY[form]]} onChange={(v) => setPref('live', { [LAYOUT_KEY[form]]: v })} />
       </Row>
+      <Row label="Merge duplicate channels" hint="Show a channel once when your provider has it in several versions (HD, FHD, 4K, RAW…). Pick another version in the player; if one doesn't start, the next one plays.">
+        <Toggle label="Merge duplicate channels" checked={l.mergeVariants} onChange={(v) => setPref('live', { mergeVariants: v })} />
+      </Row>
       {all && (
         <>
           {(['phone', 'large', 'tv'] as const)

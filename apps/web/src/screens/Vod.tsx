@@ -69,7 +69,7 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
           ))}
         </div>
       ) : (
-        <CategoryChips label="Categories" noun="categories" lead={LEAD} categories={catChips} value={cat} onChange={pick} />
+        <CategoryChips kind={kind} label="Categories" noun="categories" lead={LEAD} categories={catChips} value={cat} onChange={pick} />
       )}
 
       {cat === 'home' ? (

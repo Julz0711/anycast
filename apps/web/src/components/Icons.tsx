@@ -52,6 +52,12 @@ export const IconUp = (p: SVGProps<SVGSVGElement>) => (
 export const IconDown = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M6 9l6 6 6-6" /></svg>
 );
+export const IconPin = ({ filled, ...p }: SVGProps<SVGSVGElement> & { filled?: boolean }) => (
+  <svg {...base(p)} fill={filled ? 'currentColor' : 'none'}><path d="M9 4h6l-1 5 3 3v2H7v-2l3-3z" /><path d="M12 14v6" /></svg>
+);
+export const IconEyeOff = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M3 3l18 18M10.6 6.1A9.8 9.8 0 0112 6c5 0 8.5 4.5 9.5 6-.5.8-1.5 2.1-2.9 3.3M6.6 7.6C4.6 8.9 3.2 10.8 2.5 12c1 1.5 4.5 6 9.5 6 1.6 0 3-.4 4.3-1.1" /><path d="M9.9 9.9a3 3 0 004.2 4.2" /></svg>
+);
 export const IconFullscreen = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M4 9V5a1 1 0 011-1h4M15 4h4a1 1 0 011 1v4M20 15v4a1 1 0 01-1 1h-4M9 20H5a1 1 0 01-1-1v-4" /></svg>
 );

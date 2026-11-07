@@ -8,6 +8,10 @@ installable PWA) to every device in the house: phone, laptop, tablet and TV brow
 - **Rewind and catch-up:** a timeline per channel built from the provider's archive and a rolling
   buffer the server records while you watch. Pinned channels keep a buffer all the time.
 - **Movies and series** with resume, continue watching, autoplay of the next episode and thumbnail previews while scrubbing (for the parts already played).
+- **A tidy catalog:** a channel your provider carries in many versions (HD, FHD, 4K, RAW, backups)
+  shows once, with a Version menu in the player and an automatic switch to the next version when
+  one doesn't start. Category names read the same way everywhere ("UK · Sports"), titles lose their
+  quality tags, and each profile can pin, reorder and hide categories right from the chip row.
 - **Channel lists:** your own ordered lists ("News", "Sport") as chips in Live TV; zapping follows the list.
 - **Profiles** like a streaming service: a full-screen "Who's watching?" picker, built-in pictures or your own photo, an optional profile PIN, and a profile menu to switch in one tap. Each profile has its own favorites, channel lists, progress, settings and language filters, synced live
   across devices.
