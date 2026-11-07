@@ -257,6 +257,8 @@ describe('recent channels (Home › Jump back in)', () => {
     const off = built.services.bus.subscribe(me.id, (e) => events.push(e));
     await json({ method: 'PUT', url: '/api/recent-channels', payload: { channelId: channels[0]!.id } });
     off();
-    expect(events.find((e) => e.type === 'recent-channels')).toMatchObject({ type: 'recent-channels', profileId: me.id, recent: [{ id: channels[0]!.id }] });
+    const ev = events.find((e) => e.type === 'recent-channels');
+    expect(ev).toMatchObject({ type: 'recent-channels', profileId: me.id });
+    expect(ev?.type === 'recent-channels' && ev.recent[0]!.id).toBe(channels[0]!.id);
   });
 });

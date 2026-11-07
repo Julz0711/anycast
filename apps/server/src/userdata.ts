@@ -82,8 +82,11 @@ export class UserData {
   }
 
   /** Moves a channel to the front of the recent channels; the oldest past RECENT_CHANNELS_MAX drop off. */
-  touchRecentChannel(profileId: string, channelId: string, at = Date.now()): RecentChannel[] {
+  touchRecentChannel(profileId: string, channelId: string): RecentChannel[] {
     this.db.transaction(() => {
+      // strictly newer than the newest so far, so two plays within the same millisecond keep their order
+      const top = this.db.prepare('SELECT MAX(watched_at) AS t FROM recent_channels WHERE profile_id = ?').get(profileId) as { t: number | null };
+      const at = Math.max(Date.now(), (top.t ?? 0) + 1);
       this.db
         .prepare('INSERT INTO recent_channels (profile_id, channel_id, watched_at) VALUES (?, ?, ?) ON CONFLICT(profile_id, channel_id) DO UPDATE SET watched_at = excluded.watched_at')
         .run(profileId, channelId, at);
