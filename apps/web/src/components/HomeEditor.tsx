@@ -12,6 +12,7 @@ import '../theme/settings.css';
 
 export const HOME_SECTIONS: Record<HomeSectionId, { title: string; hint: string }> = {
   continue: { title: 'Continue watching', hint: 'Movies and episodes you started' },
+  newEpisodes: { title: 'New episodes', hint: 'New episodes of series you follow' },
   recent: { title: 'Jump back in', hint: 'Channels you watched lately' },
   next: { title: 'Up next', hint: 'The next episode of series you follow' },
   favorites: { title: 'Favorite channels', hint: "What's on now on your favorites" },

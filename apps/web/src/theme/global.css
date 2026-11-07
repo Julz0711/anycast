@@ -364,3 +364,31 @@ ul.fav-live, ul.fav-grid { list-style: none; margin: 0; }
 .sheet-toggle:hover { color: var(--text); }
 .sheet-foot { font-size: 0.8125rem; padding: 0 0.25rem; }
 .sheet-list:has(.sheet-row) { display: flex; flex-direction: column; gap: 0; }
+
+/* Movies and Series: sort and filters above the poster grid */
+.vod-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.75rem 0 0.25rem; }
+.vod-select { width: auto; height: 2.25rem; padding: 0 2rem 0 0.75rem; border-radius: 999px; font-size: 0.875rem; }
+.vod-select.on { border-color: var(--accent); color: var(--text); }
+[data-form="phone"] .vod-tools { margin: 0.5rem var(--gutter) 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+[data-form="phone"] .vod-select { flex: none; }
+.new-badge { display: inline-block; margin-right: 0.5rem; padding: 0.0625rem 0.4375rem; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.02em; vertical-align: 0.125em; }
+
+/* Movie page: the provider's backdrop behind the top, details below the actions */
+.movie-page { position: relative; }
+.movie-backdrop { position: absolute; inset: -1.75rem calc(-1 * var(--gutter)) auto; height: 26rem; overflow: hidden; z-index: 0; pointer-events: none; }
+.movie-backdrop img { width: 100%; height: 100%; object-fit: cover; opacity: 0.35; }
+.movie-backdrop::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 30%, var(--bg) 100%), linear-gradient(to right, var(--bg) 0%, transparent 60%); }
+.movie-page > :not(.movie-backdrop) { position: relative; z-index: 1; }
+.has-backdrop .detail { padding-top: 4rem; }
+.detail-rating { display: inline-flex; align-items: center; gap: 0.3125rem; font-weight: 700; font-size: 0.9375rem; margin-bottom: 0.75rem; }
+.detail-rating .ico { width: 1rem; height: 1rem; color: var(--accent); }
+.detail-facts { display: grid; gap: 0.625rem; margin: 1.75rem 0 0; max-width: 42rem; font-size: 0.875rem; }
+.detail-facts > div { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: 1rem; }
+.detail-facts dt { color: var(--muted); }
+.detail-facts dd { margin: 0; color: var(--text-2); }
+.btn.grow { flex: 1 1 100%; justify-content: center; }
+[data-form="phone"] .movie-backdrop { inset: calc(-0.75rem - var(--safe-t)) 0 auto; height: 15rem; }
+[data-form="phone"] .movie-backdrop::after { background: linear-gradient(to bottom, transparent 20%, var(--bg) 100%); }
+[data-form="phone"] .has-backdrop .detail { padding-top: 5rem; }
+[data-form="phone"] .detail-facts > div { grid-template-columns: 5rem minmax(0, 1fr); }
+[data-form="phone"] .detail-poster { max-width: 8rem; }

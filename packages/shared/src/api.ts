@@ -296,7 +296,10 @@ export interface Api {
   'GET /api/series': { query: VodQuery; res: Page<Series> };
   /** Followed series with episodes added since the profile last opened them, newest first. */
   'GET /api/new-episodes': { res: NewEpisodes[] };
+  /** Episodes new since the profile last opened the series carry isNew (see PUT …/seen). */
   'GET /api/series/:id': { res: SeriesDetail };
+  /** The series page was opened: its new episodes stop being new. */
+  'PUT /api/series/:id/seen': { res: { ok: true } };
   /** Hydrate items by id (favorites, deep links): comma-separated ids per kind, at most 500 each. Hidden items are left out. */
   'GET /api/items': { query: { live?: string; movie?: string; series?: string }; res: ItemsById };
   'GET /api/search': { query: { q: string }; res: SearchResults };

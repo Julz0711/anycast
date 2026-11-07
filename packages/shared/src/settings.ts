@@ -19,15 +19,22 @@ export type TabId = 'home' | 'search' | 'favorites' | 'lists' | 'live' | 'movies
 export const ALL_TABS: readonly TabId[] = ['home', 'search', 'favorites', 'lists', 'live', 'movies', 'series'];
 
 /** The sections of the Home dashboard. */
-export type HomeSectionId = 'continue' | 'recent' | 'next' | 'favorites' | 'watchLater';
+export type HomeSectionId = 'continue' | 'newEpisodes' | 'recent' | 'next' | 'favorites' | 'watchLater';
 /** Every Home section, in the default order. */
-export const ALL_HOME_SECTIONS: readonly HomeSectionId[] = ['continue', 'recent', 'next', 'favorites', 'watchLater'];
+export const ALL_HOME_SECTIONS: readonly HomeSectionId[] = ['continue', 'newEpisodes', 'recent', 'next', 'favorites', 'watchLater'];
 
-/** A saved Home section order made valid: unknown and repeated ids dropped, missing sections added at the end in default order. */
+/**
+ * A saved Home section order made valid: unknown and repeated ids dropped, and missing sections
+ * (new ones too) added right after the section that comes before them in the default order.
+ */
 export function normalizeHomeSections(order: unknown): HomeSectionId[] {
   const out: HomeSectionId[] = [];
   for (const t of Array.isArray(order) ? order : []) if (ALL_HOME_SECTIONS.includes(t as HomeSectionId) && !out.includes(t as HomeSectionId)) out.push(t as HomeSectionId);
-  for (const t of ALL_HOME_SECTIONS) if (!out.includes(t)) out.push(t);
+  ALL_HOME_SECTIONS.forEach((t, i) => {
+    if (out.includes(t)) return;
+    const prev = i > 0 ? out.indexOf(ALL_HOME_SECTIONS[i - 1]!) : -1;
+    out.splice(prev + 1, 0, t);
+  });
   return out;
 }
 
@@ -162,7 +169,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     hiddenTabs: [],
   },
   home: {
-    sections: ['continue', 'recent', 'next', 'favorites', 'watchLater'],
+    sections: [...ALL_HOME_SECTIONS],
     hiddenSections: [],
     showHero: true,
     favoritesWithGuideOnly: false,

@@ -137,13 +137,16 @@ describe('new episodes', () => {
     expect(fresh[0]!.series.id).toBe(s.id);
     expect(fresh[0]!.episodes.map((e) => e.id)).toEqual(['new-ep-1']);
 
-    // opening the series marks it on that page, and clears it afterwards
+    // the series page marks it, also when loaded again (a prefetch changes nothing) ...
     db.prepare('UPDATE series SET episodes_synced_at = ? WHERE id = ?').run(Date.now(), s.id);
-    db.prepare('UPDATE series_seen SET seen_at = ? WHERE series_id = ?').run(Date.now() - 2000, s.id);
     db.prepare("UPDATE favorites SET added_at = ? WHERE kind = 'series' AND item_id = ?").run(Date.now() - 5000, s.id);
     db.prepare("UPDATE episodes SET first_seen = ? WHERE id = 'new-ep-1'").run(Date.now() - 1000);
-    const opened = await json<SeriesDetail>({ url: `/api/series/${s.id}` });
-    expect(opened.seasons.flatMap((x) => x.episodes).filter((e) => e.isNew).map((e) => e.id)).toEqual(['new-ep-1']);
+    for (let i = 0; i < 2; i++) {
+      const opened = await json<SeriesDetail>({ url: `/api/series/${s.id}` });
+      expect(opened.seasons.flatMap((x) => x.episodes).filter((e) => e.isNew).map((e) => e.id)).toEqual(['new-ep-1']);
+    }
+    // ... until the page says it was opened
+    expect((await json<{ ok: boolean }>({ method: 'PUT', url: `/api/series/${s.id}/seen` })).ok).toBe(true);
     expect(await json<NewEpisodes[]>({ url: '/api/new-episodes' })).toEqual([]);
     const reopened = await json<SeriesDetail>({ url: `/api/series/${s.id}` });
     expect(reopened.seasons.flatMap((x) => x.episodes).some((e) => e.isNew)).toBe(false);

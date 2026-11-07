@@ -175,6 +175,19 @@ function hidden(rules: HideRules, x: { country: string | null; language: string 
     rules.categoryIds.includes(x.categoryId)
   );
 }
+/** Sort and filters of GET /api/movies and /api/series (VodQuery). */
+function vodView<T extends { name: string; year: number | null; rating: number | null }>(list: T[], q: URLSearchParams): T[] {
+  const from = Number(q.get('yearFrom') ?? 0);
+  const to = Number(q.get('yearTo') ?? 0);
+  const min = Number(q.get('minRating') ?? 0);
+  const out = list.filter((x) => (!from || (x.year ?? 0) >= from) && (!to || (x.year !== null && x.year <= to)) && (!min || (x.rating ?? 0) >= min));
+  const sort = q.get('sort');
+  if (sort === 'name') out.sort((a, b) => a.name.localeCompare(b.name));
+  else if (sort === 'year') out.sort((a, b) => (b.year ?? -1) - (a.year ?? -1));
+  else if (sort === 'rating') out.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
+  return out;
+}
+
 function page<T>(items: T[], q: URLSearchParams) {
   const offset = Number(q.get('offset') ?? 0);
   const limit = Number(q.get('limit') ?? 100);
@@ -361,12 +374,19 @@ const routes: [string, RegExp, Handler][] = [
   }],
   ['GET', /^\/api\/movies$/, (_m, q, _b, st) => {
     const cat = q.get('categoryId');
-    const res = page(fx.movies.filter((x) => !hidden(rulesOf(st), x) && (!cat || x.categoryId === cat)), q);
+    const res = page(vodView(fx.movies.filter((x) => !hidden(rulesOf(st), x) && (!cat || x.categoryId === cat)), q), q);
     return { ...res, items: res.items.map((x) => mask(st, x)) };
   }],
+  ['GET', /^\/api\/movies\/([^/]+)$/, (m, _q, _b, st) => {
+    const mv = fx.movies.find((x) => x.id === decodeURIComponent(m[1]!));
+    if (!mv) throw new ApiError(404, 'Movie not found');
+    return mask(st, { ...mv, genre: 'Drama, Mystery', cast: 'Ada Brooks, Sam Okafor, Lena Varga', director: 'Mira Holt', releaseDate: mv.year ? `${mv.year}-03-14` : null, backdrop: null, trailer: null });
+  }],
+  ['GET', /^\/api\/new-episodes$/, () => []],
+  ['PUT', /^\/api\/series\/[^/]+\/seen$/, () => ({ ok: true })],
   ['GET', /^\/api\/series$/, (_m, q, _b, st) => {
     const cat = q.get('categoryId');
-    return page(fx.series.filter((x) => !hidden(rulesOf(st), x) && (!cat || x.categoryId === cat)), q);
+    return page(vodView(fx.series.filter((x) => !hidden(rulesOf(st), x) && (!cat || x.categoryId === cat)), q), q);
   }],
   ['GET', /^\/api\/items$/, (_m, q, _b, st) => {
     const ids = (k: string) => (q.get(k) ?? '').split(',').filter(Boolean);

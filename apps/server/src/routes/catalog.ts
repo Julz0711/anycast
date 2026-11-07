@@ -186,7 +186,7 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
     const { adult } = scope(req);
     adult.assertOpen(row.category_id);
     const { profileId } = auth(req);
-    // what was new before this visit stays marked on this page; the next visit starts from now
+    // prefetching the page must not clear what is new: the page says when it was opened (PUT …/seen)
     const before = seenAt(s.db, profileId, row.id);
     try {
       await s.sync.ensureEpisodes(row.id);
@@ -197,7 +197,6 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
       }
     }
     const fresh = newEpisodeIds(s.db, profileId, row.id, before);
-    markSeen(s.db, profileId, row.id);
     const seasons = new Map<number, ReturnType<typeof toEpisode>[]>();
     for (const e of listEpisodes(s.db, row.id).map((r) => (fresh.has(r.id) ? { ...toEpisode(r), isNew: true } : toEpisode(r)))) {
       const list = seasons.get(e.season) ?? [];
@@ -205,6 +204,12 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
       seasons.set(e.season, list);
     }
     return { ...adult.item(toSeries(row)), seasons: [...seasons.entries()].map(([season, episodes]) => ({ season, episodes })) };
+  });
+
+  app.put<{ Params: { id: string } }>('/api/series/:id/seen', async (req, reply) => {
+    if (!getSeries(s.db, req.params.id)) return reply.code(404).send({ error: 'not_found', message: 'Series not found' });
+    markSeen(s.db, auth(req).profileId, req.params.id);
+    return { ok: true as const };
   });
 
   app.get('/api/search', async (req) => {

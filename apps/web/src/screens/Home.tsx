@@ -20,6 +20,7 @@ import { Empty, LogoTile, ProgressBar, Skeleton } from '../components/ui';
 import { IconClose, IconPlay } from '../components/Icons';
 import { HOME_SECTIONS, HomeEditor } from '../components/HomeEditor';
 import { prefetchPlayer } from '../player/prefetch';
+import { NewEpisodeCards, useNewEpisodes } from '../components/NewEpisodes';
 import '../theme/home.css';
 
 type ContMovie = Movie & { progress: Progress };
@@ -69,6 +70,8 @@ export function HomeScreen() {
     return out.sort((a, b) => updated(b) - updated(a));
   }, [cont.data]);
   const upNext = useMemo(() => (cont.data?.episodes ?? []).filter((e) => e.progress.position <= 0), [cont.data]);
+
+  const newEps = useNewEpisodes(want('newEpisodes'));
 
   const recentKey = recentIds.map((r) => r.id).join(',');
   const needRecent = (want('recent') || home.showHero) && !!recentKey;
@@ -126,9 +129,10 @@ export function HomeScreen() {
   const lastCh = recentRows[0];
   const heroChannel = lastCh && (!lastCont || (watchedAt.get(lastCh.id) ?? 0) > updated(lastCont));
 
-  const loaded = (!needCont || !!cont.data) && (!needRecent || !!recent.data) && (!needFavs || !!favs.data) && (!needWl || !!wl.data);
+  const loaded = (!want('newEpisodes') || !!newEps.data) && (!needCont || !!cont.data) && (!needRecent || !!recent.data) && (!needFavs || !!favs.data) && (!needWl || !!wl.data);
   const counts: Record<HomeSectionId, number> = {
     continue: contItems.length,
+    newEpisodes: newEps.data?.length ?? 0,
     recent: recentRows.length,
     next: upNext.length,
     favorites: favRows.length,
@@ -204,6 +208,13 @@ export function HomeScreen() {
                     </div>
                   ))}
             </div>
+          </Section>
+        );
+      case 'newEpisodes':
+        if (!newEps.data?.length) return null;
+        return (
+          <Section key={id} id={id} title={title}>
+            <NewEpisodeCards items={newEps.data} limit={limit} row="home-new-episodes" />
           </Section>
         );
       case 'next':
