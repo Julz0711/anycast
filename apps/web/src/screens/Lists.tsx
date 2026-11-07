@@ -7,6 +7,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { CHANNEL_LIST_LIMITS, MEDIA_LIST_LIMITS, type ChannelList, type LiveChannelWithNow, type MediaList, type Movie, type Series } from '@anycast/shared';
+import { LibraryHead } from '../components/PageHead';
 import { useApp } from '../store/app';
 import { setZapList } from '../store/actions';
 import { createList, createMediaList, deleteMediaList, openAddToList, renameMediaList, toggleInMediaList } from '../store/lists';
@@ -61,9 +62,7 @@ export function ListsScreen() {
 function ListsSkeleton() {
   return (
     <div className="lists-screen" aria-busy="true">
-      <div className="page-head">
-        <h1 className="h1">Lists</h1>
-      </div>
+      <LibraryHead />
       <div className="lt-tabs" aria-hidden="true">
         {[7, 5, 6].map((w, i) => (
           <Skeleton key={i} w={`${w}rem`} h="2.5rem" r="999px" style={{ flex: 'none' }} />
@@ -89,12 +88,13 @@ function ListsShell(props: { tabs: Tab[]; current?: Tab }) {
   };
   return (
     <div className="lists-screen">
-      <div className="page-head">
-        <h1 className="h1">Lists</h1>
-        <button type="button" className="btn" onClick={() => setCreating(true)}>
-          + New list
-        </button>
-      </div>
+      <LibraryHead
+        actions={
+          <button type="button" className="btn" onClick={() => setCreating(true)}>
+            + New list
+          </button>
+        }
+      />
       <div className="lt-tabs" role="tablist" aria-label="Your lists" data-nav-row="list-tabs">
         {props.tabs.map((t, i) => {
           const prev = props.tabs[i - 1];

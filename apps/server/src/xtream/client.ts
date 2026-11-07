@@ -3,8 +3,8 @@ import type { z } from 'zod';
 import { jsonListItems } from './jsonstream';
 import type { XtreamCredentials } from '../config';
 import {
-  AuthResponse, parseList, parseLiveStream, parseSeries, parseSeriesInfo, parseVodStream, XCategory, XLiveStream, XSeries, XVodStream,
-  type XSeriesInfo,
+  AuthResponse, parseList, parseLiveStream, parseSeries, parseSeriesInfo, parseVodInfo, parseVodStream, XCategory, XLiveStream, XSeries, XVodStream,
+  type XSeriesInfo, type XVodInfo,
 } from './schemas';
 
 export class XtreamError extends Error {
@@ -118,6 +118,10 @@ export class XtreamClient {
       const r = parse(item);
       if (r) yield r;
     }
+  }
+
+  async vodInfo(vodId: string): Promise<XVodInfo> {
+    return parseVodInfo(await this.json({ action: 'get_vod_info', vod_id: vodId }));
   }
 
   async seriesInfo(seriesId: string): Promise<XSeriesInfo> {

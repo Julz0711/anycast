@@ -98,7 +98,7 @@ export class AdultView {
   item<T extends Item & { name: string; rawName: string }>(x: T): T {
     if (this.lockedIds.has(x.categoryId)) {
       const out = { ...x, name: LOCKED_NAME, rawName: LOCKED_NAME, locked: true } as Record<string, unknown>;
-      for (const k of ['logo', 'poster', 'plot', 'year', 'rating', 'epgChannelId'] as const) if (k in out) out[k] = null;
+      for (const k of ['logo', 'poster', 'backdrop', 'plot', 'year', 'rating', 'epgChannelId', 'genre', 'cast', 'director', 'trailer'] as const) if (k in out) out[k] = null;
       if ('now' in out) out.now = maskProgram(out.now as EpgProgram | null);
       if ('next' in out) out.next = maskProgram(out.next as EpgProgram | null);
       return out as T;
@@ -106,8 +106,9 @@ export class AdultView {
     if (this.adultIds.has(x.categoryId)) {
       // <img> requests carry no profile header: name it in the URL so /api/art checks the right profile
       const out = { ...x } as Record<string, unknown>;
-      for (const k of ['logo', 'poster'] as const) {
-        if (typeof out[k] === 'string') out[k] = `${out[k] as string}?profile=${encodeURIComponent(this.profileId)}`;
+      for (const k of ['logo', 'poster', 'backdrop'] as const) {
+        const u = out[k];
+        if (typeof u === 'string') out[k] = `${u}${u.includes('?') ? '&' : '?'}profile=${encodeURIComponent(this.profileId)}`;
       }
       return out as T;
     }

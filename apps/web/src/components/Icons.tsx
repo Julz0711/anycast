@@ -85,6 +85,13 @@ export const IconMore = (p: SVGProps<SVGSVGElement>) => (
 export const IconLists = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" strokeWidth={3} /></svg>
 );
+export const IconInfo = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="M12 11v5.5" /><path d="M12 7.5h.01" strokeWidth={2.5} /></svg>
+);
+/** Library: books on a shelf */
+export const IconLibrary = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M5 4h3v16H5zM10 4h3v16h-3z" /><path d="M15.2 5.2l2.9-.8 3.6 15-2.9.8z" /></svg>
+);
 export const IconBookmark = ({ filled, ...p }: SVGProps<SVGSVGElement> & { filled?: boolean }) => (
   <svg {...base(p)} fill={filled ? 'currentColor' : 'none'}><path d="M6.5 3.5h11a1 1 0 011 1v16l-6.5-4.2-6.5 4.2v-16a1 1 0 011-1z" /></svg>
 );

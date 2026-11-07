@@ -23,6 +23,7 @@ import { Ribbon, VodBar } from './Timeline';
 import { useThumbIndex } from './thumbs';
 import { hasTrackChoice, playingTracks, reloadTracks as keepTracks, renditionOf, subtitleAction, type TrackRequest } from './tracks';
 import { TracksMenu } from './TracksMenu';
+import { RewindTip } from './RewindTip';
 import { useVariants, useVersionFallback, VersionsMenu, versionLabel } from './variants';
 import { IconBack, IconClose, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock } from '../components/Icons';
 import { openAddToList } from '../store/lists';
@@ -1246,9 +1247,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             </button>
           )}
           {isLive && isAdmin && bufPins.pins?.maxPins === 0 && !pinned && (
-            <span className="pl-note" data-testid="pin-unavailable" title="Background buffering needs a second provider connection">
-              Rewind works while you watch. Your subscription plays one stream at a time, so channels can't keep a buffer in the background.
-            </span>
+            <RewindTip />
           )}
           {isLive && isAdmin && bufPins.pins && (bufPins.pins.maxPins !== 0 || pinned) && (
             <button

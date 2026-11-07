@@ -29,11 +29,11 @@ test('home: continue watching, jump back in, up next, favorites and watch later;
   await page.getByRole('button', { name: 'Customize' }).click();
   await page.getByRole('switch', { name: 'Show Favorite channels' }).click();
   await expect(section('Favorite channels')).toHaveCount(0);
-  for (let i = 0; i < 4; i++) await page.getByRole('button', { name: 'Move Watch Later up' }).click();
+  for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Move Watch Later up' }).click();
   await expect(page.getByRole('button', { name: 'Move Watch Later up' })).toBeDisabled();
   await expect
     .poll(async () => ((await (await api.get('/api/preferences')).json()) as { home: { sections: string[]; hiddenSections: string[] } }).home)
-    .toEqual(expect.objectContaining({ sections: ['watchLater', 'continue', 'recent', 'next', 'favorites'], hiddenSections: ['favorites'] }));
+    .toEqual(expect.objectContaining({ sections: ['watchLater', 'continue', 'newEpisodes', 'recent', 'next', 'favorites'], hiddenSections: ['favorites'] }));
   await page.getByRole('button', { name: 'Done' }).click();
   const headings = await page.locator('.home-sec h2').allTextContents();
   expect(headings[0]).toBe('Watch Later');

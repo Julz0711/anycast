@@ -301,8 +301,8 @@ h1, h2, h3, p { margin: 0; }
 .prog[data-state="now"] .prog-s { color: var(--accent); font-weight: 600; }
 .prog[data-state="none"] { background: repeating-linear-gradient(45deg, var(--surface) 0 5px, var(--bg) 5px 10px); cursor: default; }
 .prog[data-state="future"]:hover { background: rgba(255,255,255,0.05); }
-.prog-empty { background: rgba(255,255,255,0.035); color: var(--text-2); }
-.prog-empty:hover { background: rgba(255,255,255,0.06); }
+.prog-empty { background: transparent; color: var(--muted); }
+.prog-empty:hover, .prog-empty:focus-visible { background: rgba(255,255,255,0.05); color: var(--text-2); }
 .prog.skel { animation-duration: 1.8s; }
 .now-line { position: absolute; bottom: 0; width: 2px; margin-left: -1px; background: var(--accent); z-index: 2; pointer-events: none; }
 .now-line::before { content: ''; position: absolute; top: -4px; left: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
@@ -364,3 +364,64 @@ ul.fav-live, ul.fav-grid { list-style: none; margin: 0; }
 .sheet-toggle:hover { color: var(--text); }
 .sheet-foot { font-size: 0.8125rem; padding: 0 0.25rem; }
 .sheet-list:has(.sheet-row) { display: flex; flex-direction: column; gap: 0; }
+
+/* Movies and Series: sort and filters above the poster grid */
+.vod-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.75rem 0 0.25rem; }
+.vod-select { width: auto; height: 2.25rem; padding: 0 2rem 0 0.75rem; border-radius: 999px; font-size: 0.875rem; }
+.vod-select.on { border-color: var(--accent); color: var(--text); }
+[data-form="phone"] .vod-tools { margin: 0.5rem var(--gutter) 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+[data-form="phone"] .vod-select { flex: none; }
+.new-badge { display: inline-block; margin-right: 0.5rem; padding: 0.0625rem 0.4375rem; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.02em; vertical-align: 0.125em; }
+
+/* Movie page: the provider's backdrop behind the top, details below the actions */
+.movie-page { position: relative; }
+.movie-backdrop { position: absolute; inset: -1.75rem calc(-1 * var(--gutter)) auto; height: 26rem; overflow: hidden; z-index: 0; pointer-events: none; }
+.movie-backdrop img { width: 100%; height: 100%; object-fit: cover; opacity: 0.35; }
+.movie-backdrop::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 30%, var(--bg) 100%), linear-gradient(to right, var(--bg) 0%, transparent 60%); }
+.movie-page > :not(.movie-backdrop) { position: relative; z-index: 1; }
+.has-backdrop .detail { padding-top: 4rem; }
+.detail-rating { display: inline-flex; align-items: center; gap: 0.3125rem; font-weight: 700; font-size: 0.9375rem; margin-bottom: 0.75rem; }
+.detail-rating .ico { width: 1rem; height: 1rem; color: var(--accent); }
+.detail-facts { display: grid; gap: 0.625rem; margin: 1.75rem 0 0; max-width: 42rem; font-size: 0.875rem; }
+.detail-facts > div { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: 1rem; }
+.detail-facts dt { color: var(--muted); }
+.detail-facts dd { margin: 0; color: var(--text-2); }
+.btn.grow { flex: 1 1 100%; justify-content: center; }
+[data-form="phone"] .movie-backdrop { inset: calc(-0.75rem - var(--safe-t)) 0 auto; height: 15rem; }
+[data-form="phone"] .movie-backdrop::after { background: linear-gradient(to bottom, transparent 20%, var(--bg) 100%); }
+[data-form="phone"] .has-backdrop .detail { padding-top: 5rem; }
+[data-form="phone"] .detail-facts > div { grid-template-columns: 5rem minmax(0, 1fr); }
+[data-form="phone"] .detail-poster { max-width: 8rem; }
+
+/* Page heads: actions at the end (phones: Search and the profile picture) */
+.head-actions { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+.head-profile { display: inline-flex; border-radius: 999px; }
+.head-profile .pic { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--line); }
+
+/* Library: Favorites and Lists */
+.lib-switch { display: flex; gap: 1.5rem; margin: -0.25rem 0 1rem; border-bottom: 1px solid var(--line); }
+.lib-switch a { padding: 0.5rem 0 0.625rem; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.lib-switch a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
+[data-form="phone"] .lib-switch { margin: 0 var(--gutter) 0.75rem; }
+
+/* Continue watching cards: a ⋯ menu (Mark as watched, Remove) */
+.card-wrap { position: relative; }
+.card-more { position: absolute; top: 0.5rem; right: 0.5rem; width: 2rem; height: 2rem; border-radius: 999px; background: rgb(0 0 0 / 0.55); color: #fff; opacity: 0; transition: opacity var(--dur); }
+.card-wrap:hover .card-more, .card-more:focus-visible, .card-more[aria-expanded="true"] { opacity: 1; }
+[data-form="phone"] .card-more, [data-form="tv"] .card-more { opacity: 1; }
+.card-menu { position: absolute; top: 2.75rem; right: 0.5rem; z-index: 20; min-width: 13rem; padding: 0.375rem; border-radius: 0.75rem; background: var(--surface-2); border: 1px solid var(--line); box-shadow: 0 12px 32px rgb(0 0 0 / 0.5); display: grid; }
+.card-menu button { text-align: left; padding: 0.625rem 0.75rem; border-radius: 0.5rem; font-size: 0.9375rem; }
+.card-menu button:hover, .card-menu button:focus-visible { background: var(--surface); }
+
+/* Chip rows: fade the edge that has more chips past it; arrows at the ends for the mouse */
+.chips-wrap { position: relative; min-width: 0; }
+.chips-wrap.more-right .chips { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 4rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 4rem), transparent); }
+.chips-wrap.more-left .chips { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 4rem), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 4rem), transparent); }
+.chips-wrap.more-left.more-right .chips { -webkit-mask-image: linear-gradient(to right, transparent, #000 4rem, #000 calc(100% - 4rem), transparent); mask-image: linear-gradient(to right, transparent, #000 4rem, #000 calc(100% - 4rem), transparent); }
+.chips-arrow { display: none; position: absolute; top: 0.25rem; z-index: 2; width: 2.25rem; height: 2.25rem; border-radius: 999px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); align-items: center; justify-content: center; }
+.chips-arrow .ico, .chips-arrow svg { width: 1rem; height: 1rem; }
+.chips-arrow.left { left: 0; }
+.chips-arrow.right { right: 0; }
+.chips-arrow:hover { background: var(--surface); }
+@media (hover: hover) and (pointer: fine) { [data-form="large"] .chips-arrow { display: inline-flex; } }
+[data-form="phone"] .fav-bar .seg + .seg { width: auto; }

@@ -196,3 +196,53 @@ export function parseSeriesInfo(data: unknown): XSeriesInfo {
     info: { name: str.parse(info.name), plot: str.parse(info.plot), cover: str.parse(info.cover) },
   };
 }
+
+/** get_vod_info: the movie's details. Panels fill these fields very unevenly; every field may be null. */
+export interface XVodInfo {
+  plot: string | null;
+  genre: string | null;
+  cast: string | null;
+  director: string | null;
+  releaseDate: string | null;
+  durationSecs: number | null;
+  rating: number | null;
+  country: string | null;
+  /** provider image URLs: a wide backdrop and the big cover */
+  backdrop: string | null;
+  cover: string | null;
+  /** YouTube video id */
+  trailer: string | null;
+}
+
+export function parseVodInfo(data: unknown): XVodInfo {
+  const obj = data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+  const info = obj.info && typeof obj.info === 'object' && !Array.isArray(obj.info) ? (obj.info as Record<string, unknown>) : {};
+  const s = (v: unknown) => {
+    const x = str.parse(v);
+    return x && x.trim() ? x.trim() : null;
+  };
+  const backdrops = Array.isArray(info.backdrop_path) ? info.backdrop_path : [info.backdrop_path];
+  const url = (v: unknown) => {
+    const x = s(v);
+    return x && /^https?:\/\//i.test(x) ? x : null;
+  };
+  const trailer = s(info.youtube_trailer);
+  const duration = num.parse(info.duration_secs) ?? (() => {
+    const d = s(info.duration);
+    if (!d || !/^\d+(:\d+){1,2}$/.test(d)) return null;
+    return d.split(':').map(Number).reduce((a, n) => a * 60 + n, 0) || null;
+  })();
+  return {
+    plot: s(info.plot) ?? s(info.description),
+    genre: s(info.genre),
+    cast: s(info.cast) ?? s(info.actors),
+    director: s(info.director),
+    releaseDate: s(info.releasedate) ?? s(info.release_date),
+    durationSecs: duration,
+    rating: num.parse(info.rating),
+    country: s(info.country),
+    backdrop: backdrops.map(url).find(Boolean) ?? null,
+    cover: url(info.cover_big) ?? url(info.movie_image),
+    trailer: trailer && /^[\w-]{6,20}$/.test(trailer) ? trailer : null,
+  };
+}

@@ -271,14 +271,13 @@ const Programs = memo(function Programs(props: {
       <button
         type="button"
         className="prog prog-empty"
-        style={{ left: props.clipX + 2, width: Math.max(2, props.viewW - 4) }}
+        style={{ left: props.clipX + 2, width: Math.min(Math.max(2, props.viewW - 4), 220) }}
         onClick={() => props.onPlay(ch)}
-        aria-label={`${ch.name}, no guide data, watch live`}
+        aria-label={`${ch.name}, no guide, watch live`}
         role="gridcell"
       >
         <span className="prog-inner">
-          <span className="prog-t">{ch.name}</span>
-          <span className="prog-s">No guide data</span>
+          <span className="prog-s">No guide · Watch live</span>
         </span>
       </button>
     );

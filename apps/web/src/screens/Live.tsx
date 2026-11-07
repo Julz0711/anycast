@@ -1,6 +1,6 @@
 /** Live TV: Simple (virtualized channel list) or Extended (guide grid), per-form-factor layout preference. */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Category, EpgProgram, LiveChannelWithNow } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
@@ -14,7 +14,8 @@ import { ChannelRow } from '../components/cards';
 import { Empty, LogoTile, ProgressBar, Segmented, Skeleton } from '../components/ui';
 import { CategoryChips } from '../components/CategoryChips';
 import { GuideGrid, type ChannelSource } from '../components/GuideGrid';
-import { IconListAdd, IconSearch, IconStar } from '../components/Icons';
+import { IconListAdd, IconStar } from '../components/Icons';
+import { SearchButton } from '../components/PageHead';
 import { openAddToList } from '../store/lists';
 import type { FormFactor } from '../lib/device';
 import { prefetchPlayer } from '../player/prefetch';
@@ -34,7 +35,6 @@ export function LiveScreen() {
   const version = useApp((s) => s.catalogVersion);
   const favIds = useApp((s) => s.favorites.filter((f) => f.kind === 'live').map((f) => f.id).join(','));
   const layout = live[LAYOUT_KEY[form]];
-  const hiddenSearch = useApp((s) => s.prefs.start.hiddenTabs.includes('search'));
   const navigate = useNavigate();
   const [cat, setCat] = useState(() => readLocal('anycast.liveCat') ?? 'all');
   const lists = useApp((s) => s.lists);
@@ -131,17 +131,12 @@ export function LiveScreen() {
               type="button"
               className="chip epg-filter"
               aria-pressed={onlyEpg}
-              aria-label="Only channels with a guide"
-              title="Only channels with a guide"
+              title="Show only channels with a programme guide"
               onClick={() => setPref('live', { guideOnlyWithEpg: !onlyEpg })}
             >
-              {form === 'phone' ? 'With guide' : 'Only channels with a guide'}
+              With guide
             </button>
-            {form === 'phone' && hiddenSearch && (
-              <Link to="/search" className="icon-btn" aria-label="Search">
-                <IconSearch />
-              </Link>
-            )}
+            {form === 'phone' && <SearchButton />}
           </div>
         </div>
         {layout === 'extended' && form !== 'phone' && <Hero source={source} favChannels={list ? [] : favChannels} onPlay={open} />}
@@ -234,12 +229,24 @@ function Hero(props: { source: ChannelSource & { total: number | null }; favChan
         {isNow && <span className="tag">LIVE</span>}
       </div>
       <div className="hero-info">
-        <div className="hero-meta tabnum">
-          {ch.number} · {ch.name}
-          {p ? ` · ${fmtRange(p.start, p.end)}` : ''}
-        </div>
-        <div className="hero-title">{p?.title ?? 'No programme information'}</div>
-        {p?.description && <p className="hero-desc">{p.description}</p>}
+        {p ? (
+          <>
+            <div className="hero-meta tabnum">
+              {ch.number} · {ch.name} · {fmtRange(p.start, p.end)}
+            </div>
+            <div className="hero-title">{p.title}</div>
+            {p.description && <p className="hero-desc">{p.description}</p>}
+          </>
+        ) : (
+          // no guide: the channel itself is the subject
+          <>
+            <div className="hero-meta tabnum">
+              {[`No. ${ch.number}`, ch.quality, ch.variants ? `${ch.variants + 1} versions` : null, ch.archiveDays > 0 ? `Catch-up ${ch.archiveDays} ${ch.archiveDays === 1 ? 'day' : 'days'}` : null].filter(Boolean).join(' · ')}
+            </div>
+            <div className="hero-title">{ch.name}</div>
+            <p className="hero-desc muted">This channel has no programme guide. It plays live.</p>
+          </>
+        )}
         {isNow && p && <ProgressBar value={(now - p.start) / (p.end - p.start)} />}
         <div className="actions">
           {isPast ? (

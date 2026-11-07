@@ -1,10 +1,10 @@
 /** Poster, continue-watching and channel cards. */
-import { memo, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { LiveChannelWithNow, Movie, Series } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
 import { toneFor } from '../lib/misc';
-import { fmtClock, fmtDuration } from '../lib/time';
+import { fmtClock, fmtLength } from '../lib/time';
 import { IconLock, IconMore, IconStar } from './Icons';
 import { useChannelMenu } from './lists';
 import { openAddToList } from '../store/lists';
@@ -68,18 +68,86 @@ export const PosterCard = memo(function PosterCard(props: { kind: 'movie' | 'ser
   );
 });
 
-export function ContinueCard(props: { to: string; id: string; title: string; subtitle?: string; poster: string | null; position: number; duration: number; locked?: boolean }) {
-  const left = props.duration - props.position;
+export interface CardAction { label: string; onSelect: () => void }
+
+/** "25 min left", "1 h 5 min left": the same wording at every length. */
+export const timeLeft = (position: number, duration: number) => `${fmtLength(Math.max(60, duration - position))} left`;
+
+export function ContinueCard(props: {
+  to: string;
+  id: string;
+  title: string;
+  subtitle?: string;
+  poster: string | null;
+  position: number;
+  duration: number;
+  locked?: boolean;
+  /** a ⋯ menu (also right-click and long-press): Mark as watched, Remove */
+  actions?: CardAction[];
+}) {
   const onClick = useLockedLink(props.locked, props.to);
-  return (
-    <Link to={props.to} className="cont-card poster" onClick={onClick} onMouseEnter={prefetchPlayer} onFocus={prefetchPlayer}>
+  const [open, setOpen] = useState(false);
+  const menu = useChannelMenu(props.actions?.length ? () => setOpen(true) : undefined);
+  const card = (
+    <Link to={props.to} className="cont-card poster" onClick={onClick} onMouseEnter={prefetchPlayer} onFocus={prefetchPlayer} {...menu}>
       <Art id={props.id} name={props.title} src={props.poster} wide locked={props.locked}>
-        <span className="left tabnum">{left < 3600 ? `${Math.max(1, Math.round(left / 60))} min left` : `${fmtDuration(props.position)} of ${fmtDuration(props.duration)}`}</span>
+        <span className="left tabnum">{timeLeft(props.position, props.duration)}</span>
       </Art>
       <ProgressBar value={props.position / props.duration} label={`${Math.round((props.position / props.duration) * 100)}% watched`} />
       <div className="t">{props.title}</div>
       {props.subtitle && <div className="s">{props.subtitle}</div>}
     </Link>
+  );
+  if (!props.actions?.length) return card;
+  return (
+    <div className="card-wrap">
+      {card}
+      <button type="button" className="card-more icon-btn" aria-label={`More for ${props.title}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <IconMore />
+      </button>
+      {open && <CardMenu actions={props.actions} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+function CardMenu(props: { actions: CardAction[]; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('button')?.focus();
+    const onDown = (e: PointerEvent) => {
+      if (!ref.current?.parentElement?.contains(e.target as Node)) props.onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' && e.key !== 'GoBack' && e.key !== 'BrowserBack') return;
+      e.preventDefault();
+      e.stopPropagation();
+      props.onClose();
+      ref.current?.parentElement?.querySelector<HTMLElement>('.card-more')?.focus();
+    };
+    window.addEventListener('pointerdown', onDown);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('keydown', onKey, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div ref={ref} className="card-menu" role="menu" data-nav-trap="">
+      {props.actions.map((a) => (
+        <button
+          key={a.label}
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            props.onClose();
+            a.onSelect();
+          }}
+        >
+          {a.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

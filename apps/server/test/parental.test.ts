@@ -230,7 +230,7 @@ describe('locked', () => {
     // visible adult artwork names the profile, because <img> requests send no profile header
     const withLogo = page.items.find((x) => x.logo);
     if (withLogo) {
-      expect(withLogo.logo).toContain(`?profile=${me.id}`);
+      expect(withLogo.logo).toContain(`profile=${me.id}`);
       expect((await call({ url: withLogo.logo! })).statusCode).not.toBe(403);
     }
     expect((await call({ url: `/api/timeline/${adultChannel}` })).statusCode).toBe(200);

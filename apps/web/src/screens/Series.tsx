@@ -4,9 +4,10 @@ import { useAsync } from '../lib/hooks';
 import { ContinueCard } from '../components/cards';
 import { Skeleton } from '../components/ui';
 import { VodBrowse } from './Vod';
+import { NewEpisodesShelf } from '../components/NewEpisodes';
 
 export function SeriesScreen() {
-  return <VodBrowse kind="series" title="Series" continueRow={<ContinueEpisodes />} />;
+  return <VodBrowse kind="series" title="Series" continueRow={<ContinueEpisodes />} extraRows={<NewEpisodesShelf />} />;
 }
 
 function ContinueEpisodes() {

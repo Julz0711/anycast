@@ -63,3 +63,4 @@
 .home-editor .set-row:last-child { border-bottom: 0; }
 .home-reset { margin-top: 0.25rem; }
 .home-empty-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; margin-top: 0.5rem; }
+.home-favs .fav-live-item { height: 4.75rem; overflow: hidden; }

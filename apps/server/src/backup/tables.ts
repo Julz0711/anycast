@@ -17,6 +17,7 @@
  *   media_lists       per-profile movie and series lists, Watch Later included ...
  *   media_list_items  ... and their movies and series, in order
  *   pinned_channels   channels that always keep a rewind buffer (server-wide)
+ *   series_seen       when each profile last opened a series (what counts as a new episode)
  *
  * Excluded:
  *   sessions          sign-in tokens (hashed); a restore must not sign anyone in, or out of a new server
@@ -31,13 +32,14 @@
  *   search_fts        the search index of the catalog (rebuilt by the sync)
  *   epg               the programme guide: synced from the provider again
  *   probe_cache       cached stream formats (ffprobe), rebuilt on demand
+ *   movie_info        cached movie details from the provider, fetched again on demand
  *   buffer_runs, buffer_segments
  *                     the index of the rewind buffer recordings; the recordings themselves live in
  *                     BUFFER_DIR and are not part of a backup
  *
  * Not tables: the "tag overrides" that fix a channel's country or language are built into the
  * tagger (catalog/tagger.ts), and what a profile hides lives in hide_rules. Thumbnails (DATA_DIR/
- * thumbs) and the buffer (BUFFER_DIR) are caches outside the database.
+ * thumbs), artwork (DATA_DIR/art) and the buffer (BUFFER_DIR) are caches outside the database.
  */
 export const BACKUP_TABLES = {
   users: 'include',
@@ -54,6 +56,7 @@ export const BACKUP_TABLES = {
   media_lists: 'include',
   media_list_items: 'include',
   pinned_channels: 'include',
+  series_seen: 'include',
 
   sessions: 'exclude',
   profile_entries: 'exclude',
@@ -68,6 +71,7 @@ export const BACKUP_TABLES = {
   search_fts: 'exclude',
   epg: 'exclude',
   probe_cache: 'exclude',
+  movie_info: 'exclude',
   buffer_runs: 'exclude',
   buffer_segments: 'exclude',
 } as const satisfies Record<string, 'include' | 'exclude'>;

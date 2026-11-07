@@ -71,7 +71,7 @@ test('Lists tab: Watch Later and a movie list from the movie page, a tab per lis
   // the main navigation order
   await a.goto('/live');
   const nav = a.getByRole('navigation', { name: 'Main' }).getByRole('link');
-  await expect(nav).toHaveText([/Home/, /Search/, /Favorites/, /Lists/, /Live TV/, /Movies/, /Series/, /Settings/]);
+  await expect(nav).toHaveText([/Home/, /Search/, /Live TV/, /Movies/, /Series/, /Library/, /Settings/]);
 
   await a.goto(`/movies/${fx.movie.id}`);
   await a.getByRole('button', { name: 'Watch later' }).click();
@@ -86,8 +86,10 @@ test('Lists tab: Watch Later and a movie list from the movie page, a tab per lis
   await expect(sheet.getByRole('checkbox', { name: /^Date night/ })).toHaveAttribute('aria-checked', 'true');
   await a.keyboard.press('Escape');
 
-  // T opens Lists; Watch Later is the first tab and has the movie
-  await a.keyboard.press('t');
+  // B opens Library, which holds Favorites and Lists; Watch Later is the first list and has the movie
+  await a.keyboard.press('b');
+  await expect(a).toHaveURL(/\/favorites/);
+  await a.getByRole('navigation', { name: 'Library' }).getByRole('link', { name: 'Lists' }).click();
   await expect(a).toHaveURL(/\/lists\/.+/);
   const tabs = a.getByRole('tablist', { name: 'Your lists' }).getByRole('tab');
   await expect(tabs.first()).toHaveText(/Watch Later\s*1/);

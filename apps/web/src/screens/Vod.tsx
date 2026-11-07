@@ -1,8 +1,8 @@
 /** Shared browse screen for Movies and Series: Continue Watching, Favorites, category rows, virtualized poster grid. */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
-import type { Category, Movie, Series } from '@anycast/shared';
+import type { Category, Movie, Series, VodQuery, VodSort } from '@anycast/shared';
 import { useApp } from '../store/app';
 import { call, cachedGet, errorMessage } from '../api/client';
 import { remember, resolveItems, visibleCategories } from '../api/catalog';
@@ -11,22 +11,76 @@ import { readLocal, writeLocal } from '../lib/storage';
 import { PosterCard } from '../components/cards';
 import { Empty, Skeleton } from '../components/ui';
 import { CategoryChips } from '../components/CategoryChips';
+import { SearchButton } from '../components/PageHead';
 import { IconSearch } from '../components/Icons';
 import { catLabel } from './Live';
 
 type Kind = 'movie' | 'series';
-const HOME = { id: 'home', label: 'Home' };
-const LEAD = [HOME];
+/** "home" is the overview of rows (the id predates its label); "all" is every category in one grid */
+const HOME = { id: 'home', label: 'Overview' };
+const ALL = 'all';
 const LIST = { movie: 'GET /api/movies', series: 'GET /api/series' } as const;
+const NOUN = { movie: 'movies', series: 'series' } as const;
 
-export function VodBrowse(props: { kind: Kind; title: string; continueRow: ReactNode }) {
+/** Sort and filters of the poster grid, kept per kind on this device. */
+export interface GridView {
+  sort: VodSort;
+  year: YearRange;
+  rating: 0 | 6 | 7 | 8;
+}
+type YearRange = 'any' | '2020' | '2010' | '2000' | 'older';
+const DEFAULT_VIEW: GridView = { sort: 'added', year: 'any', rating: 0 };
+const SORTS: { id: VodSort; label: string }[] = [
+  { id: 'added', label: 'Recently added' },
+  { id: 'name', label: 'A–Z' },
+  { id: 'year', label: 'Newest first' },
+  { id: 'rating', label: 'Top rated' },
+];
+const YEARS: { id: YearRange; label: string; from?: number; to?: number }[] = [
+  { id: 'any', label: 'Any year' },
+  { id: '2020', label: '2020 and later', from: 2020 },
+  { id: '2010', label: '2010s', from: 2010, to: 2019 },
+  { id: '2000', label: '2000s', from: 2000, to: 2009 },
+  { id: 'older', label: 'Before 2000', to: 1999 },
+];
+const RATINGS: { id: GridView['rating']; label: string }[] = [
+  { id: 0, label: 'Any rating' },
+  { id: 6, label: 'Rated 6+' },
+  { id: 7, label: 'Rated 7+' },
+  { id: 8, label: 'Rated 8+' },
+];
+
+export function readView(kind: Kind): GridView {
+  try {
+    const v = JSON.parse(readLocal(`anycast.view.${kind}`) ?? '{}') as Partial<GridView>;
+    return {
+      sort: SORTS.some((x) => x.id === v.sort) ? v.sort! : DEFAULT_VIEW.sort,
+      year: YEARS.some((x) => x.id === v.year) ? v.year! : DEFAULT_VIEW.year,
+      rating: RATINGS.some((x) => x.id === v.rating) ? v.rating! : DEFAULT_VIEW.rating,
+    };
+  } catch {
+    return DEFAULT_VIEW;
+  }
+}
+
+/** The list query of a grid view. */
+export function viewQuery(v: GridView): Pick<VodQuery, 'sort' | 'yearFrom' | 'yearTo' | 'minRating'> {
+  const y = YEARS.find((x) => x.id === v.year);
+  return {
+    ...(v.sort !== 'added' ? { sort: v.sort } : {}),
+    ...(y?.from ? { yearFrom: y.from } : {}),
+    ...(y?.to ? { yearTo: y.to } : {}),
+    ...(v.rating ? { minRating: v.rating } : {}),
+  };
+}
+
+export function VodBrowse(props: { kind: Kind; title: string; continueRow: ReactNode; extraRows?: ReactNode }) {
   const { kind } = props;
   const form = useFormFactor();
   const rules = useApp((s) => s.hideRules);
   const version = useApp((s) => s.catalogVersion);
   const favIds = useApp((s) => s.favorites.filter((f) => f.kind === kind).sort((a, b) => b.addedAt - a.addedAt).map((f) => f.id).join(','));
   const cats = useAsync(() => visibleCategories(kind, rules), [kind, rules, version]);
-  const hiddenSearch = useApp((s) => s.prefs.start.hiddenTabs.includes('search'));
   const [cat, setCat] = useState(() => readLocal(`anycast.cat.${kind}`) ?? 'home');
   const navigate = useNavigate();
   const pick = (id: string) => {
@@ -34,8 +88,14 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
     writeLocal(`anycast.cat.${kind}`, id);
     window.scrollTo({ top: 0 });
   };
+  const [view, setViewState] = useState(() => readView(kind));
+  const setView = (v: GridView) => {
+    setViewState(v);
+    writeLocal(`anycast.view.${kind}`, JSON.stringify(v));
+  };
+  const lead = useMemo(() => [HOME, { id: ALL, label: kind === 'movie' ? 'All movies' : 'All series' }], [kind]);
   const catChips = useMemo(() => (cats.data ?? []).map((c) => ({ id: c.id, label: catLabel(c), locked: c.locked })), [cats.data]);
-  const chips = useMemo(() => [HOME, ...catChips], [catChips]);
+  const chips = useMemo(() => [...lead, ...catChips], [lead, catChips]);
   useEffect(() => {
     if (cats.data && !chips.some((c) => c.id === cat)) setCat('home');
   }, [cats.data, chips, cat]);
@@ -47,9 +107,7 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
       <div className="page-head">
         <h1 className="h1">{props.title}</h1>
         {form !== 'large' ? (
-          hiddenSearch && <Link to="/search" className="icon-btn" aria-label="Search">
-            <IconSearch />
-          </Link>
+          <SearchButton />
         ) : (
           <label className="search-box">
             <IconSearch />
@@ -69,12 +127,21 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
           ))}
         </div>
       ) : (
-        <CategoryChips kind={kind} label="Categories" noun="categories" lead={LEAD} categories={catChips} value={cat} onChange={pick} />
+        <CategoryChips kind={kind} label="Categories" noun="categories" lead={lead} categories={catChips} value={cat} onChange={pick} />
       )}
 
       {cat === 'home' ? (
         <>
           {props.continueRow}
+          {props.extraRows}
+          <RecentShelf
+            kind={kind}
+            version={version}
+            onAll={() => {
+              setView({ ...view, sort: 'added' });
+              pick(ALL);
+            }}
+          />
           {favIds && (
             <Shelf title="Favorites" kind={kind} items={(favs.data ?? []) as (Movie | Series)[]} loading={favs.loading && !favs.data} />
           )}
@@ -88,7 +155,10 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
           )}
         </>
       ) : (
-        <PosterGrid kind={kind} categoryId={cat} version={version} />
+        <>
+          <GridTools kind={kind} view={view} onChange={setView} />
+          <PosterGrid kind={kind} categoryId={cat === ALL ? undefined : cat} version={version} view={view} onReset={() => setView(DEFAULT_VIEW)} />
+        </>
       )}
     </div>
   );
@@ -142,6 +212,69 @@ function CategoryShelf(props: { kind: Kind; cat: Category; onAll: () => void; ve
   );
 }
 
+/** The newest additions over every category. */
+function RecentShelf(props: { kind: Kind; version: number; onAll: () => void }) {
+  const data = useAsync(async () => {
+    const res = await cachedGet(LIST[props.kind], { query: { offset: 0, limit: 20 } }, 120_000);
+    remember(props.kind, res.items);
+    return res;
+  }, [props.kind, props.version]);
+  if (data.data && data.data.items.length === 0) return null;
+  return (
+    <Shelf
+      title="Recently added"
+      kind={props.kind}
+      items={data.data?.items ?? []}
+      loading={!data.data}
+      action={
+        <button type="button" onClick={props.onAll}>
+          See all
+        </button>
+      }
+    />
+  );
+}
+
+function GridTools(props: { kind: Kind; view: GridView; onChange: (v: GridView) => void }) {
+  const { view } = props;
+  const changed = view.year !== 'any' || view.rating !== 0;
+  return (
+    <div className="vod-tools" role="group" aria-label={`Sort and filter ${NOUN[props.kind]}`} data-nav-row="vod-tools">
+      <select className="input vod-select" aria-label="Sort by" value={view.sort} onChange={(e) => props.onChange({ ...view, sort: e.target.value as VodSort })}>
+        {SORTS.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.label}
+          </option>
+        ))}
+      </select>
+      <select className={`input vod-select${view.year !== 'any' ? ' on' : ''}`} aria-label="Year" value={view.year} onChange={(e) => props.onChange({ ...view, year: e.target.value as YearRange })}>
+        {YEARS.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.label}
+          </option>
+        ))}
+      </select>
+      <select
+        className={`input vod-select${view.rating ? ' on' : ''}`}
+        aria-label="Rating"
+        value={view.rating}
+        onChange={(e) => props.onChange({ ...view, rating: Number(e.target.value) as GridView['rating'] })}
+      >
+        {RATINGS.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.label}
+          </option>
+        ))}
+      </select>
+      {changed && (
+        <button type="button" className="btn small" onClick={() => props.onChange({ ...view, year: 'any', rating: 0 })}>
+          Clear filters
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function PosterSkeleton() {
   return (
     <div aria-hidden="true">
@@ -152,7 +285,8 @@ export function PosterSkeleton() {
   );
 }
 
-function PosterGrid(props: { kind: Kind; categoryId: string; version: number }) {
+function PosterGrid(props: { kind: Kind; categoryId: string | undefined; version: number; view: GridView; onReset: () => void }) {
+  const q = viewQuery(props.view);
   const form = useFormFactor();
   const [measure, width] = useElementWidth<HTMLDivElement>();
   const ref = useRef<HTMLDivElement | null>(null);
@@ -164,9 +298,9 @@ function PosterGrid(props: { kind: Kind; categoryId: string; version: number }) 
   const colW = (inner - gap * (cols - 1)) / cols;
   const rowH = colW * 1.5 + 3 * rem + gap;
   const list = usePagedList<Movie | Series>(
-    `${props.kind}|${props.categoryId}|${props.version}`,
+    `${props.kind}|${props.categoryId ?? ''}|${props.version}|${JSON.stringify(q)}`,
     async (offset, limit, signal) => {
-      const res = await call(LIST[props.kind], { query: { categoryId: props.categoryId, offset, limit }, signal });
+      const res = await call(LIST[props.kind], { query: { ...(props.categoryId ? { categoryId: props.categoryId } : {}), ...q, offset, limit }, signal });
       remember(props.kind, res.items);
       return res;
     },
@@ -188,7 +322,18 @@ function PosterGrid(props: { kind: Kind; categoryId: string; version: number }) 
   }, [items, cols, list]);
 
   if (list.error) return <Empty title="Couldn't load this category">{errorMessage(list.error)}</Empty>;
-  if (total === 0) return <Empty title="Nothing here">This category is empty.</Empty>;
+  const filtered = props.view.year !== 'any' || props.view.rating !== 0;
+  if (total === 0) {
+    return filtered ? (
+      <Empty title="Nothing matches these filters">
+        <button type="button" className="btn" onClick={props.onReset}>
+          Clear filters
+        </button>
+      </Empty>
+    ) : (
+      <Empty title="Nothing here">This category is empty.</Empty>
+    );
+  }
   return (
     <div
       ref={(el) => {
@@ -198,6 +343,7 @@ function PosterGrid(props: { kind: Kind; categoryId: string; version: number }) 
       className="grid-wrap"
       style={{ height: v.getTotalSize(), marginTop: '0.5rem' }}
       role="list"
+      aria-label={total !== null ? `${total.toLocaleString()} ${NOUN[props.kind]}` : undefined}
     >
       {width > 0 &&
         items.map((row) => (

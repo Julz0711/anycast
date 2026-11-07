@@ -12,7 +12,7 @@
  * it asks for the next one (zapping never holds two provider connections) and to say who holds a busy connection.
  */
 import type {
-  Category, Channel, EpgProgram, Episode, Favorite, HideRules, ItemRef, Movie, PlaybackInfo,
+  Category, Channel, EpgProgram, Episode, Favorite, HideRules, ItemRef, Movie, MovieDetail, NewEpisodes, PlaybackInfo, VodSort,
   Progress, Series, SeriesDetail, TimelineInfo, HwAccelMethod, HwAccelSetting, VideoEncoderInfo,
 } from './catalog';
 import type { AdultMode, AdultStatus, UnlockMinutes } from './parental';
@@ -212,6 +212,16 @@ export type SyncEvent =
   | { type: 'playback-stopped'; profileId: string; clientId: string; reason: 'taken-over'; by: { profileName: string; device?: string } };
 
 /** Route table (method + path -> request/response). Documentation as code. */
+export interface VodQuery {
+  categoryId?: string;
+  offset?: number;
+  limit?: number;
+  sort?: VodSort;
+  yearFrom?: number;
+  yearTo?: number;
+  minRating?: number;
+}
+
 export interface Api {
   'GET /api/health': { res: { ok: true; version: string } };
   /** Admin only (403 {error:'forbidden'} otherwise). */
@@ -280,9 +290,16 @@ export interface Api {
   /** The other versions of a channel (same name, other quality), best first; the channel itself included. */
   'GET /api/channels/:id/variants': { res: Channel[] };
   'GET /api/epg': { query: { channelIds: string; from: number; to: number }; res: Record<string, EpgProgram[]> };
-  'GET /api/movies': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Movie> };
-  'GET /api/series': { query: { categoryId?: string; offset?: number; limit?: number }; res: Page<Series> };
+  /** sort: default 'added' (newest first); yearFrom/yearTo inclusive; minRating 0-10 */
+  'GET /api/movies': { query: VodQuery; res: Page<Movie> };
+  'GET /api/movies/:id': { res: MovieDetail };
+  'GET /api/series': { query: VodQuery; res: Page<Series> };
+  /** Followed series with episodes added since the profile last opened them, newest first. */
+  'GET /api/new-episodes': { res: NewEpisodes[] };
+  /** Episodes new since the profile last opened the series carry isNew (see PUT …/seen). */
   'GET /api/series/:id': { res: SeriesDetail };
+  /** The series page was opened: its new episodes stop being new. */
+  'PUT /api/series/:id/seen': { res: { ok: true } };
   /** Hydrate items by id (favorites, deep links): comma-separated ids per kind, at most 500 each. Hidden items are left out. */
   'GET /api/items': { query: { live?: string; movie?: string; series?: string }; res: ItemsById };
   'GET /api/search': { query: { q: string }; res: SearchResults };

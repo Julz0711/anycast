@@ -253,14 +253,14 @@ describe('user data', () => {
     expect((await json<{ setupDone: boolean }>({ url: '/api/preferences' })).setupDone).toBe(true);
   });
 
-  test('a tab order saved before Favorites and Lists existed gets them after Live TV', async () => {
+  test('a saved tab order is repaired: Favorites and Lists become Library, Home comes first', async () => {
     const p = await json<{ start: { tabOrder: string[]; hiddenTabs: string[] } }>({
       method: 'PUT',
       url: '/api/preferences',
-      payload: { start: { tabOrder: ['series', 'live', 'movies', 'search'], hiddenTabs: ['search', 'bogus'] } },
+      payload: { start: { tabOrder: ['series', 'favorites', 'live', 'lists', 'movies', 'search'], hiddenTabs: ['search', 'bogus', 'favorites', 'lists'] } },
     });
-    expect(p.start.tabOrder).toEqual(['home', 'series', 'live', 'favorites', 'lists', 'movies', 'search']);
-    expect(p.start.hiddenTabs).toEqual(['search']);
+    expect(p.start.tabOrder).toEqual(['home', 'series', 'library', 'live', 'movies', 'search']);
+    expect(p.start.hiddenTabs).toEqual(['library', 'search']);
   });
 
   test('SSE delivers profile events only to that profile, with catalog updates to all', async () => {

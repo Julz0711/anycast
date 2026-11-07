@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { Episode } from '@anycast/shared';
 import { useApp, useIsFavorite, progressKey } from '../store/app';
 import { toggleFavorite } from '../store/actions';
-import { cachedGet, errorMessage } from '../api/client';
+import { cachedGet, call, clearApiCache, errorMessage } from '../api/client';
 import { remember } from '../api/catalog';
 import { useAsync, useFormFactor } from '../lib/hooks';
 import { fmtDuration, fmtLength } from '../lib/time';
@@ -25,6 +25,17 @@ export function SeriesDetailScreen() {
   useEffect(() => {
     if (d) remember('series', [d]);
   }, [d]);
+  // opening the page is what makes its new episodes seen (the marks stay while it is open)
+  const hasNew = !!d?.seasons.some((x) => x.episodes.some((e) => e.isNew));
+  useEffect(() => {
+    if (!hasNew) return;
+    void call('PUT /api/series/:id/seen', { params: { id } })
+      .then(() => {
+        clearApiCache('/api/new-episodes');
+        clearApiCache(`/api/series/${id}`);
+      })
+      .catch(() => {});
+  }, [hasNew, id]);
 
   // Next up: the episode after the most recently watched one (or the in-progress one).
   const nextUp = useMemo(() => {
@@ -47,7 +58,9 @@ export function SeriesDetailScreen() {
   }, [d, progress]);
 
   const [season, setSeason] = useState<number | null>(null);
-  const curSeason = season ?? nextUp?.ep?.season ?? d?.seasons[0]?.season ?? 1;
+  const firstNew = d?.seasons.flatMap((x) => x.episodes).find((e) => e.isNew);
+  // a series you are watching opens on the next episode's season; one you follow on its new episodes
+  const curSeason = season ?? (nextUp?.resume || !firstNew ? nextUp?.ep?.season : firstNew.season) ?? d?.seasons[0]?.season ?? 1;
 
   if (detail.error) return <Empty title="Couldn't load this series">{errorMessage(detail.error)}</Empty>;
   if (!d) {
@@ -105,7 +118,7 @@ export function SeriesDetailScreen() {
                 label="Season"
                 size="lg"
                 value={curSeason}
-                options={d.seasons.map((s) => ({ value: s.season, label: `Season ${s.season}` }))}
+                options={d.seasons.map((s) => ({ value: s.season, label: s.episodes.some((e) => e.isNew) ? `Season ${s.season} · New` : `Season ${s.season}` }))}
                 onChange={setSeason}
               />
             ) : (
@@ -120,6 +133,7 @@ export function SeriesDetailScreen() {
                   <span className="n">{e.episode}</span>
                   <span style={{ minWidth: 0 }}>
                     <span className="t ellipsis" style={{ display: 'block' }}>
+                      {e.isNew && <span className="new-badge">New</span>}
                       {e.title}
                     </span>
                     {e.plot && <span className="p">{e.plot}</span>}
