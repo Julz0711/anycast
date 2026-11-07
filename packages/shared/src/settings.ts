@@ -84,6 +84,8 @@ export interface Preferences {
     timelineStyle: 'ribbon' | 'bar';
     autoplayNext: boolean;
     autoplayCountdown: number;
+    /** leaving the player keeps the stream playing in a small window while you browse */
+    miniPlayer: boolean;
     /**
      * off: no subtitles unless chosen for the item; on: always, in the preferred subtitle language
      * when there is one; auto: only when the audio is not in the preferred subtitle language
@@ -142,6 +144,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     timelineStyle: 'ribbon',
     autoplayNext: true,
     autoplayCountdown: 10,
+    miniPlayer: true,
     subtitlesDefault: 'off',
     preferredAudioLanguage: 'en',
     preferredSubtitleLanguage: null,

@@ -23,9 +23,9 @@ import { readLocal } from './lib/storage';
 import { Skeleton } from './components/ui';
 import { AddToListHost } from './components/lists';
 import { PinHost } from './components/Locks';
+import { PlayerHost } from './player/PlayerHost';
 
 const SettingsScreen = lazy(() => import('./screens/Settings'));
-const PlayerScreen = lazy(() => import('./player/PlayerScreen'));
 const ProfilePage = lazy(() => import('./profiles/ProfilePage'));
 
 function subscribeMotion(cb: () => void) {
@@ -123,29 +123,34 @@ function AuthedRoutes() {
   if (noCatalog || noFilters) return <SetupScreen status={source.data ?? null} onRefresh={source.reload} />;
 
   return (
-    <Suspense fallback={<Splash />}>
-      <Routes>
-        <Route path="/play/:kind/:id" element={<PlayerScreen />} />
-        <Route path="/profiles" element={<ProfilePicker manage />} />
-        <Route path="/profiles/:id" element={<ProfilePage />} />
-        <Route element={<Shell />}>
-          <Route path="/home" element={<HomeScreen />} />
-          <Route path="/live" element={<LiveScreen />} />
-          <Route path="/movies" element={<MoviesScreen />} />
-          <Route path="/movies/:id" element={<MovieDetail />} />
-          <Route path="/series" element={<SeriesScreen />} />
-          <Route path="/series/:id" element={<SeriesDetailScreen />} />
-          <Route path="/favorites" element={<FavoritesIndex />} />
-          <Route path="/favorites/:tab" element={<FavoritesScreen />} />
-          <Route path="/lists" element={<ListsIndex />} />
-          <Route path="/lists/:id" element={<ListsScreen />} />
-          <Route path="/search" element={<SearchScreen />} />
-          <Route path="/settings" element={<SettingsScreen />} />
-          <Route path="/me" element={<ProfileHub />} />
-        </Route>
-        <Route path="*" element={<StartRedirect />} />
-      </Routes>
-    </Suspense>
+    <>
+      <Suspense fallback={<Splash />}>
+        <Routes>
+          {/* the player itself is PlayerHost below: it stays mounted as the mini player after leaving this route */}
+          <Route path="/play/:kind/:id" element={null} />
+          <Route path="/profiles" element={<ProfilePicker manage />} />
+          <Route path="/profiles/:id" element={<ProfilePage />} />
+          <Route element={<Shell />}>
+            <Route path="/home" element={<HomeScreen />} />
+            <Route path="/live" element={<LiveScreen />} />
+            <Route path="/movies" element={<MoviesScreen />} />
+            <Route path="/movies/:id" element={<MovieDetail />} />
+            <Route path="/series" element={<SeriesScreen />} />
+            <Route path="/series/:id" element={<SeriesDetailScreen />} />
+            <Route path="/favorites" element={<FavoritesIndex />} />
+            <Route path="/favorites/:tab" element={<FavoritesScreen />} />
+            <Route path="/lists" element={<ListsIndex />} />
+            <Route path="/lists/:id" element={<ListsScreen />} />
+            <Route path="/search" element={<SearchScreen />} />
+            <Route path="/settings" element={<SettingsScreen />} />
+            <Route path="/me" element={<ProfileHub />} />
+          </Route>
+          <Route path="*" element={<StartRedirect />} />
+        </Routes>
+      </Suspense>
+      {/* outside the Suspense above, so a lazy screen loading never hides the mini player */}
+      <PlayerHost />
+    </>
   );
 }
 
