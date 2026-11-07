@@ -1,10 +1,12 @@
-import type { ItemsById, LiveChannelWithNow, MediaKind, SeriesDetail, SourceStatus, TagSummary } from '@anycast/shared';
+import type { ItemsById, LiveChannelWithNow, MediaKind, MovieDetail, NewEpisodes, SeriesDetail, SourceStatus, TagSummary } from '@anycast/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
-  asGroup, channelVariants, countsByKind, EMPTY_RULES, type CountCache, epgFor, getSeries, itemsByIds, listCategories, listEpisodes, nowNext, pageChannels, pageMovies, pageSeries,
+  asGroup, channelVariants, countsByKind, EMPTY_RULES, type CountCache, epgFor, getMovie, getSeries, itemsByIds, listCategories, listEpisodes, nowNext, pageChannels, pageMovies, pageSeries,
   toChannel, toEpisode, toMovie, toSeries, visibleChannels,
 } from '../catalog/store';
+import { markSeen, newEpisodeIds, newEpisodes, seenAt } from '../catalog/followed';
+import { movieDetail } from '../catalog/movieinfo';
 import { auth, type Services } from '../context';
 import { listedChannelIds } from '../lists';
 import { parentalCtx } from '../parental';
@@ -15,6 +17,10 @@ const PageQuery = z.object({
   offset: z.coerce.number().int().min(0).catch(0),
   limit: z.coerce.number().int().min(1).max(500).catch(100),
   hasEpg: z.string().optional().transform((v) => v === '1' || v === 'true'),
+  sort: z.enum(['added', 'name', 'year', 'rating']).optional().catch(undefined),
+  yearFrom: z.coerce.number().int().min(1800).max(2200).optional().catch(undefined),
+  yearTo: z.coerce.number().int().min(1800).max(2200).optional().catch(undefined),
+  minRating: z.coerce.number().min(0).max(10).optional().catch(undefined),
 });
 const MAX_IDS = 500;
 const IdList = z
@@ -161,11 +167,27 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
     return { ...page, items: page.items.map((x) => adult.item(x)) };
   });
 
+  app.get<{ Params: { id: string } }>('/api/movies/:id', async (req, reply): Promise<MovieDetail | undefined> => {
+    const row = getMovie(s.db, req.params.id);
+    if (!row) return reply.code(404).send({ error: 'not_found', message: 'Movie not found' });
+    const { adult } = scope(req);
+    adult.assertOpen(row.category_id);
+    return adult.item(await movieDetail(s.db, s.source.client(), row));
+  });
+
+  app.get('/api/new-episodes', async (req): Promise<NewEpisodes[]> => {
+    const { adult, rules } = scope(req);
+    return newEpisodes(s.db, auth(req).profileId, rules, (x) => adult.item(x)).filter((n) => !n.series.locked);
+  });
+
   app.get<{ Params: { id: string } }>('/api/series/:id', async (req, reply): Promise<SeriesDetail | undefined> => {
     const row = getSeries(s.db, req.params.id);
     if (!row) return reply.code(404).send({ error: 'not_found', message: 'Series not found' });
     const { adult } = scope(req);
     adult.assertOpen(row.category_id);
+    const { profileId } = auth(req);
+    // what was new before this visit stays marked on this page; the next visit starts from now
+    const before = seenAt(s.db, profileId, row.id);
     try {
       await s.sync.ensureEpisodes(row.id);
     } catch (err) {
@@ -174,8 +196,10 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
         return reply.code(502).send({ error: 'upstream', message: 'The provider did not return the episodes' });
       }
     }
+    const fresh = newEpisodeIds(s.db, profileId, row.id, before);
+    markSeen(s.db, profileId, row.id);
     const seasons = new Map<number, ReturnType<typeof toEpisode>[]>();
-    for (const e of listEpisodes(s.db, row.id).map(toEpisode)) {
+    for (const e of listEpisodes(s.db, row.id).map((r) => (fresh.has(r.id) ? { ...toEpisode(r), isNew: true } : toEpisode(r)))) {
       const list = seasons.get(e.season) ?? [];
       list.push(e);
       seasons.set(e.season, list);

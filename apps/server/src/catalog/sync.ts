@@ -16,6 +16,10 @@ import { KIND_INDEX, KIND_TABLE, refreshHasEpg } from './store';
 import { cleanCategoryName, cleanEpisodeTitle, splitTitle } from './names';
 import { tagCategory, tagItem, type Tag } from './tagger';
 import { groupVariants } from './variants';
+import { followedByAnyone } from './followed';
+
+/** followed series refreshed after one sync at most (each is one provider request) */
+const FOLLOWED_REFRESH_MAX = 200;
 
 const BATCH = 2000;
 /** About the longest stretch a sync keeps the event loop (parsing plus writing one transaction). */
@@ -225,6 +229,7 @@ export class CatalogSync {
       kvSet(this.db, 'lastCatalogSync', String(Date.now()));
       this.log.info({ ms: Date.now() - started, phases }, 'catalog sync finished');
       this.bus.emit({ type: 'catalog-updated' });
+      void this.refreshFollowed();
     } catch (err) {
       this.log.error({ err }, 'catalog sync failed');
       throw err;
@@ -412,6 +417,33 @@ export class CatalogSync {
     refreshHasEpg(this.db);
   }
 
+  /**
+   * After a sync, fetches the episodes of followed series the provider changed (their
+   * episodes_synced_at was reset), one at a time, so New episodes knows about them without the
+   * series page being opened.
+   */
+  private async refreshFollowed(): Promise<void> {
+    const ids = followedByAnyone(this.db);
+    if (!ids.length) return;
+    const stale = this.db
+      .prepare(`SELECT id FROM series WHERE episodes_synced_at IS NULL AND id IN (${ids.map(() => '?').join(',')}) LIMIT ${FOLLOWED_REFRESH_MAX}`)
+      .pluck()
+      .all(...ids) as string[];
+    let done = 0;
+    for (const id of stale) {
+      try {
+        await this.ensureEpisodes(id);
+        done++;
+      } catch (err) {
+        this.log.warn({ err, seriesId: id }, 'episode refresh failed');
+      }
+    }
+    if (done) {
+      this.log.info({ series: done }, 'followed series refreshed');
+      this.bus.emit({ type: 'catalog-updated' });
+    }
+  }
+
   /** Lazily fetches a series' episodes (once per TTL, deduplicated). */
   async ensureEpisodes(seriesId: string): Promise<void> {
     const row = this.db.prepare('SELECT episodes_synced_at AS t FROM series WHERE id = ?').get(seriesId) as { t: number | null } | undefined;
@@ -428,10 +460,13 @@ export class CatalogSync {
     const info = await this.requireClient().seriesInfo(seriesId);
     const seriesName = (this.db.prepare('SELECT name FROM series WHERE id = ?').pluck().get(seriesId) as string | undefined) ?? null;
     const insert = this.db.prepare(
-      `INSERT INTO episodes (id, series_id, season, episode, title, plot, duration, container) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO episodes (id, series_id, season, episode, title, plot, duration, container, first_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET series_id = excluded.series_id, season = excluded.season, episode = excluded.episode,
          title = excluded.title, plot = excluded.plot, duration = excluded.duration, container = excluded.container`,
     );
+    // episodes that appear after the series' first fetch are new (followed.ts); the first fetch's are not
+    const known = this.db.prepare('SELECT 1 FROM episodes WHERE series_id = ? LIMIT 1').get(seriesId) !== undefined;
+    const firstSeen = known ? Date.now() : 0;
     this.db.transaction(() => {
       const ids = info.episodes.map((e) => e.id);
       this.db
@@ -441,7 +476,7 @@ export class CatalogSync {
         insert.run(
           e.id, seriesId, e.season, e.episode_num ?? i + 1,
           e.title?.trim() ? cleanEpisodeTitle(e.title, seriesName, e.episode_num ?? i + 1) : `Episode ${e.episode_num ?? i + 1}`,
-          e.info.plot, e.info.duration_secs ?? parseDuration(e.info.duration), e.container_extension?.toLowerCase() ?? null,
+          e.info.plot, e.info.duration_secs ?? parseDuration(e.info.duration), e.container_extension?.toLowerCase() ?? null, firstSeen,
         );
       });
       this.db.prepare('UPDATE series SET episodes_synced_at = ? WHERE id = ?').run(Date.now(), seriesId);

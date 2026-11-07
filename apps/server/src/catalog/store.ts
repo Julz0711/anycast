@@ -1,5 +1,5 @@
 /** Read side of the catalog: row mapping and hide-rule-aware queries. */
-import type { Category, Channel, EpgProgram, Episode, HideRules, MediaKind, Movie, Series } from '@anycast/shared';
+import type { Category, Channel, EpgProgram, Episode, HideRules, MediaKind, Movie, Series, VodSort } from '@anycast/shared';
 import type { Db } from '../db';
 import { cleanEpisodeTitle } from './names';
 
@@ -19,34 +19,54 @@ export interface ChannelRow {
 export interface MovieRow {
   id: string; name: string; raw_name: string; category_id: string; poster: string | null; year: number | null;
   rating: number | null; plot: string | null; duration: number | null; container: string | null;
-  country: string | null; language: string | null;
+  country: string | null; language: string | null; added: number | null;
 }
 export interface SeriesRow {
   id: string; name: string; raw_name: string; category_id: string; poster: string | null; year: number | null;
   rating: number | null; plot: string | null; country: string | null; language: string | null; episodes_synced_at: number | null;
+  added: number | null;
 }
 export interface EpisodeRow {
   id: string; series_id: string; season: number; episode: number; title: string; plot: string | null;
-  duration: number | null; container: string | null;
+  duration: number | null; container: string | null; first_seen: number;
 }
 interface CategoryRow { id: string; kind: MediaKind; name: string; country: string | null; language: string | null; adult: number }
 interface EpgRow { epg_id: string; start: number; end: number; title: string; description: string | null }
 
-/** Provider artwork is served through /api/art so provider hosts never reach the client. */
-export const artUrl = (kind: MediaKind, id: string, raw: string | null) => (raw ? `/api/art/${kind}/${encodeURIComponent(id)}` : null);
+/** FNV-1a of a string, base 36: a short version tag for artwork URLs. */
+export function shortHash(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
+}
+
+export type ArtKind = MediaKind | 'backdrop';
+
+/**
+ * Provider artwork is served through /api/art so provider hosts never reach the client. `v` changes
+ * with the provider URL, so browsers may keep the image for good.
+ */
+export const artUrl = (kind: ArtKind, id: string, raw: string | null) => (raw ? `/api/art/${kind}/${encodeURIComponent(id)}?v=${shortHash(raw)}` : null);
 
 export const toChannel = (r: ChannelRow): Channel => ({
   id: r.id, name: r.name, rawName: r.raw_name, number: r.number, categoryId: r.category_id, logo: artUrl('live', r.id, r.logo),
   country: r.country, language: r.language, archiveDays: r.archive_days, epgChannelId: r.epg_channel_id, hasEpg: r.has_epg === 1,
   quality: r.quality ?? null, variants: Math.max(0, (r.group_size ?? 1) - 1),
 });
+/** Panels send unix seconds; 0 or missing means unknown. */
+export const addedMs = (v: number | null | undefined): number | null => (v && v > 0 ? (v < 1e12 ? v * 1000 : v) : null);
+
 export const toMovie = (r: MovieRow): Movie => ({
   id: r.id, name: r.name, rawName: r.raw_name, categoryId: r.category_id, poster: artUrl('movie', r.id, r.poster), year: r.year,
   rating: r.rating, plot: r.plot, duration: r.duration, container: r.container, country: r.country, language: r.language,
+  added: addedMs(r.added),
 });
 export const toSeries = (r: SeriesRow): Series => ({
   id: r.id, name: r.name, rawName: r.raw_name, categoryId: r.category_id, poster: artUrl('series', r.id, r.poster), year: r.year,
-  rating: r.rating, plot: r.plot, country: r.country, language: r.language,
+  rating: r.rating, plot: r.plot, country: r.country, language: r.language, added: addedMs(r.added),
 });
 export const toEpisode = (r: EpisodeRow): Episode => ({
   id: r.id, seriesId: r.series_id, season: r.season, episode: r.episode, title: cleanEpisodeTitle(r.title, null, r.episode), plot: r.plot,
@@ -84,6 +104,8 @@ export function listCategories(db: Db, kind: MediaKind, rules: HideRules): Categ
 
 export interface PageQuery {
   categoryId?: string; offset: number; limit: number; hasEpg?: boolean;
+  /** movies and series */
+  sort?: VodSort; yearFrom?: number; yearTo?: number; minRating?: number;
   /** channels: one per group of duplicates (variants.ts) */
   merge?: boolean;
 }
@@ -121,6 +143,11 @@ function page<R, T>(db: Db, table: string, order: string, rules: HideRules, q: P
   }
   // "+ 0": an equality on an index column makes SQLite sort the ties itself instead of walking the index in order
   if (q.hasEpg && table === 'channels') where.push('t.has_epg + 0 = 1');
+  if (table !== 'channels') {
+    if (q.yearFrom !== undefined) { where.push('t.year >= ?'); params.push(q.yearFrom); }
+    if (q.yearTo !== undefined) { where.push('t.year <= ?'); params.push(q.yearTo); }
+    if (q.minRating !== undefined && q.minRating > 0) { where.push('t.rating >= ?'); params.push(q.minRating); }
+  }
   if (q.merge && table === 'channels') {
     const v = variantClause(rules, 't', Boolean(q.categoryId));
     where.push(v.sql);
@@ -149,8 +176,16 @@ const GROUP_ORDER = 't.group_number, t.country, t.language, t.category_id, t.has
 const ADDED_ORDER = 't.added DESC, t.country, t.language, t.category_id, t.rowid';
 export const pageChannels = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) =>
   page(db, 'channels', q.merge ? GROUP_ORDER : CHANNEL_ORDER, rules, q, (r: ChannelRow) => toChannel(q.merge ? asGroup(r) : r), counts);
-export const pageMovies = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) => page(db, 'movies', ADDED_ORDER, rules, q, toMovie, counts);
-export const pageSeries = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) => page(db, 'series', ADDED_ORDER, rules, q, toSeries, counts);
+const VOD_ORDER: Record<VodSort, string> = {
+  added: ADDED_ORDER,
+  name: 't.name COLLATE NOCASE, t.country, t.language, t.category_id, t.rowid',
+  year: 't.year DESC, t.country, t.language, t.category_id, t.rowid',
+  rating: 't.rating DESC, t.country, t.language, t.category_id, t.rowid',
+};
+export const pageMovies = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) =>
+  page(db, 'movies', VOD_ORDER[q.sort ?? 'added'], rules, q, toMovie, counts);
+export const pageSeries = (db: Db, rules: HideRules, q: PageQuery, counts?: CountCache) =>
+  page(db, 'series', VOD_ORDER[q.sort ?? 'added'], rules, q, toSeries, counts);
 
 /** Every version of a channel visible under the rules, best first (the channel itself included). */
 export function channelVariants(db: Db, id: string, rules: HideRules): ChannelRow[] {

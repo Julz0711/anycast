@@ -64,9 +64,27 @@ export interface Movie {
   container: string | null;
   country: string | null;
   language: string | null;
+  /** when the provider added it (ms), if it says */
+  added?: number | null;
   /** in a locked adult category: name is LOCKED_NAME and artwork, plot and guide are withheld */
   locked?: boolean;
 }
+
+/** GET /api/movies/:id: a movie with the provider's details (each may be null). */
+export interface MovieDetail extends Movie {
+  genre: string | null;
+  cast: string | null;
+  director: string | null;
+  releaseDate: string | null;
+  country: string | null;
+  /** /api/art/backdrop/:id, a wide image, when the provider has one */
+  backdrop: string | null;
+  /** YouTube video id */
+  trailer: string | null;
+}
+
+/** Sort orders of the Movies and Series grids. */
+export type VodSort = 'added' | 'name' | 'year' | 'rating';
 
 export interface Series {
   id: string;
@@ -79,8 +97,17 @@ export interface Series {
   plot: string | null;
   country: string | null;
   language: string | null;
+  /** when the provider last changed it (ms), if it says */
+  added?: number | null;
   /** in a locked adult category: name is LOCKED_NAME and artwork, plot and guide are withheld */
   locked?: boolean;
+}
+
+/** A followed series (favorite, in a list, or being watched) with episodes the profile has not seen yet. */
+export interface NewEpisodes {
+  series: Series;
+  /** the new episodes, oldest first */
+  episodes: Episode[];
 }
 
 export interface Episode {
@@ -92,6 +119,8 @@ export interface Episode {
   plot: string | null;
   duration: number | null;
   container: string | null;
+  /** new since the profile last opened the series */
+  isNew?: boolean;
   /** in a locked adult category: name is LOCKED_NAME and artwork, plot and guide are withheld */
   locked?: boolean;
 }

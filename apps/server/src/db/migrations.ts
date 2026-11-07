@@ -318,4 +318,28 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS channels_group ON channels(group_key, variant_rank);
   CREATE INDEX IF NOT EXISTS channels_group_number ON channels(group_number, country, language, category_id, has_epg);
   `,
+  `
+  -- movie details from get_vod_info, fetched when a movie page opens (MovieDetail)
+  CREATE TABLE IF NOT EXISTS movie_info (
+    movie_id TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL
+  ) WITHOUT ROWID;
+  -- when AnyCast first saw an episode (ms); 0 = it was there at the series' first fetch.
+  -- New episodes: first_seen after the profile last looked at the series (series_seen).
+  ALTER TABLE episodes ADD COLUMN first_seen INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE IF NOT EXISTS series_seen (
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    series_id TEXT NOT NULL,
+    seen_at INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, series_id)
+  ) WITHOUT ROWID;
+  -- sorting Movies and Series by name, year and rating (the provider order is by added)
+  CREATE INDEX IF NOT EXISTS movies_name ON movies(name COLLATE NOCASE, country, language, category_id);
+  CREATE INDEX IF NOT EXISTS movies_year ON movies(year DESC, country, language, category_id);
+  CREATE INDEX IF NOT EXISTS movies_rating ON movies(rating DESC, country, language, category_id);
+  CREATE INDEX IF NOT EXISTS series_name ON series(name COLLATE NOCASE, country, language, category_id);
+  CREATE INDEX IF NOT EXISTS series_year ON series(year DESC, country, language, category_id);
+  CREATE INDEX IF NOT EXISTS series_rating ON series(rating DESC, country, language, category_id);
+  `,
 ];
