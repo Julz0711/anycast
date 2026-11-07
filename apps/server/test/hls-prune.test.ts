@@ -4,7 +4,7 @@
  * path of a deleted file (seen as ENOENT on every request until the run ended).
  */
 import { execFileSync } from 'node:child_process';
-import { createReadStream, existsSync, mkdtempSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -25,7 +25,16 @@ test('a slot deleted behind another viewer is made again, not served as a missin
     const start = m ? Number(m[1]) : 0;
     const end = m?.[2] ? Number(m[2]) : size - 1;
     res.writeHead(m ? 206 : 200, { 'content-length': end - start + 1, 'accept-ranges': 'bytes', ...(m ? { 'content-range': `bytes ${start}-${end}/${size}` } : {}) });
-    createReadStream(src, { start, end }).pipe(res);
+    // throttled (~200 KB/s), so the conversion can't finish the whole file before the session
+    // pauses it ahead of playback: pruning only happens while a run is still going
+    const rs = createReadStream(src, { start, end, highWaterMark: 16 * 1024 });
+    rs.on('data', (chunk) => {
+      rs.pause();
+      res.write(chunk);
+      setTimeout(() => rs.resume(), 80);
+    });
+    rs.on('end', () => res.end());
+    res.on('close', () => rs.destroy());
   });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/a.mkv`;
@@ -34,7 +43,6 @@ test('a slot deleted behind another viewer is made again, not served as a missin
     audio: 0, subtitles: [],
   });
   try {
-    // (long enough that the run is still going, paused ahead of playback, when slot 0 is asked again)
     // viewer A plays from the start to slot 20 within one run
     const [first] = await session.segment(0);
     for (let n = 1; n <= 20; n++) await session.segment(n);
@@ -47,5 +55,7 @@ test('a slot deleted behind another viewer is made again, not served as a missin
     session.close();
     server.closeAllConnections();
     server.close();
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(out, { recursive: true, force: true });
   }
 }, 60_000);
