@@ -43,7 +43,8 @@ test("profiles: Who's watching, a new picture and photo, a profile PIN another d
     await a.locator('input[type=file]').setInputFiles({ name: 'me.png', mimeType: 'image/png', buffer: PNG });
     await a.getByRole('button', { name: 'Use this photo' }).click();
     await a.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(a.getByText('Profile saved.')).toBeVisible();
+    // the toast of the first save can still be up (4 s): look at the newest one
+    await expect(a.getByText('Profile saved.').last()).toBeVisible();
     await expect.poll(async () => ((await (await profile.api.get('/api/profiles')).json()) as { id: string; image: string | null }[]).find((p) => p.id === profile.id)!.image).toMatch(/\/image\?v=/);
 
     // lock it with a PIN
