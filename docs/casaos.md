@@ -187,6 +187,8 @@ After a restore, sign in with the accounts and passwords from the backup.
 
 ## Troubleshooting
 
+- **`permission denied ... docker.sock`:** your user isn't in the `docker` group. Put `sudo` in front of
+  every `docker` command, or run `sudo usermod -aG docker $USER` once and log in again.
 - **Container keeps restarting:** `docker compose logs` shows why. Usually a missing or short
   `ANYCAST_SECRET` (needs 16+ characters).
 - **Can't sign in:** the admin account is created on the very first start. If you changed
