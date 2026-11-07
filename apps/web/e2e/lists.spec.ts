@@ -1,4 +1,4 @@
-import type { ChannelList, ItemsById } from '@anycast/shared';
+import type { ChannelList, ItemsById, MediaList } from '@anycast/shared';
 import { expect, fx, test, waitForEvents } from './fixtures';
 
 test.use({ profileOptions: { setupDone: true, prefs: { live: { layoutLarge: 'simple' } } } });
@@ -62,4 +62,46 @@ test('channel lists: create a list, add two channels, reorder, see the order on 
   await expect.poll(() => rows(b)).toEqual([second, first]);
 
   expect(((await (await profile.api.get('/api/lists')).json()) as ChannelList[]).map((l) => [l.name, l.channelIds])).toEqual([['News', [secondId, firstId]]]);
+});
+
+test('Lists tab: Watch Later and a movie list from the movie page, a tab per list, synced to another device', async ({ profile }) => {
+  const a = await profile.device();
+  const b = await profile.device();
+
+  // the main navigation order
+  await a.goto('/live');
+  const nav = a.getByRole('navigation', { name: 'Main' }).getByRole('link');
+  await expect(nav).toHaveText([/Search/, /Favorites/, /Lists/, /Live TV/, /Movies/, /Series/, /Settings/]);
+
+  await a.goto(`/movies/${fx.movie.id}`);
+  await a.getByRole('button', { name: 'Watch later' }).click();
+  await expect(a.getByRole('button', { name: 'In Watch Later' })).toHaveAttribute('aria-pressed', 'true');
+
+  await a.getByRole('button', { name: 'Add to list' }).click();
+  const sheet = a.getByRole('dialog', { name: `Add ${fx.movie.name} to a list` });
+  await expect(sheet.getByRole('checkbox', { name: /^Watch Later/ })).toHaveAttribute('aria-checked', 'true');
+  await sheet.getByRole('button', { name: /New list/ }).click();
+  await sheet.getByRole('textbox', { name: 'New list name' }).fill('Date night');
+  await sheet.getByRole('button', { name: 'Create' }).click();
+  await expect(sheet.getByRole('checkbox', { name: /^Date night/ })).toHaveAttribute('aria-checked', 'true');
+  await a.keyboard.press('Escape');
+
+  // T opens Lists; Watch Later is the first tab and has the movie
+  await a.keyboard.press('t');
+  await expect(a).toHaveURL(/\/lists\/.+/);
+  const tabs = a.getByRole('tablist', { name: 'Your lists' }).getByRole('tab');
+  await expect(tabs.first()).toHaveText(/Watch Later\s*1/);
+  await expect(tabs.first()).toHaveAttribute('aria-selected', 'true');
+  await expect(a.getByRole('list', { name: 'Titles in Watch Later' }).getByRole('link', { name: new RegExp(`^${fx.movie.name}`) })).toBeVisible();
+
+  // the other device sees the new list as a tab, and the removal from Watch Later
+  await b.goto('/lists');
+  await b.getByRole('tab', { name: /Date night/ }).click();
+  await expect(b.getByRole('list', { name: 'Titles in Date night' }).getByRole('link', { name: new RegExp(`^${fx.movie.name}`) })).toBeVisible();
+  await b.getByRole('tab', { name: /Watch Later/ }).click();
+  await a.getByRole('button', { name: `Remove ${fx.movie.name} from Watch Later` }).click();
+  await expect(b.getByRole('heading', { name: 'Nothing to watch later yet' })).toBeVisible();
+
+  const lists = (await (await profile.api.get('/api/media-lists')).json()) as MediaList[];
+  expect(lists.map((l) => [l.name, l.items.map((i) => i.id)])).toEqual([['Watch Later', []], ['Date night', [fx.movie.id]]]);
 });

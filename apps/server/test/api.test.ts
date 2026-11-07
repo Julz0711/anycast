@@ -208,13 +208,13 @@ describe('user data', () => {
     expect((await json<{ setupDone: boolean }>({ url: '/api/preferences' })).setupDone).toBe(true);
   });
 
-  test('a tab order saved before Favorites existed gets Favorites after Live TV', async () => {
+  test('a tab order saved before Favorites and Lists existed gets them after Live TV', async () => {
     const p = await json<{ start: { tabOrder: string[]; hiddenTabs: string[] } }>({
       method: 'PUT',
       url: '/api/preferences',
       payload: { start: { tabOrder: ['series', 'live', 'movies', 'search'], hiddenTabs: ['search', 'bogus'] } },
     });
-    expect(p.start.tabOrder).toEqual(['series', 'live', 'favorites', 'movies', 'search']);
+    expect(p.start.tabOrder).toEqual(['series', 'live', 'favorites', 'lists', 'movies', 'search']);
     expect(p.start.hiddenTabs).toEqual(['search']);
   });
 

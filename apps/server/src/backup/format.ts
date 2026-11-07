@@ -1,5 +1,5 @@
 /** The backup file format: strict validation and forward migration of older schema versions. */
-import { ADULT_MODES, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, CHANNEL_LIST_LIMITS, UNLOCK_MINUTES, type BackupFile } from '@anycast/shared';
+import { ADULT_MODES, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, CHANNEL_LIST_LIMITS, MEDIA_LIST_LIMITS, UNLOCK_MINUTES, type BackupFile } from '@anycast/shared';
 import { z } from 'zod';
 
 export class BackupError extends Error {
@@ -75,6 +75,19 @@ const Profile = z
         .strict(),
       CHANNEL_LIST_LIMITS.lists,
     ),
+    mediaLists: many(
+      z
+        .object({
+          id,
+          name: z.string().min(1).max(MEDIA_LIST_LIMITS.name),
+          builtin: z.literal('watch-later').nullable(),
+          position: z.number().int(),
+          createdAt: time,
+          items: many(z.object({ kind: z.enum(['movie', 'series']), id, addedAt: time }).strict(), MEDIA_LIST_LIMITS.items),
+        })
+        .strict(),
+      MEDIA_LIST_LIMITS.lists + 1,
+    ),
   })
   .strict();
 
@@ -112,14 +125,26 @@ export const BackupSchema = z
     dup('username', b.users.map((u) => u.username.toLowerCase()));
     dup('profile id', profiles.map((p) => p.id));
     dup('list id', profiles.flatMap((p) => p.lists.map((l) => l.id)));
+    dup('media list id', profiles.flatMap((p) => p.mediaLists.map((l) => l.id)));
   });
 
 /**
- * Forward migrations: MIGRATE[n] turns a schema version n file into version n + 1. Version 1 is the
- * first format, so there is nothing to migrate yet; add an entry here (and bump
- * BACKUP_SCHEMA_VERSION) whenever the format changes.
+ * Forward migrations: MIGRATE[n] turns a schema version n file into version n + 1. Add an entry here
+ * (and bump BACKUP_SCHEMA_VERSION) whenever the format changes.
  */
-const MIGRATE: Record<number, (raw: Record<string, unknown>) => Record<string, unknown>> = {};
+const MIGRATE: Record<number, (raw: Record<string, unknown>) => Record<string, unknown>> = {
+  // 1 -> 2: movie and series lists; older backups have none
+  1: (raw) => ({
+    ...raw,
+    users: Array.isArray(raw.users)
+      ? raw.users.map((u: Record<string, unknown>) =>
+          u && typeof u === 'object' && Array.isArray(u.profiles)
+            ? { ...u, profiles: u.profiles.map((p: Record<string, unknown>) => (p && typeof p === 'object' ? { mediaLists: [], ...p } : p)) }
+            : u,
+        )
+      : raw.users,
+  }),
+};
 
 /** Validates a parsed backup file, migrating an older schema version forward first. */
 export function parseBackup(raw: unknown): BackupFile {

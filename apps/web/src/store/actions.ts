@@ -7,7 +7,7 @@ import type { DeviceOverride } from '../lib/device';
 import { EMPTY_RULES, progressKey, useApp } from './app';
 import { isDemo } from '../demo/flag';
 import { clientId } from '../lib/client-id';
-import { applyListsEvent } from './lists';
+import { applyListsEvent, applyMediaListsEvent } from './lists';
 import { loadAdult } from './parental';
 
 const get = useApp.getState;
@@ -79,6 +79,8 @@ export function selectProfile(id: string) {
     hideRulesLoaded: false,
     lists: [],
     listsLoaded: false,
+    mediaLists: [],
+    mediaListsLoaded: false,
     catalogVersion: get().catalogVersion + 1,
   });
   void loadProfileData();
@@ -93,12 +95,13 @@ export function clearProfile() {
 
 export async function loadProfileData() {
   const pid = get().profileId;
-  const [prefs, favs, progress, rules, lists] = await Promise.allSettled([
+  const [prefs, favs, progress, rules, lists, mediaLists] = await Promise.allSettled([
     call('GET /api/preferences'),
     call('GET /api/favorites'),
     call('GET /api/progress'),
     call('GET /api/hide-rules'),
     call('GET /api/lists'),
+    call('GET /api/media-lists'),
   ]);
   if (get().profileId !== pid) return;
   if (prefs.status === 'fulfilled' && !pendingPrefs) setPrefsFromServer(prefs.value);
@@ -110,6 +113,8 @@ export async function loadProfileData() {
   else set({ hideRulesLoaded: true });
   if (lists.status === 'fulfilled') set({ lists: lists.value, listsLoaded: true });
   else set({ listsLoaded: true });
+  if (mediaLists.status === 'fulfilled') set({ mediaLists: mediaLists.value, mediaListsLoaded: true });
+  else set({ mediaListsLoaded: true });
 }
 
 function setPrefsFromServer(p: Preferences) {
@@ -248,6 +253,9 @@ export function applyEvent(ev: SyncEvent) {
       break;
     case 'lists':
       applyListsEvent(ev.lists);
+      break;
+    case 'media-lists':
+      applyMediaListsEvent(ev.lists);
       break;
     case 'parental':
       // mode, PIN or duration changed on another device: reload the lock state and the lists

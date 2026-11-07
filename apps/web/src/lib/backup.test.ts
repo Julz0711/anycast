@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { accountInBackup, describeSummary, readBackup } from './backup';
 
 const profile = (id: string, extra: Partial<BackupProfile> = {}): BackupProfile => ({
-  id, name: id, createdAt: 0, preferences: null, hideRules: null, parental: null, favorites: [], progress: [], trackChoices: [], lists: [], ...extra,
+  id, name: id, createdAt: 0, preferences: null, hideRules: null, parental: null, favorites: [], progress: [], trackChoices: [], lists: [], mediaLists: [], ...extra,
 });
 
 const file: BackupFile = {

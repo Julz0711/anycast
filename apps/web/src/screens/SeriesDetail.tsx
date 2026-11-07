@@ -12,6 +12,7 @@ import { PosterCard } from '../components/cards';
 import { Empty, ProgressBar, Segmented, Skeleton } from '../components/ui';
 import { IconBack, IconPlay, IconStar } from '../components/Icons';
 import { prefetchPlayer } from '../player/prefetch';
+import { MediaListButtons } from '../components/lists';
 
 export function SeriesDetailScreen() {
   const { id = '' } = useParams();
@@ -95,6 +96,7 @@ export function SeriesDetailScreen() {
             <button type="button" className={`btn btn-lg${fav ? ' on' : ''}`} aria-pressed={fav} onClick={() => void toggleFavorite('series', d.id)}>
               <IconStar filled={fav} /> {fav ? 'Favorite' : 'Add favorite'}
             </button>
+            <MediaListButtons kind="series" id={d.id} name={d.name} />
           </div>
 
           <div style={{ marginTop: '2rem' }}>
