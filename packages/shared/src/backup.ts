@@ -2,8 +2,8 @@
  * Backup and restore of AnyCast's own user data (admin only).
  *
  * A backup is one JSON file: accounts (with their argon2 password hashes), profiles and everything
- * per profile (preferences, hide rules, parental lock, favorites, progress, track choices, channel
- * lists) and the channels pinned for the rewind buffer. It never holds the provider login, sign-in
+ * per profile (picture, profile lock, preferences, hide rules, parental lock, favorites, progress,
+ * track choices, channel lists) and the channels pinned for the rewind buffer. It never holds the provider login, sign-in
  * sessions, the encryption secret, the catalog, the guide, or any cache: those come back from the
  * provider on the next sync. Ids of channels, movies and episodes are kept even when the catalog
  * doesn't (yet) have them, so a restore on a fresh install works before the first sync.
@@ -48,6 +48,12 @@ export interface BackupProfile {
   progress: BackupProgress[];
   trackChoices: BackupTrackChoice[];
   lists: BackupList[];
+  /** built-in picture "shape.color" (missing in backups made before profile pictures) */
+  avatar?: string | null;
+  /** uploaded picture, base64 */
+  image?: { type: string; data: string; updatedAt: number } | null;
+  /** argon2 hash of the profile lock PIN */
+  lockHash?: string | null;
 }
 
 export interface BackupUser {

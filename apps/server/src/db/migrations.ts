@@ -254,4 +254,24 @@ export const MIGRATIONS: string[] = [
   -- on a ~900k programme guide (random inserts into a 26 MB index); the cleanup scans instead
   DROP INDEX IF EXISTS epg_end;
   `,
+  `
+  -- profile pictures and the profile lock (profiles.ts in @anycast/shared). avatar: built-in
+  -- picture "shape.color"; lock_hash: argon2 hash of the profile lock PIN.
+  ALTER TABLE profiles ADD COLUMN avatar TEXT;
+  ALTER TABLE profiles ADD COLUMN lock_hash TEXT;
+  -- an uploaded picture, already cropped and scaled by the web app
+  CREATE TABLE IF NOT EXISTS profile_images (
+    profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+    mime TEXT NOT NULL,
+    data BLOB NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  -- locked profiles this sign-in session has entered with the PIN
+  CREATE TABLE IF NOT EXISTS profile_entries (
+    session_hash TEXT NOT NULL REFERENCES sessions(token_hash) ON DELETE CASCADE,
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (session_hash, profile_id)
+  ) WITHOUT ROWID;
+  `,
 ];

@@ -3,9 +3,12 @@
  * Every change applies immediately (optimistic) and syncs to the profile's other devices.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ACCENTS, ALL_TABS, DEFAULT_PREFERENCES, normalizeTabOrder, type AccentId, type HideRules, type MediaKind, type Preferences, type Profile, type TabId } from '@anycast/shared';
+import { ACCENTS, ALL_TABS, DEFAULT_PREFERENCES, normalizeTabOrder, PROFILES_MAX, type AccentId, type HideRules, type MediaKind, type Preferences, type TabId } from '@anycast/shared';
 import { useApp } from '../store/app';
-import { logout, patchPrefs, saveHideRules, selectProfile, setDeviceOverride, setPref, toast } from '../store/actions';
+import { askOnLaunch, logout, patchPrefs, refreshMe, saveHideRules, setAskOnLaunch, setDeviceOverride, setPref, toast } from '../store/actions';
+import { useNavigate } from 'react-router-dom';
+import { ProfileAvatar } from '../profiles/Avatar';
+import { switchProfile } from '../profiles/actions';
 import { ApiError, cachedGet, call, errorMessage } from '../api/client';
 import { fmtBytes, setBufferPin } from '../api/buffer';
 import { useAsync, useFormFactor } from '../lib/hooks';
@@ -15,7 +18,7 @@ import { capsHeader } from '../player/caps';
 import { isDemo } from '../demo/flag';
 import { TABS, visibleTabs } from '../layout/tabs';
 import { ProgressBar, Segmented, Skeleton, Toggle } from '../components/ui';
-import { IconDown, IconDrag, IconRefresh, IconUp } from '../components/Icons';
+import { IconDown, IconDrag, IconLock, IconRefresh, IconUp } from '../components/Icons';
 import { ListsManager } from '../components/ListEditor';
 import type { DeviceOverride, FormFactor } from '../lib/device';
 import { ParentalLock } from './ParentalLock';
@@ -37,6 +40,11 @@ export default function SettingsScreen() {
   const all = prefs.settingsMode === 'all';
   const profile = me?.profiles.find((p) => p.id === profileId);
   const isAdmin = me?.user.isAdmin ?? false;
+  // /settings#set-parental (from a profile page) opens at that section
+  useEffect(() => {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (id) requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView());
+  }, []);
 
   const sections: { id: string; title: string; body: ReactNode; basic?: boolean }[] = all
     ? [
@@ -453,114 +461,58 @@ function CategoryFilter({ rules }: { rules: HideRules }) {
 function Profiles() {
   const me = useApp((s) => s.me);
   const current = useApp((s) => s.profileId);
-  const list = useAsync(() => call('GET /api/profiles'), []);
-  const [name, setName] = useState('');
-  const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState('');
-  const [confirm, setConfirm] = useState<string | null>(null);
-  const profiles = list.data ?? me?.profiles ?? [];
-  const sync = (ps: Profile[]) => me && useApp.setState({ me: { ...me, profiles: ps } });
-  useEffect(() => {
-    if (list.data) sync(list.data);
-  }, [list.data]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const run = async (f: () => Promise<unknown>) => {
-    try {
-      await f();
-      list.reload();
-    } catch (e) {
-      toast(errorMessage(e), 'error');
-    }
-  };
+  const navigate = useNavigate();
+  const [ask, setAsk] = useState(askOnLaunch);
+  useEffect(() => void refreshMe(), []);
+  const profiles = me?.profiles ?? [];
   return (
     <>
       <div className="profile-list">
         {profiles.map((p) => (
           <div key={p.id} className="set-row" data-nav-row={`profile-${p.id}`}>
-            <span className="avatar">{p.name.slice(0, 1).toUpperCase()}</span>
-            {editing === p.id ? (
-              <form
-                className="inline-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (draft.trim()) void run(() => call('PATCH /api/profiles/:id', { params: { id: p.id }, body: { name: draft.trim() } }));
-                  setEditing(null);
-                }}
-              >
-                <input className="input" value={draft} onChange={(e) => setDraft(e.target.value)} aria-label="Profile name" autoFocus maxLength={40} />
-                <button className="btn btn-primary" type="submit">
-                  Save
+            <ProfileAvatar profile={p} size="sm" />
+            <div className="set-text">
+              <div className="set-label">
+                {p.name}
+                {p.locked && <IconLock className="ico lock-mark" aria-label="Locked with a PIN" />}
+              </div>
+              {p.id === current && <div className="set-hint">Watching now</div>}
+            </div>
+            <div className="set-ctl row-actions">
+              {p.id !== current && (
+                <button className="btn" type="button" onClick={() => void switchProfile(p).then((ok) => ok && navigate('/', { replace: true }))}>
+                  Switch
                 </button>
-                <button className="btn" type="button" onClick={() => setEditing(null)}>
-                  Cancel
-                </button>
-              </form>
-            ) : (
-              <>
-                <div className="set-text">
-                  <div className="set-label">{p.name}</div>
-                  {p.id === current && <div className="set-hint">Watching now</div>}
-                </div>
-                <div className="set-ctl row-actions">
-                  {p.id !== current && (
-                    <button className="btn" type="button" onClick={() => selectProfile(p.id)}>
-                      Switch
-                    </button>
-                  )}
-                  <button className="btn" type="button" onClick={() => (setEditing(p.id), setDraft(p.name))}>
-                    Rename
-                  </button>
-                  {profiles.length > 1 &&
-                    (confirm === p.id ? (
-                      <>
-                        <button
-                          className="btn btn-danger"
-                          type="button"
-                          onClick={() => {
-                            setConfirm(null);
-                            void run(async () => {
-                              await call('DELETE /api/profiles/:id', { params: { id: p.id } });
-                              if (p.id === current) {
-                                const other = profiles.find((x) => x.id !== p.id);
-                                if (other) selectProfile(other.id);
-                              }
-                            });
-                          }}
-                        >
-                          Delete {p.name}
-                        </button>
-                        <button className="btn" type="button" onClick={() => setConfirm(null)}>
-                          Keep
-                        </button>
-                      </>
-                    ) : (
-                      <button className="btn" type="button" onClick={() => setConfirm(p.id)}>
-                        Delete
-                      </button>
-                    ))}
-                </div>
-              </>
-            )}
+              )}
+              <button className="btn" type="button" onClick={() => navigate(`/profiles/${p.id}`)}>
+                Edit
+              </button>
+            </div>
           </div>
         ))}
       </div>
-      <form
-        className="inline-form"
-        style={{ marginTop: '1rem' }}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!name.trim()) return;
-          void run(() => call('POST /api/profiles', { body: { name: name.trim() } }));
-          setName('');
-        }}
-      >
-        <input className="input" placeholder="New profile name" aria-label="New profile name" value={name} onChange={(e) => setName(e.target.value)} maxLength={40} />
-        <button className="btn btn-primary" type="submit" disabled={!name.trim()}>
-          Add profile
+      <div className="row-actions" style={{ marginTop: '1rem' }}>
+        {profiles.length < PROFILES_MAX && (
+          <button className="btn btn-primary" type="button" onClick={() => navigate('/profiles/new')}>
+            Add profile
+          </button>
+        )}
+        <button className="btn" type="button" onClick={() => navigate('/profiles')}>
+          Manage profiles
         </button>
-      </form>
+      </div>
+      <Row label="Ask who's watching" hint="On this device, show the profile picker each time AnyCast opens. Off: it opens the last profile.">
+        <Toggle
+          label="Ask who's watching when AnyCast opens"
+          checked={ask}
+          onChange={(v) => {
+            setAskOnLaunch(v);
+            setAsk(v);
+          }}
+        />
+      </Row>
       <p className="set-hint" style={{ marginTop: '0.75rem' }}>
-        Profiles share this login and TV source. Each has its own favorites, progress, settings and filters.
+        Profiles share this login and TV source. Each has its own picture, PIN, favorites, progress, settings and filters.
       </p>
     </>
   );

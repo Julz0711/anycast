@@ -13,6 +13,7 @@ import { SearchScreen } from './screens/Search';
 import { FavoritesIndex, FavoritesScreen } from './screens/Favorites';
 import { LoginScreen } from './screens/Login';
 import { ProfilePicker } from './screens/Profiles';
+import { ProfileHub, SwitchOverlay } from './profiles/ProfileMenu';
 import { SetupScreen } from './screens/Setup';
 import { markSetupDone } from './store/actions';
 import { call } from './api/client';
@@ -23,6 +24,7 @@ import { PinHost } from './components/Locks';
 
 const SettingsScreen = lazy(() => import('./screens/Settings'));
 const PlayerScreen = lazy(() => import('./player/PlayerScreen'));
+const ProfilePage = lazy(() => import('./profiles/ProfilePage'));
 
 function subscribeMotion(cb: () => void) {
   const mq = matchMedia('(prefers-reduced-motion: reduce)');
@@ -101,7 +103,18 @@ function AuthedRoutes() {
     if (profileId && rulesLoaded && prefsLoaded && hasRules && !setupDone) markSetupDone();
   }, [profileId, rulesLoaded, prefsLoaded, hasRules, setupDone]);
 
-  if (!profileId) return <ProfilePicker />;
+  if (!profileId) {
+    // no profile open: the picker, and the profile pages behind Manage profiles
+    return (
+      <Suspense fallback={<Splash />}>
+        <Routes>
+          <Route path="/profiles" element={<ProfilePicker manage />} />
+          <Route path="/profiles/:id" element={<ProfilePage />} />
+          <Route path="*" element={<ProfilePicker />} />
+        </Routes>
+      </Suspense>
+    );
+  }
   if (!rulesLoaded || !prefsLoaded || (source.loading && !source.data)) return <Splash />;
   const noCatalog = source.data && (!source.data.configured || source.data.counts.live + source.data.counts.movie + source.data.counts.series === 0);
   const noFilters = !hasRules && !setupDone;
@@ -111,6 +124,8 @@ function AuthedRoutes() {
     <Suspense fallback={<Splash />}>
       <Routes>
         <Route path="/play/:kind/:id" element={<PlayerScreen />} />
+        <Route path="/profiles" element={<ProfilePicker manage />} />
+        <Route path="/profiles/:id" element={<ProfilePage />} />
         <Route element={<Shell />}>
           <Route path="/live" element={<LiveScreen />} />
           <Route path="/movies" element={<MoviesScreen />} />
@@ -121,6 +136,7 @@ function AuthedRoutes() {
           <Route path="/favorites/:tab" element={<FavoritesScreen />} />
           <Route path="/search" element={<SearchScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />
+          <Route path="/me" element={<ProfileHub />} />
         </Route>
         <Route path="*" element={<StartRedirect />} />
       </Routes>
@@ -137,6 +153,7 @@ export function App() {
       {auth === 'unknown' ? <Splash /> : auth === 'anon' ? <LoginScreen /> : <AuthedRoutes />}
       {auth === 'authed' && <AddToListHost />}
       <PinHost />
+      {auth === 'authed' && <SwitchOverlay />}
       <Toasts />
     </BrowserRouter>
   );

@@ -1,5 +1,5 @@
 /** The backup file format: strict validation and forward migration of older schema versions. */
-import { ADULT_MODES, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, CHANNEL_LIST_LIMITS, UNLOCK_MINUTES, type BackupFile } from '@anycast/shared';
+import { ADULT_MODES, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, CHANNEL_LIST_LIMITS, parseAvatar, PROFILE_IMAGE, UNLOCK_MINUTES, type BackupFile } from '@anycast/shared';
 import { z } from 'zod';
 
 export class BackupError extends Error {
@@ -75,6 +75,17 @@ const Profile = z
         .strict(),
       CHANNEL_LIST_LIMITS.lists,
     ),
+    avatar: z.string().max(40).refine((a) => parseAvatar(a) !== null, 'not a built-in picture').nullable().optional(),
+    image: z
+      .object({
+        type: z.enum(PROFILE_IMAGE.types as unknown as [string, ...string[]]),
+        data: z.string().max(Math.ceil(PROFILE_IMAGE.maxBytes / 3) * 4).regex(/^[A-Za-z0-9+/]+={0,2}$/),
+        updatedAt: time,
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    lockHash: argon2.nullable().optional(),
   })
   .strict();
 

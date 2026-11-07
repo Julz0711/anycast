@@ -4,7 +4,7 @@
  */
 import {
   ADULT_MODE_RANK, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, DEFAULT_PREFERENCES, FINISHED_THRESHOLD, LOCKED_NAME, mergePreferences, PIN_MAX_ATTEMPTS, summarizeBackup, PIN_WINDOW_MS,
-  type AdultMode, type AdultStatus, type BackupFile, type Category, type RestoreMode, type UnlockMinutes,
+  defaultAvatar, type AdultMode, type AdultStatus, type BackupFile, type Category, type RestoreMode, type UnlockMinutes,
   type Channel, type ChannelList, type Favorite, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
   type Preferences, type Profile, type Progress, type Series, type SourceStatus, type SyncEvent, type TagSummary, type TimelineInfo,
 } from '@anycast/shared';
@@ -78,10 +78,20 @@ function checkPin(st: ProfileState, pin: unknown) {
 
 let signedIn = true;
 const profiles: Profile[] = [
-  { id: 'p1', name: 'Julz' },
-  { id: 'p2', name: 'Sam' },
+  { id: 'p1', name: 'Julz', avatar: 'orbit.amber', image: null, locked: false, needsPin: false },
+  { id: 'p2', name: 'Sam', avatar: 'wave.sky', image: null, locked: false, needsPin: false },
+  { id: 'p3', name: 'Kids', avatar: 'bloom.mint', image: null, locked: false, needsPin: false },
 ];
-const me = (): Me => ({ user: { id: 'u1', username: 'julz', isAdmin: true }, profiles: [...profiles] });
+/** demo profile locks: PIN per profile id, and the ones opened in this tab */
+const profilePins = new Map<string, string>([['p2', '1234']]);
+const entered = new Set<string>(['p1', 'p3']);
+const view = (p: Profile): Profile => ({ ...p, locked: profilePins.has(p.id), needsPin: profilePins.has(p.id) && !entered.has(p.id) });
+const findProfile = (id: string | undefined) => {
+  const p = profiles.find((x) => x.id === id);
+  if (!p) throw new ApiError(404, 'Profile not found');
+  return p;
+};
+const me = (): Me => ({ user: { id: 'u1', username: 'julz', isAdmin: true }, profiles: profiles.map(view) });
 
 const states = new Map<string, ProfileState>();
 function state(pid: string | null): ProfileState {
@@ -231,17 +241,58 @@ const routes: [string, RegExp, Handler][] = [
     return { ok: true };
   }],
   ['GET', /^\/api\/me$/, () => me()],
-  ['GET', /^\/api\/profiles$/, () => [...profiles]],
+  ['GET', /^\/api\/profiles$/, () => profiles.map(view)],
   ['POST', /^\/api\/profiles$/, (_m, _q, body) => {
-    const p = { id: `p${Date.now()}`, name: (body as { name: string }).name };
+    const b = body as { name: string; avatar?: string | null };
+    const p: Profile = { id: `p${Date.now()}`, name: b.name, avatar: b.avatar === undefined ? defaultAvatar(profiles.length) : b.avatar, image: null, locked: false, needsPin: false };
     profiles.push(p);
-    return p;
+    return view(p);
+  }],
+  ['POST', /^\/api\/profiles\/leave$/, (_m, _q, body) => {
+    const keep = (body as { keep?: string } | undefined)?.keep;
+    for (const id of [...entered]) if (id !== keep && profilePins.has(id)) entered.delete(id);
+    return { ok: true };
+  }],
+  ['POST', /^\/api\/profiles\/([^/]+)\/enter$/, (m, _q, body) => {
+    const p = findProfile(m[1]);
+    const pin = (body as { pin?: string } | undefined)?.pin;
+    if (profilePins.has(p.id) && (pin || !entered.has(p.id))) {
+      if (pin !== profilePins.get(p.id)) throw new ApiError(403, 'Wrong PIN. The demo PIN is 1234.', { error: 'wrong_pin', message: 'Wrong PIN. The demo PIN is 1234.', attemptsLeft: 4, lockedOutUntil: null });
+      entered.add(p.id);
+    }
+    return view(p);
+  }],
+  ['PUT', /^\/api\/profiles\/([^/]+)\/lock$/, (m, _q, body) => {
+    const p = findProfile(m[1]);
+    const b = body as { pin: string | null; currentPin?: string; password?: string };
+    if (profilePins.has(p.id) && !b.password && b.currentPin !== profilePins.get(p.id)) {
+      throw new ApiError(403, 'Wrong PIN.', { error: 'wrong_pin', message: 'Wrong PIN.', attemptsLeft: 4, lockedOutUntil: null });
+    }
+    if (b.pin === null) profilePins.delete(p.id);
+    else profilePins.set(p.id, b.pin);
+    entered.add(p.id);
+    return view(p);
+  }],
+  ['PUT', /^\/api\/profiles\/([^/]+)\/image$/, (m, _q, body) => {
+    const p = findProfile(m[1]);
+    const b = body as { type: string; data: string };
+    p.image = `data:${b.type};base64,${b.data}`;
+    return view(p);
+  }],
+  ['DELETE', /^\/api\/profiles\/([^/]+)\/image$/, (m) => {
+    const p = findProfile(m[1]);
+    p.image = null;
+    return view(p);
   }],
   ['PATCH', /^\/api\/profiles\/([^/]+)$/, (m, _q, body) => {
-    const p = profiles.find((x) => x.id === m[1]);
-    if (!p) throw new ApiError(404, 'Profile not found');
-    p.name = (body as { name: string }).name;
-    return p;
+    const p = findProfile(m[1]);
+    const b = body as { name?: string; avatar?: string | null };
+    if (b.name !== undefined) p.name = b.name;
+    if (b.avatar !== undefined) {
+      p.avatar = b.avatar;
+      p.image = null;
+    }
+    return view(p);
   }],
   ['DELETE', /^\/api\/profiles\/([^/]+)$/, (m) => {
     if (profiles.length <= 1) throw new ApiError(400, 'You cannot delete the last profile.');
