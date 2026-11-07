@@ -4,11 +4,13 @@ import { z } from 'zod';
 import { EMPTY_RULES, itemsByIds, nowNext, toChannel } from '../catalog/store';
 import { auth, type Services } from '../context';
 import { ChannelLists } from '../lists';
+import { MediaLists } from '../media-lists';
 import { parentalCtx } from '../parental';
 
 const Id = z.string().min(1).max(64);
 const Ids = z.array(Id).max(10_000);
 const Name = z.string().max(200);
+const Items = z.array(z.object({ kind: z.enum(['movie', 'series']), id: Id })).max(10_000);
 
 /** Custom channel lists (LB-3); see ChannelLists. */
 export function listRoutes(app: FastifyInstance, s: Services): void {
@@ -58,5 +60,39 @@ export function listRoutes(app: FastifyInstance, s: Services): void {
     const rows = [];
     for (let i = 0; i < list.channelIds.length; i += 500) rows.push(...itemsByIds(s.db, 'live', list.channelIds.slice(i, i + 500), rules));
     return rows.map((c) => adult.item({ ...toChannel(c), ...nowNext(s.db, c, now) }));
+  });
+
+  // Movie and series lists: Watch Later plus the user's own (see MediaLists).
+  const media = new MediaLists(s.db, s.bus);
+
+  app.get('/api/media-lists', async (req) => media.all(pid(req)));
+
+  app.post('/api/media-lists', async (req, reply) => {
+    const b = z.object({ name: Name, items: Items.optional() }).safeParse(req.body);
+    if (!b.success) return reply.code(400).send(bad('name is required; items is a list of {kind, id}'));
+    return media.create(pid(req), b.data.name, b.data.items);
+  });
+
+  app.put('/api/media-lists/order', async (req, reply) => {
+    const b = z.object({ ids: Ids }).safeParse(req.body);
+    if (!b.success) return reply.code(400).send(bad('ids is the new order of list ids'));
+    return media.reorder(pid(req), b.data.ids);
+  });
+
+  app.patch<{ Params: { id: string } }>('/api/media-lists/:id', async (req, reply) => {
+    const b = z.object({ name: Name }).safeParse(req.body);
+    if (!b.success) return reply.code(400).send(bad('name is required'));
+    return media.rename(pid(req), req.params.id, b.data.name);
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/media-lists/:id', async (req) => {
+    media.remove(pid(req), req.params.id);
+    return { ok: true as const };
+  });
+
+  app.put<{ Params: { id: string } }>('/api/media-lists/:id/items', async (req, reply) => {
+    const b = z.object({ items: Items }).safeParse(req.body);
+    if (!b.success) return reply.code(400).send(bad('items is the whole ordered list of {kind, id}'));
+    return media.setItems(pid(req), req.params.id, b.data.items);
   });
 }

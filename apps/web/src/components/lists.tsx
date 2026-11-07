@@ -1,15 +1,16 @@
 /**
- * Channel lists (LB-3), the always-loaded part: a modal Sheet, the long-press / right-click hook for
- * channel rows, and the "Add to list" sheet (mounted once in App, opened with openAddToList).
+ * Lists, the always-loaded part: a modal Sheet, the long-press / right-click hook for channel rows
+ * and posters, and the "Add to list" sheet for channels, movies and series (mounted once in App,
+ * opened with openAddToList).
  * The list editor itself is lazy: ./ListEditor.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CHANNEL_LIST_LIMITS } from '@anycast/shared';
+import { CHANNEL_LIST_LIMITS, MEDIA_LIST_LIMITS } from '@anycast/shared';
 import { useApp } from '../store/app';
-import { closeAddToList, createList, toggleInList } from '../store/lists';
+import { closeAddToList, createList, createMediaList, inMediaList, openAddToList, toggleInList, toggleInMediaList, toggleWatchLater, watchLater } from '../store/lists';
 import { isBackKey } from '../nav/spatial';
-import { IconClose } from './Icons';
+import { IconBookmark, IconClose, IconListAdd } from './Icons';
 import '../theme/lists.css';
 
 /**
@@ -114,16 +115,54 @@ export function useChannelMenu(onMenu: (() => void) | undefined) {
   };
 }
 
-/** The "Add to list" sheet for the channel in `addToList`; mounted once in App. */
+/** The "Add to list" sheet for the channel, movie or series in `addToList`; mounted once in App. */
 export function AddToListHost() {
-  const ch = useApp((s) => s.addToList);
-  if (!ch) return null;
+  const t = useApp((s) => s.addToList);
+  if (!t) return null;
   // a full-screen player only shows its own subtree, so the sheet goes inside it then
-  return createPortal(<AddToListSheet key={ch.id} id={ch.id} name={ch.name} />, document.fullscreenElement ?? document.body);
+  const sheet = t.kind === 'live' ? <ChannelAddToList key={t.id} id={t.id} name={t.name} /> : <MediaAddToList key={`${t.kind}:${t.id}`} kind={t.kind} id={t.id} name={t.name} />;
+  return createPortal(sheet, document.fullscreenElement ?? document.body);
 }
 
-function AddToListSheet(props: { id: string; name: string }) {
+function ChannelAddToList(props: { id: string; name: string }) {
   const lists = useApp((s) => s.lists);
+  return (
+    <AddToListSheet
+      name={props.name}
+      rows={lists.map((l) => ({ id: l.id, name: l.name, count: l.channelIds.length, on: l.channelIds.includes(props.id) }))}
+      onToggle={(listId, on) => void toggleInList(listId, props.id, on)}
+      onCreate={async (n) => !!(await createList(n, [props.id]))}
+      empty="No lists yet. Make one for the channels you watch, like News or Sport."
+      placeholder="List name, e.g. News"
+      maxLength={CHANNEL_LIST_LIMITS.name}
+    />
+  );
+}
+
+function MediaAddToList(props: { kind: 'movie' | 'series'; id: string; name: string }) {
+  const lists = useApp((s) => s.mediaLists);
+  return (
+    <AddToListSheet
+      name={props.name}
+      rows={lists.map((l) => ({ id: l.id, name: l.name, count: l.items.length, on: inMediaList(l, props.kind, props.id) }))}
+      onToggle={(listId, on) => void toggleInMediaList(listId, props.kind, props.id, on)}
+      onCreate={async (n) => !!(await createMediaList(n, [{ kind: props.kind, id: props.id }]))}
+      empty="No lists yet."
+      placeholder="List name, e.g. Date night"
+      maxLength={MEDIA_LIST_LIMITS.name}
+    />
+  );
+}
+
+function AddToListSheet(props: {
+  name: string;
+  rows: { id: string; name: string; count: number; on: boolean }[];
+  onToggle: (listId: string, on: boolean) => void;
+  onCreate: (name: string) => Promise<boolean>;
+  empty: string;
+  placeholder: string;
+  maxLength: number;
+}) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -131,7 +170,7 @@ function AddToListSheet(props: { id: string; name: string }) {
     const n = name.trim();
     if (!n || busy) return;
     setBusy(true);
-    const made = await createList(n, [props.id]);
+    const made = await props.onCreate(n);
     setBusy(false);
     if (made) {
       setName('');
@@ -151,31 +190,28 @@ function AddToListSheet(props: { id: string; name: string }) {
       }
     >
       <div className="atl-list" role="group" aria-label="Your lists">
-        {lists.length === 0 && !creating && <p className="muted atl-empty">No lists yet. Make one for the channels you watch, like News or Sport.</p>}
-        {lists.map((l, i) => {
-          const on = l.channelIds.includes(props.id);
-          return (
-            <button
-              key={l.id}
-              type="button"
-              role="checkbox"
-              aria-checked={on}
-              className="atl-row"
-              data-autofocus={i === 0 ? '' : undefined}
-              onClick={() => void toggleInList(l.id, props.id, !on)}
-            >
-              <span className="atl-box" aria-hidden="true">
-                {on && (
-                  <svg viewBox="0 0 24 24" className="ico">
-                    <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </span>
-              <span className="atl-name ellipsis">{l.name}</span>
-              <span className="atl-count tabnum">{l.channelIds.length}</span>
-            </button>
-          );
-        })}
+        {props.rows.length === 0 && !creating && <p className="muted atl-empty">{props.empty}</p>}
+        {props.rows.map((l, i) => (
+          <button
+            key={l.id}
+            type="button"
+            role="checkbox"
+            aria-checked={l.on}
+            className="atl-row"
+            data-autofocus={i === 0 ? '' : undefined}
+            onClick={() => props.onToggle(l.id, !l.on)}
+          >
+            <span className="atl-box" aria-hidden="true">
+              {l.on && (
+                <svg viewBox="0 0 24 24" className="ico">
+                  <path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </span>
+            <span className="atl-name ellipsis">{l.name}</span>
+            <span className="atl-count tabnum">{l.count}</span>
+          </button>
+        ))}
       </div>
       {creating ? (
         <form
@@ -189,9 +225,9 @@ function AddToListSheet(props: { id: string; name: string }) {
             className="input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="List name, e.g. News"
+            placeholder={props.placeholder}
             aria-label="New list name"
-            maxLength={CHANNEL_LIST_LIMITS.name}
+            maxLength={props.maxLength}
             autoFocus
           />
           <button type="submit" className="btn btn-primary" disabled={!name.trim() || busy}>
@@ -199,10 +235,28 @@ function AddToListSheet(props: { id: string; name: string }) {
           </button>
         </form>
       ) : (
-        <button type="button" className="btn btn-quiet atl-new-btn" data-autofocus={lists.length === 0 ? '' : undefined} onClick={() => setCreating(true)}>
+        <button type="button" className="btn btn-quiet atl-new-btn" data-autofocus={props.rows.length === 0 ? '' : undefined} onClick={() => setCreating(true)}>
           + New list…
         </button>
       )}
     </Sheet>
+  );
+}
+
+/** Watch later + Add to list buttons for a movie or series page. */
+export function MediaListButtons(props: { kind: 'movie' | 'series'; id: string; name: string }) {
+  const later = useApp((s) => {
+    const wl = watchLater(s.mediaLists);
+    return !!wl && inMediaList(wl, props.kind, props.id);
+  });
+  return (
+    <>
+      <button type="button" className={`btn btn-lg${later ? ' on' : ''}`} aria-pressed={later} onClick={() => void toggleWatchLater(props.kind, props.id)}>
+        <IconBookmark filled={later} /> {later ? 'In Watch Later' : 'Watch later'}
+      </button>
+      <button type="button" className="btn btn-lg" onClick={() => openAddToList({ kind: props.kind, id: props.id, name: props.name })}>
+        <IconListAdd /> Add to list
+      </button>
+    </>
   );
 }

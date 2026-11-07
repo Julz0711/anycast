@@ -3,7 +3,7 @@
  *
  * A backup is one JSON file: accounts (with their argon2 password hashes), profiles and everything
  * per profile (preferences, hide rules, parental lock, favorites, progress, track choices, channel
- * lists) and the channels pinned for the rewind buffer. It never holds the provider login, sign-in
+ * lists, movie and series lists) and the channels pinned for the rewind buffer. It never holds the provider login, sign-in
  * sessions, the encryption secret, the catalog, the guide, or any cache: those come back from the
  * provider on the next sync. Ids of channels, movies and episodes are kept even when the catalog
  * doesn't (yet) have them, so a restore on a fresh install works before the first sync.
@@ -15,7 +15,8 @@ import type { AdultMode } from './parental';
 import type { HideRules, MediaKind } from './catalog';
 
 export const BACKUP_FORMAT = 'anycast-backup';
-export const BACKUP_SCHEMA_VERSION = 1;
+/** 2 added `mediaLists` (Watch Later and the user's movie and series lists) to every profile. */
+export const BACKUP_SCHEMA_VERSION = 2;
 /** Largest backup file a restore accepts. */
 export const BACKUP_MAX_BYTES = 32 * 1024 * 1024;
 
@@ -34,6 +35,15 @@ export interface BackupProgress {
 /** audio / subtitle = source track index; subtitle -1 = turned off; null = not picked */
 export interface BackupTrackChoice { kind: 'movie' | 'episode' | 'live'; id: string; audio: number | null; subtitle: number | null; updatedAt: number }
 export interface BackupList { id: string; name: string; position: number; createdAt: number; channelIds: string[] }
+/** builtin 'watch-later' is the profile's Watch Later list */
+export interface BackupMediaList {
+  id: string;
+  name: string;
+  builtin: 'watch-later' | null;
+  position: number;
+  createdAt: number;
+  items: { kind: 'movie' | 'series'; id: string; addedAt: number }[];
+}
 export interface BackupParental { mode: AdultMode; unlockMinutes: number; /** argon2 hash of the PIN */ pinHash: string | null; updatedAt: number }
 
 export interface BackupProfile {
@@ -48,6 +58,7 @@ export interface BackupProfile {
   progress: BackupProgress[];
   trackChoices: BackupTrackChoice[];
   lists: BackupList[];
+  mediaLists: BackupMediaList[];
 }
 
 export interface BackupUser {
@@ -83,6 +94,10 @@ export interface BackupSummary {
   finished: number;
   lists: number;
   listChannels: number;
+  /** the user's own movie and series lists (Watch Later not counted) */
+  mediaLists: number;
+  /** movies and series in all media lists, Watch Later included */
+  mediaListItems: number;
   trackChoices: number;
   /** profiles with a parental PIN */
   pins: number;
@@ -101,6 +116,8 @@ export function summarizeBackup(b: Pick<BackupFile, 'users' | 'pinnedChannels'>)
     finished: sum((p) => p.progress.filter((x) => x.finished).length),
     lists: sum((p) => p.lists.length),
     listChannels: sum((p) => p.lists.reduce((n, l) => n + l.channelIds.length, 0)),
+    mediaLists: sum((p) => (p.mediaLists ?? []).filter((l) => !l.builtin).length),
+    mediaListItems: sum((p) => (p.mediaLists ?? []).reduce((n, l) => n + l.items.length, 0)),
     trackChoices: sum((p) => p.trackChoices.length),
     pins: sum((p) => (p.parental?.pinHash ? 1 : 0)),
     pinnedChannels: b.pinnedChannels.length,

@@ -30,6 +30,16 @@ export interface Profile { id: string; name: string; }
 export interface ChannelList { id: string; name: string; channelIds: string[] }
 export const CHANNEL_LIST_LIMITS = { lists: 100, channels: 2000, name: 60 } as const;
 
+/** A movie or series in a media list; `addedAt` is epoch ms. */
+export interface MediaListItem { kind: 'movie' | 'series'; id: string; addedAt: number }
+/**
+ * A profile's own list of movies and series. Every profile has the built-in Watch Later list
+ * (`builtin: 'watch-later'`, always first, can't be renamed or deleted); the rest are the user's own,
+ * in their order. `items` are in the user's order, newest added last unless they reordered.
+ */
+export interface MediaList { id: string; name: string; builtin: 'watch-later' | null; items: MediaListItem[] }
+export const MEDIA_LIST_LIMITS = { lists: 100, items: 5000, name: 60 } as const;
+
 export interface Me {
   user: { id: string; username: string; isAdmin: boolean };
   profiles: Profile[];
@@ -180,6 +190,8 @@ export type SyncEvent =
   | { type: 'hide-rules'; profileId: string; rules: HideRules }
   /** the profile's channel lists, all of them in order, after any change */
   | { type: 'lists'; profileId: string; lists: ChannelList[] }
+  /** the profile's movie and series lists (Watch Later first), all of them in order, after any change */
+  | { type: 'media-lists'; profileId: string; lists: MediaList[] }
   | { type: 'catalog-updated' }
   /** the profile's parental lock settings changed (mode, PIN, duration): refetch GET /api/adult and lists */
   | { type: 'parental'; profileId: string }
@@ -320,6 +332,19 @@ export interface Api {
   'PUT /api/lists/order': { body: { ids: string[] }; res: ChannelList[] };
   /** the list's channels with now/next, in list order; hide rules don't apply, channels gone from the catalog are left out */
   'GET /api/lists/:id/channels': { res: LiveChannelWithNow[] };
+  /**
+   * Movie and series lists, per profile: Watch Later first, then the user's own lists in their order.
+   * Errors: 404 not_found, 400 bad_request, 409 list_limit (MEDIA_LIST_LIMITS), 409 builtin (Watch
+   * Later can't be renamed or deleted). Every change sends a 'media-lists' SyncEvent.
+   */
+  'GET /api/media-lists': { res: MediaList[] };
+  'POST /api/media-lists': { body: { name: string; items?: { kind: 'movie' | 'series'; id: string }[] }; res: MediaList };
+  'PATCH /api/media-lists/:id': { body: { name: string }; res: MediaList };
+  'DELETE /api/media-lists/:id': { res: { ok: true } };
+  /** the whole new item order (duplicates dropped); items already in the list keep their addedAt */
+  'PUT /api/media-lists/:id/items': { body: { items: { kind: 'movie' | 'series'; id: string }[] }; res: MediaList };
+  /** the new order of the user's own lists; Watch Later always stays first */
+  'PUT /api/media-lists/order': { body: { ids: string[] }; res: MediaList[] };
   'GET /api/hide-rules': { res: HideRules };
 
   /**

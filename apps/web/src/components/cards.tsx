@@ -7,6 +7,7 @@ import { toneFor } from '../lib/misc';
 import { fmtClock, fmtDuration } from '../lib/time';
 import { IconLock, IconMore, IconStar } from './Icons';
 import { useChannelMenu } from './lists';
+import { openAddToList } from '../store/lists';
 import { whenUnlocked } from '../store/parental';
 import { LogoTile, ProgressBar } from './ui';
 import { prefetch } from '../api/client';
@@ -50,8 +51,10 @@ export const PosterCard = memo(function PosterCard(props: { kind: 'movie' | 'ser
   const meta = [item.year, item.rating ? item.rating.toFixed(1) : null].filter(Boolean).join(' · ');
   const warm = () => !item.locked && kind === 'series' && prefetch('GET /api/series/:id', { params: { id: item.id } });
   const onClick = useLockedLink(item.locked, to);
+  // right-click / long-press: Add to list (Watch Later or the user's own lists)
+  const menu = useChannelMenu(item.locked ? undefined : () => openAddToList({ kind, id: item.id, name: item.name }));
   return (
-    <Link to={to} className="poster" onClick={onClick} onMouseEnter={warm} onFocus={warm} aria-label={`${item.name}${meta ? ', ' + meta : ''}${fav ? ', favorite' : ''}`}>
+    <Link to={to} className="poster" {...menu} onClick={onClick} onMouseEnter={warm} onFocus={warm} aria-label={`${item.name}${meta ? ', ' + meta : ''}${fav ? ', favorite' : ''}`}>
       <Art id={item.id} name={item.name} src={item.poster} locked={item.locked}>
         {fav && !props.noBadge && (
           <span className="badge">

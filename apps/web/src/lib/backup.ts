@@ -44,6 +44,7 @@ export function describeSummary(s: BackupSummary): { label: string; value: strin
     { label: 'Continue watching', value: n(s.inProgress, 'title') },
     { label: 'Watched', value: n(s.finished, 'title') },
     { label: 'Channel lists', value: s.lists ? `${n(s.lists, 'list')}, ${n(s.listChannels, 'channel')}` : n(0, 'list') },
+    { label: 'Movie & series lists', value: n(s.mediaListItems ?? 0, 'title') + (s.mediaLists ? ` (${n(s.mediaLists, 'own list')} + Watch Later)` : '') },
     { label: 'Audio & subtitle choices', value: n(s.trackChoices, 'title') },
     { label: 'Parental PINs', value: n(s.pins, 'profile') },
     { label: 'Always-buffered channels', value: n(s.pinnedChannels, 'channel') },

@@ -5,7 +5,7 @@
 import {
   ADULT_MODE_RANK, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, DEFAULT_PREFERENCES, FINISHED_THRESHOLD, LOCKED_NAME, mergePreferences, PIN_MAX_ATTEMPTS, summarizeBackup, PIN_WINDOW_MS,
   type AdultMode, type AdultStatus, type BackupFile, type Category, type RestoreMode, type UnlockMinutes,
-  type Channel, type ChannelList, type Favorite, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
+  type Channel, type ChannelList, type Favorite, type MediaList, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
   type Preferences, type Profile, type Progress, type Series, type SourceStatus, type SyncEvent, type TagSummary, type TimelineInfo,
 } from '@anycast/shared';
 import { ApiError } from '../api/client';
@@ -21,6 +21,7 @@ interface ProfileState {
   prefs: Preferences;
   rules: HideRules;
   lists: ChannelList[];
+  mediaLists: MediaList[];
   adult: { mode: AdultMode; pin: string | null; unlockMinutes: UnlockMinutes; unlockedUntil: number | null; failures: number[] };
 }
 
@@ -104,6 +105,13 @@ function state(pid: string | null): ProfileState {
         { id: 'l2', name: 'Sport', channelIds: [ch(111), ch(113), ch(112), ch(115)] },
         { id: 'l3', name: 'Kids', channelIds: [ch(141), ch(143)] },
       ].filter(() => id === 'p1'),
+      mediaLists: [
+        {
+          id: `wl-${id}`, name: 'Watch Later', builtin: 'watch-later' as const,
+          items: id === 'p1' ? [{ kind: 'movie' as const, id: 'm21', addedAt: now }, { kind: 'series' as const, id: 's8', addedAt: now }, { kind: 'movie' as const, id: 'm5', addedAt: now }] : [],
+        },
+        ...(id === 'p1' ? [{ id: 'ml1', name: 'Date night', builtin: null, items: [{ kind: 'movie' as const, id: 'm7', addedAt: now }, { kind: 'movie' as const, id: 'm108', addedAt: now }] }] : []),
+      ],
       adult: { mode: 'locked', pin: '1234', unlockMinutes: 30, unlockedUntil: null, failures: [] },
     };
     const seed: Progress[] = [
@@ -500,6 +508,45 @@ const routes: [string, RegExp, Handler][] = [
     const now = Date.now();
     return findList(st, m[1]!).channelIds.flatMap((id) => fx.channels.filter((c) => c.id === id)).map((c) => withNow(c, now));
   }],
+  ['GET', /^\/api\/media-lists$/, (_m, _q, _b, st) => st.mediaLists],
+  ['POST', /^\/api\/media-lists$/, (_m, _q, body, st) => {
+    const b = body as { name: string; items?: { kind: 'movie' | 'series'; id: string }[] };
+    const now = Date.now();
+    const l: MediaList = { id: `ml${now}`, name: b.name.trim(), builtin: null, items: (b.items ?? []).map((x) => ({ ...x, addedAt: now })) };
+    st.mediaLists.push(l);
+    emitMediaLists(st);
+    return l;
+  }],
+  ['PUT', /^\/api\/media-lists\/order$/, (_m, _q, body, st) => {
+    const ids = (body as { ids: string[] }).ids;
+    const own = st.mediaLists.filter((l) => !l.builtin);
+    const named = ids.flatMap((id) => own.filter((l) => l.id === id));
+    st.mediaLists = [...st.mediaLists.filter((l) => l.builtin), ...named, ...own.filter((l) => !named.includes(l))];
+    emitMediaLists(st);
+    return st.mediaLists;
+  }],
+  ['PATCH', /^\/api\/media-lists\/([^/]+)$/, (m, _q, body, st) => {
+    const l = findMediaList(st, m[1]!, true);
+    l.name = (body as { name: string }).name.trim();
+    emitMediaLists(st);
+    return l;
+  }],
+  ['DELETE', /^\/api\/media-lists\/([^/]+)$/, (m, _q, _b, st) => {
+    findMediaList(st, m[1]!, true);
+    st.mediaLists = st.mediaLists.filter((l) => l.id !== m[1]);
+    emitMediaLists(st);
+    return { ok: true };
+  }],
+  ['PUT', /^\/api\/media-lists\/([^/]+)\/items$/, (m, _q, body, st) => {
+    const l = findMediaList(st, m[1]!, false);
+    const before = new Map(l.items.map((x) => [`${x.kind}:${x.id}`, x.addedAt]));
+    const seen = new Set<string>();
+    l.items = (body as { items: { kind: 'movie' | 'series'; id: string }[] }).items
+      .filter((x) => !seen.has(`${x.kind}:${x.id}`) && !!seen.add(`${x.kind}:${x.id}`))
+      .map((x) => ({ kind: x.kind, id: x.id, addedAt: before.get(`${x.kind}:${x.id}`) ?? Date.now() }));
+    emitMediaLists(st);
+    return l;
+  }],
   ['GET', /^\/api\/hide-rules$/, (_m, _q, _b, st) => st.rules],
   ['PUT', /^\/api\/hide-rules$/, (_m, _q, body, st) => {
     st.rules = body as HideRules;
@@ -511,6 +558,12 @@ const routes: [string, RegExp, Handler][] = [
 function findList(st: ProfileState, id: string) {
   const l = st.lists.find((x) => x.id === id);
   if (!l) throw new ApiError(404, 'List not found');
+  return l;
+}
+function findMediaList(st: ProfileState, id: string, own: boolean) {
+  const l = st.mediaLists.find((x) => x.id === id);
+  if (!l) throw new ApiError(404, 'List not found');
+  if (own && l.builtin) throw new ApiError(409, "Watch Later can't be renamed or deleted.");
   return l;
 }
 /* ---------- backup & restore: the demo's own state as a backup file ---------- */
@@ -529,6 +582,7 @@ function demoBackup(): BackupFile {
           progress: [...st.progress.values()].map((x) => ({ kind: x.kind, id: x.id, seriesId: x.seriesId ?? null, position: x.position, duration: x.duration, finished: x.finished, updatedAt: x.updatedAt })),
           trackChoices: [],
           lists: st.lists.map((l, position) => ({ ...l, position, createdAt: position })),
+          mediaLists: st.mediaLists.map((l, position) => ({ ...l, position: l.builtin ? -1 : position, createdAt: position })),
         };
       }),
     }],
@@ -558,11 +612,14 @@ function demoRestore(body: { backup: BackupFile; mode?: RestoreMode; password: s
     if (!merge && bp.hideRules) st.rules = bp.hideRules;
     const lists = bp.lists.map((l) => ({ id: l.id, name: l.name, channelIds: l.channelIds }));
     st.lists = merge ? [...st.lists, ...lists.filter((l) => !st.lists.some((x) => x.id === l.id))] : lists;
+    const media = (bp.mediaLists ?? []).filter((l) => !l.builtin).map((l) => ({ id: l.id, name: l.name, builtin: null, items: l.items }));
+    st.mediaLists = [st.mediaLists[0]!, ...(merge ? [...st.mediaLists.slice(1), ...media.filter((l) => !st.mediaLists.some((x) => x.id === l.id))] : media)];
     emit({ type: 'restored', profileId: bp.id });
   }
   return { ok: true, mode: body.mode ?? 'replace', summary: summarizeBackup(b), keptCurrentAccount: false, safetyBackup: demoAutoBackups()[0]!.name };
 }
 
+const emitMediaLists = (st: ProfileState) => emit({ type: 'media-lists', profileId: currentPid, lists: structuredClone(st.mediaLists) });
 const emitLists = (st: ProfileState) => emit({ type: 'lists', profileId: currentPid, lists: structuredClone(st.lists) });
 
 let syncingUntil = 0;

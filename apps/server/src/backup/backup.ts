@@ -11,6 +11,7 @@ import { newId } from '../crypto';
 import type { Db } from '../db';
 import type { EventBus } from '../events';
 import { ChannelLists } from '../lists';
+import { MediaLists } from '../media-lists';
 import type { UserData } from '../userdata';
 
 interface UserRow { id: string; username: string; password_hash: string; is_admin: number; created_at: number }
@@ -62,6 +63,20 @@ export function exportBackup(db: Db, now = Date.now()): BackupFile {
       ids.push(r.channel_id);
       items.set(r.list_id, ids);
     }
+    const mediaLists = byProfile<{ id: string; name: string; builtin: 'watch-later' | null; position: number; createdAt: number }>(
+      'SELECT profile_id, id, name, builtin, position, created_at AS createdAt FROM media_lists ORDER BY builtin IS NULL, position, created_at',
+    );
+    const mediaItems = new Map<string, BackupProfile['mediaLists'][number]['items']>();
+    for (const r of db.prepare('SELECT list_id, kind, item_id, added_at FROM media_list_items ORDER BY list_id, position').all() as {
+      list_id: string;
+      kind: 'movie' | 'series';
+      item_id: string;
+      added_at: number;
+    }[]) {
+      const list = mediaItems.get(r.list_id) ?? [];
+      list.push({ kind: r.kind, id: r.item_id, addedAt: r.added_at });
+      mediaItems.set(r.list_id, list);
+    }
 
     const profilesOf = new Map<string, ProfileRow[]>();
     for (const p of db.prepare('SELECT id, user_id, name, created_at FROM profiles ORDER BY created_at, rowid').all() as ProfileRow[]) {
@@ -89,6 +104,7 @@ export function exportBackup(db: Db, now = Date.now()): BackupFile {
             progress: (progress.get(p.id) ?? []).map((x) => ({ ...x, finished: x.finished === 1 })),
             trackChoices: tracks.get(p.id) ?? [],
             lists: (lists.get(p.id) ?? []).map((l) => ({ ...l, channelIds: items.get(l.id) ?? [] })),
+            mediaLists: (mediaLists.get(p.id) ?? []).map((l) => ({ ...l, items: mediaItems.get(l.id) ?? [] })),
           }),
         ),
       }),
@@ -161,6 +177,12 @@ export function restoreBackup(db: Db, backup: BackupFile, opts: RestoreOptions):
       listMax: db.prepare('SELECT COALESCE(MAX(position), -1) AS n FROM channel_lists WHERE profile_id = ?'),
       insertList: db.prepare('INSERT INTO channel_lists (id, profile_id, name, position, created_at) VALUES (?, ?, ?, ?, ?)'),
       listItem: db.prepare('INSERT OR IGNORE INTO channel_list_items (list_id, channel_id, position) VALUES (?, ?, ?)'),
+      mediaListExists: db.prepare('SELECT 1 FROM media_lists WHERE id = ?'),
+      watchLater: db.prepare("SELECT id FROM media_lists WHERE profile_id = ? AND builtin = 'watch-later'"),
+      mediaListMax: db.prepare('SELECT COALESCE(MAX(position), -1) AS n FROM media_lists WHERE profile_id = ? AND builtin IS NULL'),
+      insertMediaList: db.prepare('INSERT INTO media_lists (id, profile_id, name, builtin, position, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
+      mediaItemMax: db.prepare('SELECT COALESCE(MAX(position), -1) AS n FROM media_list_items WHERE list_id = ?'),
+      mediaItem: db.prepare('INSERT OR IGNORE INTO media_list_items (list_id, kind, item_id, position, added_at) VALUES (?, ?, ?, ?, ?)'),
       pin: db.prepare('INSERT OR IGNORE INTO pinned_channels (channel_id, pinned_at) VALUES (?, ?)'),
     };
 
@@ -200,6 +222,25 @@ export function restoreBackup(db: Db, backup: BackupFile, opts: RestoreOptions):
           did(q.insertList.run(l.id, p.id, l.name, replace ? l.position : next++, l.createdAt));
           l.channelIds.forEach((c, i) => q.listItem.run(l.id, c, i));
         }
+        // movie and series lists the same way; Watch Later items join the profile's own Watch Later
+        let nextMedia = replace ? 0 : (q.mediaListMax.get(p.id) as { n: number }).n + 1;
+        for (const l of [...p.mediaLists].sort((a, b) => a.position - b.position || a.createdAt - b.createdAt)) {
+          if (l.builtin) {
+            const own = q.watchLater.get(p.id) as { id: string } | undefined;
+            if (own) {
+              let pos = (q.mediaItemMax.get(own.id) as { n: number }).n + 1;
+              for (const it of l.items) {
+                const r = q.mediaItem.run(own.id, it.kind, it.id, pos, it.addedAt);
+                if (r.changes) pos++;
+                did(r);
+              }
+              continue;
+            }
+          }
+          if (q.mediaListExists.get(l.id)) continue;
+          did(q.insertMediaList.run(l.id, p.id, l.name, l.builtin, l.builtin ? -1 : replace ? l.position : nextMedia++, l.createdAt));
+          l.items.forEach((it, i) => q.mediaItem.run(l.id, it.kind, it.id, i, it.addedAt));
+        }
         if (changed) touched.add(p.id);
       }
     }
@@ -226,11 +267,13 @@ export function restoreBackup(db: Db, backup: BackupFile, opts: RestoreOptions):
 /** Tells every open device of the changed profiles to refetch (the usual per-kind events, then 'restored'). */
 export function announceRestore(db: Db, bus: EventBus, userData: UserData, profileIds: string[]): void {
   const lists = new ChannelLists(db, bus);
+  const media = new MediaLists(db, bus);
   for (const profileId of profileIds) {
     bus.emit({ type: 'favorites', profileId, favorites: userData.favorites(profileId) });
     bus.emit({ type: 'preferences', profileId, preferences: userData.preferences(profileId) });
     bus.emit({ type: 'hide-rules', profileId, rules: userData.hideRules(profileId) });
     bus.emit({ type: 'lists', profileId, lists: lists.all(profileId) });
+    bus.emit({ type: 'media-lists', profileId, lists: media.all(profileId) });
     bus.emit({ type: 'parental', profileId });
     bus.emit({ type: 'restored', profileId });
   }

@@ -691,7 +691,12 @@ export default function PlayerScreen() {
     }
   };
 
-  const addToList = () => openAddToList({ id, name: channel.data?.name ?? 'this channel' });
+  const addToList = () =>
+    isLive
+      ? openAddToList({ id, name: channel.data?.name ?? 'this channel' })
+      : kind === 'episode'
+        ? seriesId && openAddToList({ kind: 'series', id: seriesId, name: series.data?.name ?? 'this series' })
+        : openAddToList({ kind: 'movie', id, name: movie.data?.name ?? 'this movie' });
   const toggleFav = () => void toggleFavorite(isLive ? 'live' : kind === 'episode' ? 'series' : 'movie', isLive ? id : kind === 'episode' ? seriesId! : id);
 
   // TV: start with focus on the timeline so left/right seek straight away.
@@ -826,11 +831,9 @@ export default function PlayerScreen() {
           )}
           {form === 'phone' && (
             <span className="pl-top-end">
-              {isLive && (
-                <button type="button" className="pl-round" aria-label="Add to list" onClick={addToList}>
-                  <IconListAdd />
-                </button>
-              )}
+              <button type="button" className="pl-round" aria-label={kind === 'episode' ? 'Add series to list' : 'Add to list'} onClick={addToList} disabled={kind === 'episode' && !seriesId}>
+                <IconListAdd />
+              </button>
               <button type="button" className="pl-round" aria-pressed={fav} aria-label={fav ? 'Remove from favorites' : 'Add to favorites'} onClick={toggleFav} disabled={kind === 'episode' && !seriesId}>
                 <IconStar filled={fav} className={`ico${fav ? ' accent' : ''}`} />
               </button>
@@ -1042,11 +1045,9 @@ export default function PlayerScreen() {
               <button type="button" className={`btn${fav ? ' on' : ''}`} aria-pressed={fav} onClick={toggleFav} disabled={kind === 'episode' && !seriesId}>
                 <IconStar filled={fav} /> {kind === 'episode' ? 'Favorite series' : 'Favorite'}
               </button>
-              {isLive && (
-                <button type="button" className="btn" onClick={addToList}>
-                  <IconListAdd /> Add to list
-                </button>
-              )}
+              <button type="button" className="btn" onClick={addToList} disabled={kind === 'episode' && !seriesId}>
+                <IconListAdd /> {kind === 'episode' ? 'Add series to list' : 'Add to list'}
+              </button>
               <button type="button" className="btn" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}>
                 <IconFullscreen />
               </button>
