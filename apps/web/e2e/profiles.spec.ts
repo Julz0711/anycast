@@ -33,10 +33,10 @@ test("profiles: Who's watching, a new picture and photo, a profile PIN another d
     await a.getByRole('button', { name: `Edit ${name}`, exact: true }).click();
     await expect(a.getByRole('heading', { name: 'Edit profile' })).toBeVisible();
     await a.getByRole('button', { name: 'Change picture' }).click();
-    await a.getByRole('radio', { name: 'moon picture' }).click();
+    await a.getByRole('radio', { name: 'Dino picture' }).click();
     await a.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(a.getByText('Profile saved.')).toBeVisible();
-    await expect.poll(async () => ((await (await profile.api.get('/api/profiles')).json()) as { id: string; avatar: string }[]).find((p) => p.id === profile.id)!.avatar).toMatch(/^moon\./);
+    await expect.poll(async () => ((await (await profile.api.get('/api/profiles')).json()) as { id: string; avatar: string }[]).find((p) => p.id === profile.id)!.avatar).toMatch(/^dino\./);
 
     await a.getByRole('button', { name: 'Change picture' }).click();
     await a.getByRole('radio', { name: 'Your photo' }).click();
