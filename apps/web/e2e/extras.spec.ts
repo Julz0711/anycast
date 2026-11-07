@@ -44,8 +44,12 @@ test('stats panel: I toggles it, it names the pipeline and codecs; Media Session
   });
   await expectPlaying(page);
 
-  // leaving the player clears the session
+  // leaving the player keeps it going in the mini player; closing that clears the session
   await page.getByRole('button', { name: 'Back', exact: true }).click();
+  const mini = page.getByRole('region', { name: 'Mini player' });
+  await expect(mini).toBeVisible();
+  expect(await page.evaluate(() => navigator.mediaSession.metadata?.title)).toBe(fx.hlsMovie.name);
+  await mini.getByRole('button', { name: 'Close player' }).click();
   await expect.poll(() => page.evaluate(() => navigator.mediaSession.metadata)).toBeNull();
 });
 
