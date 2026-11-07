@@ -1,10 +1,10 @@
 /**
- * Picture chooser on the profile page: built-in pictures (a color, then a shape) or an uploaded
+ * Picture chooser on the profile page: built-in characters (a color, then a character) or an uploaded
  * photo, cropped to a square here (drag to move, slider or wheel to zoom) before it is sent.
  */
 import { useEffect, useRef, useState } from 'react';
-import { ACCENTS, AVATAR_COLORS, AVATAR_SHAPES, avatarId, parseAvatar, type AccentId } from '@anycast/shared';
-import { BuiltinAvatar } from './Avatar';
+import { ACCENTS, AVATAR_COLORS, AVATAR_FIGURES, avatarId, parseAvatar, type AccentId } from '@anycast/shared';
+import { BuiltinAvatar, FIGURE_NAMES } from './Avatar';
 import { cropToBlob } from './actions';
 import { Segmented } from '../components/ui';
 import { IconUpload } from '../components/Icons';
@@ -52,20 +52,21 @@ export function PictureChooser(props: {
                 style={{ background: ACCENTS[c].hex, ['--sw' as string]: ACCENTS[c].hex }}
                 onClick={() => {
                   setColor(c);
-                  // keep the shape, change its color
-                  if (parsed && !props.value.image) props.onAvatar(avatarId(parsed.shape, c));
+                  // keep the character, change its color
+                  if (parsed && !props.value.image) props.onAvatar(avatarId(parsed.figure, c));
                 }}
               />
             ))}
           </div>
           <div className="pc-grid" role="radiogroup" aria-label="Picture" data-nav-row="pc-grid">
-            {AVATAR_SHAPES.map((shape) => {
-              const id = avatarId(shape, color);
-              const on = !props.value.image && props.value.avatar === id;
+            {AVATAR_FIGURES.map((figure) => {
+              const id = avatarId(figure, color);
+              // an older shape id shows as its character, so it counts as that one
+              const on = !props.value.image && parsed?.figure === figure && parsed.color === color;
               return (
-                <button key={shape} type="button" role="radio" aria-checked={on} aria-label={`${shape} picture`} className="pc-opt" onClick={() => props.onAvatar(id)}>
+                <button key={figure} type="button" role="radio" aria-checked={on} aria-label={`${FIGURE_NAMES[figure]} picture`} title={FIGURE_NAMES[figure]} className="pc-opt" onClick={() => props.onAvatar(id)}>
                   <span className="pic pic-md">
-                    <BuiltinAvatar shape={shape} color={color} />
+                    <BuiltinAvatar figure={figure} color={color} />
                   </span>
                 </button>
               );

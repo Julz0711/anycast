@@ -34,7 +34,10 @@ describe('profile pictures', () => {
     expect(kid.avatar).toMatch(/^[a-z]+\.[a-z]+$/);
     expect(kid).toMatchObject({ image: null, locked: false, needsPin: false });
 
+    expect((await json<Profile>(phone, { method: 'PATCH', url: `/api/profiles/${kid.id}`, payload: { avatar: 'fox.sky' } })).avatar).toBe('fox.sky');
+    // pictures saved with the first (abstract shape) set stay valid
     expect((await json<Profile>(phone, { method: 'PATCH', url: `/api/profiles/${kid.id}`, payload: { avatar: 'moon.sky' } })).avatar).toBe('moon.sky');
+    expect((await call(phone, { method: 'PATCH', url: `/api/profiles/${kid.id}`, payload: { avatar: 'toString.sky' } })).statusCode).toBe(400);
     expect((await call(phone, { method: 'PATCH', url: `/api/profiles/${kid.id}`, payload: { avatar: 'moon.blue' } })).statusCode).toBe(400);
     expect((await call(phone, { method: 'PATCH', url: `/api/profiles/${kid.id}`, payload: { avatar: '../x' } })).statusCode).toBe(400);
 
