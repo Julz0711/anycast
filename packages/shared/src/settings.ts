@@ -14,19 +14,29 @@ export const ACCENTS = {
 } as const;
 export type AccentId = keyof typeof ACCENTS;
 
-export type TabId = 'live' | 'favorites' | 'movies' | 'series' | 'search';
+export type TabId = 'search' | 'favorites' | 'lists' | 'live' | 'movies' | 'series';
 /** Every main tab, in the default order. */
-export const ALL_TABS: readonly TabId[] = ['live', 'favorites', 'movies', 'series', 'search'];
+export const ALL_TABS: readonly TabId[] = ['search', 'favorites', 'lists', 'live', 'movies', 'series'];
+
+/** Earlier default orders. A saved order equal to one of them was never changed by the user, so it follows the new default. */
+const OLD_DEFAULT_ORDERS: readonly (readonly string[])[] = [
+  ['live', 'movies', 'series', 'search'],
+  ['live', 'favorites', 'movies', 'series', 'search'],
+];
 
 /**
  * A saved tab order made valid: unknown and repeated ids dropped, missing tabs added in default order.
- * Orders saved before Favorites existed get it right after Live TV.
+ * An untouched old default becomes the current default. Orders saved before Favorites existed get it
+ * right after Live TV; orders saved before Lists existed get it right after Favorites.
  */
 export function normalizeTabOrder(order: unknown): TabId[] {
+  if (Array.isArray(order) && OLD_DEFAULT_ORDERS.some((d) => d.length === order.length && d.every((t, i) => order[i] === t))) return [...ALL_TABS];
   const out: TabId[] = [];
   for (const t of Array.isArray(order) ? order : []) if (ALL_TABS.includes(t as TabId) && !out.includes(t as TabId)) out.push(t as TabId);
-  for (const t of ALL_TABS) if (t !== 'favorites' && !out.includes(t)) out.push(t);
+  if (!out.length) return [...ALL_TABS];
+  for (const t of ALL_TABS) if (t !== 'favorites' && t !== 'lists' && !out.includes(t)) out.push(t);
   if (!out.includes('favorites')) out.splice(out.indexOf('live') + 1, 0, 'favorites');
+  if (!out.includes('lists')) out.splice(out.indexOf('favorites') + 1, 0, 'lists');
   return out;
 }
 
@@ -110,7 +120,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   },
   start: {
     startTab: 'live',
-    tabOrder: ['live', 'favorites', 'movies', 'series', 'search'],
+    tabOrder: ['search', 'favorites', 'lists', 'live', 'movies', 'series'],
     hiddenTabs: [],
   },
   settingsMode: 'basic',

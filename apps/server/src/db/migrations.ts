@@ -255,6 +255,29 @@ export const MIGRATIONS: string[] = [
   DROP INDEX IF EXISTS epg_end;
   `,
   `
+  -- per-profile movie and series lists: the built-in Watch Later list (builtin = 'watch-later', one
+  -- per profile, made on first read) and the user's own lists. Items keep their ids when a sync
+  -- drops the title, so it comes back in place if the provider brings it back.
+  CREATE TABLE IF NOT EXISTS media_lists (
+    id TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    builtin TEXT,
+    position INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS media_lists_profile ON media_lists(profile_id, position);
+  CREATE UNIQUE INDEX IF NOT EXISTS media_lists_builtin ON media_lists(profile_id, builtin) WHERE builtin IS NOT NULL;
+  CREATE TABLE IF NOT EXISTS media_list_items (
+    list_id TEXT NOT NULL REFERENCES media_lists(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    added_at INTEGER NOT NULL,
+    PRIMARY KEY (list_id, kind, item_id)
+  ) WITHOUT ROWID;
+  `,
+  `
   -- profile pictures and the profile lock (profiles.ts in @anycast/shared). avatar: built-in
   -- picture "shape.color"; lock_hash: argon2 hash of the profile lock PIN.
   ALTER TABLE profiles ADD COLUMN avatar TEXT;

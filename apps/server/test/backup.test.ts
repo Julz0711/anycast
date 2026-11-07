@@ -53,6 +53,11 @@ async function seed() {
   userData.saveTrackChoice(adminProfile, 'movie', 'mv-1', { audio: 2, subtitle: null });
   const list = await call({ method: 'POST', url: '/api/lists', payload: { name: 'News', channelIds: ['ch-3', 'ch-1', 'gone-channel'] }, headers: { 'x-anycast-profile': adminProfile } });
   expect(list.statusCode).toBe(200);
+  const h = { 'x-anycast-profile': adminProfile };
+  const wl = (await call({ url: '/api/media-lists', headers: h })).json() as { id: string }[];
+  expect((await call({ method: 'PUT', url: `/api/media-lists/${wl[0]!.id}/items`, payload: { items: [{ kind: 'movie', id: 'mv-1' }] }, headers: h })).statusCode).toBe(200);
+  const own = await call({ method: 'POST', url: '/api/media-lists', payload: { name: 'Date night', items: [{ kind: 'series', id: 'sr-1' }, { kind: 'movie', id: 'gone-movie' }] }, headers: h });
+  expect(own.statusCode).toBe(200);
   const pin = await call({ method: 'PUT', url: '/api/adult/pin', payload: { pin: '4321', password: ADMIN.password }, headers: { 'x-anycast-profile': adminProfile } });
   expect(pin.statusCode).toBe(200);
   db().prepare('INSERT INTO pinned_channels (channel_id, pinned_at) VALUES (?, ?)').run('ch-1', 1000);
@@ -105,11 +110,15 @@ describe('what a backup holds', () => {
     expect(admin.hideRules).toEqual({ countries: ['tr'], languages: ['ar'], categoryIds: ['cat-9'] });
     expect(admin.trackChoices).toEqual([expect.objectContaining({ kind: 'movie', id: 'mv-1', audio: 2, subtitle: -1 })]);
     expect(admin.lists).toEqual([expect.objectContaining({ name: 'News', channelIds: ['ch-3', 'ch-1', 'gone-channel'] })]);
+    expect(admin.mediaLists).toEqual([
+      expect.objectContaining({ name: 'Watch Later', builtin: 'watch-later', items: [expect.objectContaining({ kind: 'movie', id: 'mv-1' })] }),
+      expect.objectContaining({ name: 'Date night', builtin: null, items: [expect.objectContaining({ id: 'sr-1' }), expect.objectContaining({ id: 'gone-movie' })] }),
+    ]);
     expect(admin.parental).toMatchObject({ pinHash: expect.stringMatching(/^\$argon2/) });
     expect(b.users[1]!.profiles.map((p) => p.name)).toEqual([VIEWER.username, 'Kids']);
     expect(b.pinnedChannels).toEqual([{ channelId: 'ch-1', pinnedAt: 1000 }]);
     expect(summarizeBackup(b)).toEqual({
-      users: 2, admins: 1, profiles: 3, favorites: 3, inProgress: 1, finished: 1, lists: 1, listChannels: 3, trackChoices: 1, pins: 1, pinnedChannels: 1,
+      users: 2, admins: 1, profiles: 3, favorites: 3, inProgress: 1, finished: 1, lists: 1, listChannels: 3, mediaLists: 1, mediaListItems: 3, trackChoices: 1, pins: 1, pinnedChannels: 1,
     });
   });
 
@@ -229,6 +238,15 @@ describe('restore', () => {
     expect((await call({ method: 'POST', url: '/api/admin/restore', payload: { backup: original } })).statusCode).toBe(400);
   });
 
+  test('a format 1 backup (before movie and series lists) still restores', async () => {
+    const v1 = structuredClone(original) as unknown as { schemaVersion: number; users: { profiles: Record<string, unknown>[] }[] };
+    v1.schemaVersion = 1;
+    for (const u of v1.users) for (const p of u.profiles) delete p.mediaLists;
+    const res = await restore(v1, 'merge');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ summary: { mediaLists: 0, mediaListItems: 0 } });
+  });
+
   test('refuses files that are not valid backups, and changes nothing', async () => {
     built.services.userData.setFavorite(adminProfile, 'movie', 'stays', true);
     const u0 = original.users[0]!;
@@ -276,7 +294,7 @@ describe('restore', () => {
     events.length = 0;
     expect((await restore(original, 'merge')).statusCode).toBe(200);
     off();
-    expect(events.map((e) => e.type)).toEqual(['favorites', 'preferences', 'hide-rules', 'lists', 'parental', 'restored']);
+    expect(events.map((e) => e.type)).toEqual(['favorites', 'preferences', 'hide-rules', 'lists', 'media-lists', 'parental', 'restored']);
     expect(events[0]).toMatchObject({ favorites: [expect.objectContaining({ id: 'ch-1' }), expect.objectContaining({ id: 'not-synced-yet' })] });
   });
 

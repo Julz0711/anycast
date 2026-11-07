@@ -70,6 +70,12 @@ export const IconRefresh = (p: SVGProps<SVGSVGElement>) => (
 export const IconMore = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M6 12h.01M12 12h.01M18 12h.01" strokeWidth={3.2} /></svg>
 );
+export const IconLists = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" strokeWidth={3} /></svg>
+);
+export const IconBookmark = ({ filled, ...p }: SVGProps<SVGSVGElement> & { filled?: boolean }) => (
+  <svg {...base(p)} fill={filled ? 'currentColor' : 'none'}><path d="M6.5 3.5h11a1 1 0 011 1v16l-6.5-4.2-6.5 4.2v-16a1 1 0 011-1z" /></svg>
+);
 export const IconListAdd = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M4 6h11M4 12h11M4 18h7M17 15v6M14 18h6" /></svg>
 );

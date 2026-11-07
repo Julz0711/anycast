@@ -14,6 +14,8 @@
  *   track_choices     per-profile audio and subtitle track picked per movie, episode or channel
  *   channel_lists     per-profile custom channel lists ...
  *   channel_list_items ... and their channels, in order
+ *   media_lists       per-profile movie and series lists, Watch Later included ...
+ *   media_list_items  ... and their movies and series, in order
  *   pinned_channels   channels that always keep a rewind buffer (server-wide)
  *
  * Excluded:
@@ -47,6 +49,8 @@ export const BACKUP_TABLES = {
   track_choices: 'include',
   channel_lists: 'include',
   channel_list_items: 'include',
+  media_lists: 'include',
+  media_list_items: 'include',
   pinned_channels: 'include',
 
   sessions: 'exclude',

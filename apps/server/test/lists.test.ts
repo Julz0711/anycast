@@ -1,5 +1,5 @@
-import type { ChannelList, LiveChannelWithNow, Page, Profile, SyncEvent } from '@anycast/shared';
-import { CHANNEL_LIST_LIMITS } from '@anycast/shared';
+import type { ChannelList, LiveChannelWithNow, MediaList, Page, Profile, SyncEvent } from '@anycast/shared';
+import { CHANNEL_LIST_LIMITS, MEDIA_LIST_LIMITS } from '@anycast/shared';
 import type { InjectOptions } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createMockXtream, login, makeApp } from './helpers';
@@ -171,5 +171,54 @@ describe('channel lists', () => {
     expect(b.events).toEqual([]);
     a.close();
     b.close();
+  });
+});
+
+describe('movie and series lists', () => {
+  test('every profile has Watch Later first; it can be filled but not renamed or deleted', async () => {
+    const p = await newProfile('Media');
+    const lists = await json<MediaList[]>({ url: '/api/media-lists', profile: p.id });
+    expect(lists).toEqual([{ id: expect.any(String), name: 'Watch Later', builtin: 'watch-later', items: [] }]);
+    // reading again doesn't make a second one
+    expect(await json<MediaList[]>({ url: '/api/media-lists', profile: p.id })).toEqual(lists);
+    const wl = lists[0]!;
+
+    const set = await json<MediaList>({
+      method: 'PUT',
+      url: `/api/media-lists/${wl.id}/items`,
+      profile: p.id,
+      payload: { items: [{ kind: 'movie', id: 'm1' }, { kind: 'series', id: 's1' }, { kind: 'movie', id: 'm1' }, { kind: 'series', id: 'm1' }] },
+    });
+    expect(set.items.map((i) => `${i.kind}:${i.id}`)).toEqual(['movie:m1', 'series:s1', 'series:m1']);
+    const added = set.items[0]!.addedAt;
+
+    // reordering keeps when each was added
+    await new Promise((r) => setTimeout(r, 5));
+    const re = await json<MediaList>({ method: 'PUT', url: `/api/media-lists/${wl.id}/items`, profile: p.id, payload: { items: [{ kind: 'series', id: 's1' }, { kind: 'movie', id: 'm1' }] } });
+    expect(re.items.map((i) => i.id)).toEqual(['s1', 'm1']);
+    expect(re.items[1]!.addedAt).toBe(added);
+
+    expect((await call({ method: 'PATCH', url: `/api/media-lists/${wl.id}`, profile: p.id, payload: { name: 'Later' } })).statusCode).toBe(409);
+    expect((await call({ method: 'DELETE', url: `/api/media-lists/${wl.id}`, profile: p.id })).statusCode).toBe(409);
+    expect((await call({ method: 'PUT', url: `/api/media-lists/${wl.id}/items`, payload: { items: [] } })).statusCode).toBe(404);
+  });
+
+  test('own lists: create, rename, reorder after Watch Later, delete, limits', async () => {
+    const p = await newProfile('Media own');
+    const a = await json<MediaList>({ method: 'POST', url: '/api/media-lists', profile: p.id, payload: { name: ' Date  night ', items: [{ kind: 'movie', id: 'm9' }] } });
+    expect(a).toMatchObject({ name: 'Date night', builtin: null, items: [{ kind: 'movie', id: 'm9' }] });
+    const b = await json<MediaList>({ method: 'POST', url: '/api/media-lists', profile: p.id, payload: { name: 'Kids' } });
+    const order = await json<MediaList[]>({ method: 'PUT', url: '/api/media-lists/order', profile: p.id, payload: { ids: [b.id, 'nope'] } });
+    expect(order.map((l) => l.name)).toEqual(['Watch Later', 'Kids', 'Date night']);
+    expect((await json<MediaList>({ method: 'PATCH', url: `/api/media-lists/${a.id}`, profile: p.id, payload: { name: 'Films' } })).name).toBe('Films');
+    expect(await json({ method: 'DELETE', url: `/api/media-lists/${a.id}`, profile: p.id })).toEqual({ ok: true });
+    expect((await json<MediaList[]>({ url: '/api/media-lists', profile: p.id })).map((l) => l.name)).toEqual(['Watch Later', 'Kids']);
+    expect((await call({ method: 'POST', url: '/api/media-lists', profile: p.id, payload: { name: '  ' } })).statusCode).toBe(400);
+    expect((await call({ method: 'POST', url: '/api/media-lists', profile: p.id, payload: { name: 'x', items: [{ kind: 'live', id: 'c' }] } })).statusCode).toBe(400);
+    const many = Array.from({ length: MEDIA_LIST_LIMITS.items + 1 }, (_, i) => ({ kind: 'movie', id: `m${i}` }));
+    expect((await call({ method: 'POST', url: '/api/media-lists', profile: p.id, payload: { name: 'Big', items: many } })).statusCode).toBe(409);
+    // another profile can't see or touch them
+    expect((await json<MediaList[]>({ url: '/api/media-lists' })).map((l) => l.name)).toEqual(['Watch Later']);
+    expect((await call({ method: 'PATCH', url: `/api/media-lists/${b.id}`, payload: { name: 'Mine' } })).statusCode).toBe(404);
   });
 });

@@ -1,6 +1,6 @@
 /** Global app state (zustand). Actions live in ./actions.ts. */
 import { create } from 'zustand';
-import { DEFAULT_PREFERENCES, type ChannelList, type Favorite, type HideRules, type Me, type Preferences, type Progress } from '@anycast/shared';
+import { DEFAULT_PREFERENCES, type ChannelList, type Favorite, type HideRules, type MediaList, type Me, type Preferences, type Progress } from '@anycast/shared';
 import type { DeviceOverride } from '../lib/device';
 import { readLocal } from '../lib/storage';
 
@@ -24,8 +24,11 @@ export interface AppState {
   /** the profile's channel lists, in the user's order (LB-3) */
   lists: ChannelList[];
   listsLoaded: boolean;
-  /** the channel the "Add to list" sheet is open for */
-  addToList: { id: string; name: string } | null;
+  /** the profile's movie and series lists, Watch Later first */
+  mediaLists: MediaList[];
+  mediaListsLoaded: boolean;
+  /** the channel, movie or series the "Add to list" sheet is open for */
+  addToList: AddToListTarget | null;
   /** bumps when the catalog or hide rules change, so lists refetch */
   catalogVersion: number;
   deviceOverride: DeviceOverride;
@@ -36,6 +39,8 @@ export interface AppState {
   /** set when another device took over this tab's provider connection (SSE 'playback-stopped') */
   playbackStopped: { by: { profileName: string; device?: string }; at: number } | null;
 }
+
+export interface AddToListTarget { kind: 'live' | 'movie' | 'series'; id: string; name: string }
 
 export const EMPTY_RULES: HideRules = { countries: [], languages: [], categoryIds: [] };
 
@@ -51,6 +56,8 @@ export const useApp = create<AppState>(() => ({
   hideRulesLoaded: false,
   lists: [],
   listsLoaded: false,
+  mediaLists: [],
+  mediaListsLoaded: false,
   addToList: null,
   catalogVersion: 0,
   deviceOverride: (readLocal('anycast.device') as DeviceOverride | null) ?? 'auto',

@@ -11,6 +11,7 @@ import { Empty, ProgressBar, Skeleton } from '../components/ui';
 import { IconBack, IconPlay, IconStar } from '../components/Icons';
 import { VodBrowse } from './Vod';
 import { prefetchPlayer } from '../player/prefetch';
+import { MediaListButtons } from '../components/lists';
 
 export function MoviesScreen() {
   return <VodBrowse kind="movie" title="Movies" continueRow={<ContinueMovies />} />;
@@ -92,6 +93,7 @@ export function MovieDetail() {
             <button type="button" className={`btn btn-lg${fav ? ' on' : ''}`} aria-pressed={fav} onClick={() => void toggleFavorite('movie', m.id)}>
               <IconStar filled={fav} /> {fav ? 'Favorite' : 'Add favorite'}
             </button>
+            <MediaListButtons kind="movie" id={m.id} name={m.name} />
           </div>
         </div>
       </div>
