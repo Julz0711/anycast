@@ -21,6 +21,7 @@ import type { TrackChoice } from './tracks';
 import type { AutoBackups, BackupFile, RestoreMode, RestoreResult } from './backup';
 import type { Profile, ProfileImageType } from './profiles';
 import type { CastPlayRequest, CastPlayResponse, CastSettings } from './cast';
+import type { Recap, WatchKind } from './recap';
 
 
 /**
@@ -383,6 +384,18 @@ export interface Api {
   'DELETE /api/recent-channels/:id': { res: RecentChannel[] };
   /** forgets them all */
   'DELETE /api/recent-channels': { res: RecentChannel[] };
+  /**
+   * Watch history (recap.ts): seconds that played, reported by the player about once a minute
+   * (at most WATCH_REPORT_MAX_SECONDS). Ignored (ok: false) when the profile turned history off.
+   */
+  'POST /api/watch-time': { body: { kind: WatchKind; id: string; seconds: number; seriesId?: string }; res: { ok: boolean } };
+  /**
+   * The profile's recap for [from, to) (epoch ms). `tz`: IANA time zone for days and hours (UTC
+   * when unknown). Hidden adult titles are left out, locked ones are masked.
+   */
+  'GET /api/recap': { query: { from: number; to: number; tz?: string }; res: Recap };
+  /** forgets the profile's whole watch history */
+  'DELETE /api/watch-history': { res: { ok: true } };
   'GET /api/continue': { res: { movies: (Movie & { progress: Progress })[]; episodes: (Episode & { progress: Progress; series: Series })[] } };
   /** includes `setupDone`, the per-profile first-run flag */
   'GET /api/preferences': { res: Preferences };

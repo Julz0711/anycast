@@ -342,4 +342,17 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX IF NOT EXISTS series_year ON series(year DESC, country, language, category_id);
   CREATE INDEX IF NOT EXISTS series_rating ON series(rating DESC, country, language, category_id);
   `,
+  `
+  -- watch history (recap.ts): seconds that played per profile, item and hour (hour = epoch ms of
+  -- the UTC hour it started in). series_id is set for episodes.
+  CREATE TABLE IF NOT EXISTS watch_history (
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    hour INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    series_id TEXT,
+    seconds REAL NOT NULL,
+    PRIMARY KEY (profile_id, hour, kind, item_id)
+  ) WITHOUT ROWID;
+  `,
 ];

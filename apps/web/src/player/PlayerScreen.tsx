@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { useNavigate } from 'react-router-dom';
 import type { CastPlayResponse, Episode, PlaybackInfo, TimelineInfo, TrackChoice } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
+import { useWatchTime } from './watchTime';
 import { recordRecentChannel, saveProgress, saveProgressOnUnload, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
 import { cachedGet, call } from '../api/client';
 import { lookup, resolveItems } from '../api/catalog';
@@ -749,6 +750,14 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       save();
     };
   }, [isLive, progressBody]);
+
+  // watch history for the recap: only time that really plays (casting counts while the TV plays)
+  useWatchTime(kind, id, kind === 'episode' ? seriesId : undefined, () => {
+    if (movedRef.current) return false;
+    if (castingRef.current) return useChromecast.getState().playerState === 'PLAYING';
+    const v = videoRef.current;
+    return !!v && !v.paused && !v.ended && v.readyState >= 3;
+  });
 
   /* ---------------- next episode ---------------- */
   const goNext = useCallback(() => {

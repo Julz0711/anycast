@@ -6,7 +6,7 @@ import {
   ADULT_MODE_RANK, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, DEFAULT_PREFERENCES, FINISHED_THRESHOLD, LOCKED_NAME, mergePreferences, PIN_MAX_ATTEMPTS, summarizeBackup, PIN_WINDOW_MS,
   defaultAvatar, type AdultMode, type AdultStatus, type BackupFile, type Category, type RestoreMode, type UnlockMinutes,
   type Channel, type ChannelList, type Favorite, type MediaList, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
-  type Preferences, type Profile, type Progress, type RecentChannel, RECENT_CHANNELS_MAX, type Series, type SourceStatus, type SyncEvent, type TagSummary, type TimelineInfo,
+  type Preferences, type Profile, type Progress, type Recap, type RecentChannel, RECENT_CHANNELS_MAX, type Series, type SourceStatus, type SyncEvent, type TagSummary, type TimelineInfo,
 } from '@anycast/shared';
 import { ApiError } from '../api/client';
 import { buildFixtures } from './fixtures';
@@ -549,6 +549,9 @@ const routes: [string, RegExp, Handler][] = [
     });
     return { movies, episodes };
   }],
+  ['POST', /^\/api\/watch-time$/, (_m, _q, _b, st) => ({ ok: st.prefs.history.record })],
+  ['DELETE', /^\/api\/watch-history$/, () => ({ ok: true })],
+  ['GET', /^\/api\/recap$/, (_m, q) => demoRecap(Number(q.get('from')), Number(q.get('to')), q.get('tz') ?? 'UTC')],
   ['GET', /^\/api\/recent-channels$/, (_m, _q, _b, st) => st.recent],
   ['PUT', /^\/api\/recent-channels$/, (_m, _q, body, st) => {
     const id = (body as { channelId: string }).channelId;
@@ -737,4 +740,40 @@ export async function fakeFetch(method: string, url: string, body: unknown, sign
     if (match) return structuredClone(h(match, u.searchParams, body, state(currentPid)));
   }
   throw new ApiError(404, `Demo: no route for ${method} ${u.pathname}`);
+}
+
+/** A made-up but plausible recap from the fixtures (the demo has no real watch history). */
+function demoRecap(from: number, to: number, tz: string): Recap {
+  const H = 3600;
+  const pick = <T,>(xs: T[], n: number) => xs.filter((_, i) => i % 2 === 0).slice(0, n);
+  const ch = pick(fx.channels.filter((c) => !isAdult(c.categoryId)), 5);
+  const mv = pick(fx.movies, 5);
+  const se = pick(fx.series, 5);
+  const scale = Math.min(12, Math.max(1, (Math.min(to, Date.now()) - from) / (30 * 86_400_000)));
+  const item = (kind: 'live' | 'movie' | 'series', x: { id: string; name: string }, art: string | null, h: number, count?: number) => ({
+    kind, id: x.id, name: x.name, art, seconds: Math.round(h * H * scale), ...(count !== undefined ? { count: Math.round(count * Math.sqrt(scale)) } : {}),
+  });
+  const topChannels = ch.map((c, i) => item('live', c, c.logo, [14.5, 9.2, 6.1, 3.4, 1.8][i]!, [19, 14, 9, 6, 3][i]));
+  const topSeries = se.map((x, i) => item('series', x, x.poster, [11.2, 7.5, 4.1, 2.2, 1.1][i]!, [16, 11, 6, 3, 2][i]));
+  const topMovies = mv.map((x, i) => item('movie', x, x.poster, [2.3, 2.1, 1.9, 1.7, 1.5][i]!));
+  const live = topChannels.reduce((n, x) => n + x.seconds, 0) + Math.round(4 * H * scale);
+  const episode = topSeries.reduce((n, x) => n + x.seconds, 0);
+  const movie = topMovies.reduce((n, x) => n + x.seconds, 0);
+  const total = live + episode + movie;
+  const shape = [2, 1, 0.5, 0.2, 0.1, 0.1, 0.3, 0.6, 0.8, 0.6, 0.5, 0.6, 1, 0.9, 0.7, 0.8, 1.1, 1.6, 2.6, 3.8, 5.2, 5.9, 4.8, 3.4];
+  const sum = shape.reduce((a, b) => a + b, 0);
+  const week = [0.11, 0.1, 0.12, 0.11, 0.16, 0.22, 0.18];
+  return {
+    from, to, tz, totalSeconds: total, byKind: { live, movie, episode },
+    previousSeconds: from > 0 ? Math.round(total * 0.78) : null,
+    counts: { channels: 23, movies: 7, episodes: 41, series: 6, days: Math.round(21 * Math.min(scale, 1) + (scale > 1 ? 150 * (scale / 12) : 0)) },
+    topChannels, topMovies, topSeries,
+    genres: [['Drama', 0.31], ['News', 0.22], ['Sports', 0.17], ['Comedy', 0.13], ['Documentaries', 0.1], ['Crime', 0.07]].map(([name, k]) => ({ name: name as string, seconds: Math.round(total * (k as number)) })),
+    hours: shape.map((x) => Math.round((x / sum) * total)),
+    weekdays: week.map((x) => Math.round(x * total)),
+    topDay: { date: new Date(Math.max(from, Date.now() - 9 * 86_400_000)).toISOString().slice(0, 10), seconds: Math.round(6.4 * H) },
+    longestStreak: 9,
+    first: { ...topChannels[1]!, at: from + 86_400_000 },
+    historySince: Date.now() - 400 * 86_400_000,
+  };
 }

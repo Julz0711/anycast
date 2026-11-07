@@ -51,6 +51,18 @@ const Profile = z
         .strict(),
       500_000,
     ),
+    watchHistory: many(
+      z
+        .object({
+          hour: time,
+          kind: z.enum(['live', 'movie', 'episode']),
+          id,
+          seriesId: id.nullable(),
+          seconds: z.number().positive().max(3600 * 24).finite(),
+        })
+        .strict(),
+      2_000_000,
+    ).optional(),
     trackChoices: many(
       z
         .object({

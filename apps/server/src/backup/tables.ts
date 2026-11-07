@@ -18,6 +18,7 @@
  *   media_list_items  ... and their movies and series, in order
  *   pinned_channels   channels that always keep a rewind buffer (server-wide)
  *   series_seen       when each profile last opened a series (what counts as a new episode)
+ *   watch_history     per-profile watched time per item and hour (the recap); can't be rebuilt
  *
  * Excluded:
  *   sessions          sign-in tokens (hashed); a restore must not sign anyone in, or out of a new server
@@ -57,6 +58,7 @@ export const BACKUP_TABLES = {
   media_list_items: 'include',
   pinned_channels: 'include',
   series_seen: 'include',
+  watch_history: 'include',
 
   sessions: 'exclude',
   profile_entries: 'exclude',
