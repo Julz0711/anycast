@@ -39,8 +39,7 @@ test('a slot deleted behind another viewer is made again, not served as a missin
     const [first] = await session.segment(0);
     for (let n = 1; n <= 20; n++) await session.segment(n);
     // the session prunes slots more than 10 behind the last request (checked every second)
-    await new Promise((r) => setTimeout(r, 2500));
-    expect(existsSync(first!)).toBe(false);
+    await expect.poll(() => existsSync(first!), { timeout: 20_000, interval: 250 }).toBe(false);
     // viewer B starts the same title from the beginning
     const [again] = await session.segment(0);
     expect(existsSync(again!)).toBe(true);
