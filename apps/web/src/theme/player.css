@@ -36,10 +36,36 @@
 [data-form="phone"] .pl-error { padding: 1rem 1.25rem; gap: 0.25rem; }
 [data-form="phone"] .pl-error h2 { font-size: 1rem; }
 [data-form="phone"] .pl-error ul { display: none; }
-.pl-next { position: absolute; right: 1rem; bottom: 1rem; width: min(22rem, calc(100% - 2rem)); background: var(--surface); border-radius: 1rem; padding: 1rem 1.125rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-.pl-next-title { font-size: 1.0625rem; font-weight: 700; margin-top: 0.125rem; }
-.pl-next .actions { margin-top: 0.75rem; }
+/* Up next (episodes): from the end credits on, or at the end */
+.pl-next { position: absolute; right: 1rem; bottom: 1rem; z-index: 3; width: min(24rem, calc(100% - 2rem)); background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 1rem; padding: 0.875rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5), 0 0 0 1px var(--line); animation: pl-next-in 260ms ease-out; }
+@keyframes pl-next-in { from { opacity: 0; transform: translateY(0.5rem); } }
+.pl-next-body { display: flex; gap: 0.75rem; align-items: center; }
+.pl-next-thumb { flex: none; width: 6.5rem; aspect-ratio: 16 / 9; border-radius: 0.5rem; overflow: hidden; background: var(--surface-2); }
+.pl-next-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pl-next-kicker { font-size: 0.75rem; font-weight: 600; color: var(--muted); letter-spacing: 0.01em; }
+.pl-next-title { font-size: 1rem; font-weight: 700; margin-top: 0.125rem; }
+.pl-next .actions { margin-top: 0.75rem; flex-wrap: nowrap; }
+.pl-next .actions .btn { flex: 1; justify-content: center; }
+/* the countdown fills the Play button */
+.pl-next-play { position: relative; overflow: hidden; isolation: isolate; }
+.pl-next-play[data-counting]::before { content: ''; position: absolute; inset: 0; z-index: -1; background: rgba(255,255,255,0.22); transform-origin: left; transform: scaleX(var(--p, 0)); transition: transform 1s linear; }
+.pl-next-note { margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted); }
+[data-form="phone"] .pl-next { right: 0.5rem; bottom: 0.5rem; width: calc(100% - 1rem); padding: 0.625rem; }
+[data-form="phone"] .pl-next { display: flex; align-items: center; gap: 0.5rem; border-radius: 0.75rem; }
+[data-form="phone"] .pl-next-body { flex: 1; min-width: 0; }
+[data-form="phone"] .pl-next-thumb { display: none; }
+[data-form="phone"] .pl-next-kicker { font-size: 0.6875rem; }
+[data-form="phone"] .pl-next-title { font-size: 0.875rem; }
+[data-form="phone"] .pl-next .actions { margin-top: 0; gap: 0.375rem; flex: none; }
+[data-form="phone"] .pl-next .actions .btn { height: 2.25rem; padding: 0 0.75rem; font-size: 0.8125rem; flex: none; }
+[data-form="phone"] .pl-next-note { display: none; }
+[data-form="tv"] .pl-next { right: 5%; bottom: 12rem; width: 30rem; }
+@media (prefers-reduced-motion: reduce) { .pl-next { animation: none; } .pl-next-play[data-counting]::before { transition: none; } }
 
+/* theater mode (desktop, tablet): the video as tall as the window allows, so a wide picture fills the width */
+.player[data-theater="on"] .pl-stage { height: min(56.25vw, calc(100dvh - 4.5rem)); min-height: 16rem; }
+.pl-stage { transition: height 220ms ease; }
+@media (prefers-reduced-motion: reduce) { .pl-stage { transition: none; } }
 .pl-panel { width: 100%; max-width: 72rem; margin: 0 auto; padding: 1.125rem var(--gutter) calc(2rem + var(--safe-b)); transition: opacity var(--dur); }
 .pl-meta { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; }
 .pl-meta-line { font-size: 0.8125rem; color: var(--muted); }
@@ -144,8 +170,16 @@
 .mini-frame[data-corner^="b"] { bottom: calc(var(--mini-m) + var(--safe-b)); }
 .mini-frame[data-corner^="t"] { top: calc(var(--mini-m) + var(--safe-t)); }
 .mini-frame[data-dragging] { cursor: grabbing; box-shadow: 0 18px 48px rgba(0,0,0,0.65), 0 0 0 1px var(--accent); }
-.mini-frame:not([data-dragging]) { transition: box-shadow var(--dur); }
+.mini-frame:not([data-dragging]) { transition: box-shadow var(--dur), width 200ms ease; }
 [data-form="phone"] .mini-frame { --mini-m: 0.75rem; width: min(15rem, 62vw); border-radius: 0.75rem; }
+/* sizes (per device): small, medium (the default), large */
+.mini-frame[data-size="s"] { width: min(16rem, calc(100vw - 2 * var(--mini-m))); }
+.mini-frame[data-size="l"] { width: min(34rem, 42vw, calc(100vw - 2 * var(--mini-m))); }
+@media (max-width: 899px) { .mini-frame[data-size="l"] { width: min(28rem, calc(100vw - 2 * var(--mini-m))); } }
+[data-form="phone"] .mini-frame[data-size="s"] { width: min(11rem, 46vw); }
+[data-form="phone"] .mini-frame[data-size="l"] { width: calc(100vw - 2 * var(--mini-m) - var(--safe-l) - var(--safe-r)); }
+.mini-frame[data-size="s"] .mini-sub { display: none; }
+[data-form="phone"] .mini-frame[data-size="s"] .mini-title { font-size: 0.75rem; }
 /* phones: clear of the tab bar */
 [data-form="phone"] .mini-frame[data-corner^="b"] { bottom: calc(var(--tabbar-h) + var(--safe-b) + var(--mini-m)); }
 @keyframes mini-in { from { opacity: 0; transform: translateY(0.75rem) scale(0.96); } }
@@ -182,3 +216,49 @@
 .pl-tip .ico { width: 1rem; height: 1rem; flex: none; }
 .pl-info { position: relative; display: inline-flex; align-items: center; }
 .pl-info-pop { position: absolute; bottom: calc(100% + 0.5rem); left: 50%; transform: translateX(-50%); width: 19rem; padding: 0.75rem 0.875rem; border-radius: 0.75rem; background: var(--surface-2); border: 1px solid var(--line); color: var(--text-2); font-size: 0.8125rem; line-height: 1.4; box-shadow: 0 10px 30px rgb(0 0 0 / 0.5); z-index: 5; }
+
+/* episodes of the series under the player */
+.pl-eps { margin-top: 2rem; }
+.pl-eps-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.875rem; margin-bottom: 0.875rem; }
+.pl-eps-title { font-size: 1.125rem; font-weight: 700; }
+.pl-eps-count { font-size: 0.8125rem; }
+.pl-eps-seasons { margin-left: auto; display: flex; gap: 0.375rem; overflow-x: auto; scrollbar-width: none; max-width: 100%; padding: 0.125rem; }
+.pl-eps-seasons::-webkit-scrollbar { display: none; }
+.pl-eps-seasons button { flex: none; height: 2.125rem; padding: 0 0.875rem; border-radius: 999px; background: var(--surface); color: var(--text-2); font-size: 0.8125rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.375rem; transition: background var(--dur), color var(--dur); }
+.pl-eps-seasons button:hover { background: var(--surface-2); color: var(--text); }
+.pl-eps-seasons button[aria-checked="true"] { background: var(--text); color: var(--bg); }
+.pl-eps-dot { width: 0.4375rem; height: 0.4375rem; border-radius: 50%; background: var(--accent); }
+.pl-eps-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 21rem), 1fr)); gap: 0.375rem 1rem; }
+.pl-ep { width: 100%; display: flex; gap: 0.875rem; align-items: flex-start; text-align: left; padding: 0.5rem; border-radius: 0.875rem; transition: background var(--dur); }
+.pl-ep:hover, .pl-ep:focus-visible { background: var(--surface); }
+.pl-ep[data-state="playing"] { background: var(--accent-tint); cursor: default; }
+.pl-ep-thumb { position: relative; flex: none; width: 10rem; aspect-ratio: 16 / 9; border-radius: 0.5rem; overflow: hidden; background: linear-gradient(135deg, var(--surface-2), var(--surface)); display: flex; align-items: center; justify-content: center; }
+.pl-ep-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pl-ep-thumb[data-art="poster"] img { filter: blur(6px) brightness(0.45) saturate(1.2); transform: scale(1.15); }
+.pl-ep-num { position: relative; font-size: 1.75rem; font-weight: 800; color: rgba(255,255,255,0.88); letter-spacing: -0.02em; }
+.pl-ep-thumb[data-art="none"] .pl-ep-num { color: var(--muted); }
+.pl-ep-flag { position: absolute; left: 0.375rem; top: 0.375rem; padding: 0.125rem 0.4375rem; border-radius: 0.3125rem; background: rgba(0,0,0,0.65); color: #fff; font-size: 0.6875rem; font-weight: 700; display: inline-flex; align-items: center; gap: 0.3125rem; }
+.pl-ep-flag.on { background: var(--accent); color: var(--on-accent); }
+.pl-ep[data-state="next"] .pl-ep-flag { box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); background: rgba(0,0,0,0.72); }
+.pl-ep-len { position: absolute; right: 0.375rem; bottom: 0.4375rem; padding: 0 0.3125rem; border-radius: 0.25rem; background: rgba(0,0,0,0.7); color: #fff; font-size: 0.6875rem; font-weight: 600; line-height: 1.25rem; }
+.pl-ep-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,0.28); }
+.pl-ep-bar i { display: block; height: 100%; background: var(--accent); }
+.pl-ep-bar.full { background: var(--accent); opacity: 0.8; }
+.pl-ep-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.35); color: #fff; opacity: 0; transition: opacity var(--dur); }
+.pl-ep-play .ico { width: 1.75rem; height: 1.75rem; }
+.pl-ep:hover .pl-ep-play, .pl-ep:focus-visible .pl-ep-play { opacity: 1; }
+.pl-ep-text { min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; padding-top: 0.125rem; }
+.pl-ep-name { font-weight: 600; font-size: 0.9375rem; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pl-ep[data-state="playing"] .pl-ep-name { color: var(--accent); }
+.pl-ep[data-state="watched"] .pl-ep-thumb img { opacity: 0.55; }
+.pl-ep-plot { font-size: 0.8125rem; color: var(--muted); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pl-ep-eq { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 0.625rem; }
+.pl-ep-eq i { width: 2px; background: currentColor; border-radius: 1px; animation: pl-eq 900ms ease-in-out infinite; }
+.pl-ep-eq i:nth-child(2) { animation-delay: -300ms; }
+.pl-ep-eq i:nth-child(3) { animation-delay: -600ms; }
+@keyframes pl-eq { 0%, 100% { height: 30%; } 50% { height: 100%; } }
+@media (prefers-reduced-motion: reduce) { .pl-ep-eq i { animation: none; height: 70%; } }
+[data-form="phone"] .pl-eps { margin-top: 1.5rem; }
+[data-form="phone"] .pl-eps-seasons { margin-left: 0; flex-basis: 100%; }
+[data-form="phone"] .pl-ep-thumb { width: 8.5rem; }
+[data-form="phone"] .pl-ep-plot { -webkit-line-clamp: 2; }

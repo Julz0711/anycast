@@ -36,6 +36,7 @@
  *   epg               the programme guide: synced from the provider again
  *   probe_cache       cached stream formats (ffprobe), rebuilt on demand
  *   movie_info        cached movie details from the provider, fetched again on demand
+ *   series_credits    where each series' end credits start (the Up next card); learned again while watching
  *   buffer_runs, buffer_segments
  *                     the index of the rewind buffer recordings; the recordings themselves live in
  *                     BUFFER_DIR and are not part of a backup
@@ -77,6 +78,7 @@ export const BACKUP_TABLES = {
   epg: 'exclude',
   probe_cache: 'exclude',
   movie_info: 'exclude',
+  series_credits: 'exclude',
   buffer_runs: 'exclude',
   buffer_segments: 'exclude',
 } as const satisfies Record<string, 'include' | 'exclude'>;

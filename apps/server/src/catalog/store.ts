@@ -28,7 +28,7 @@ export interface SeriesRow {
 }
 export interface EpisodeRow {
   id: string; series_id: string; season: number; episode: number; title: string; plot: string | null;
-  duration: number | null; container: string | null; first_seen: number;
+  duration: number | null; container: string | null; image: string | null; first_seen: number;
 }
 interface CategoryRow { id: string; kind: MediaKind; name: string; country: string | null; language: string | null; adult: number }
 interface EpgRow { epg_id: string; start: number; end: number; title: string; description: string | null }
@@ -43,7 +43,7 @@ export function shortHash(s: string): string {
   return (h >>> 0).toString(36);
 }
 
-export type ArtKind = MediaKind | 'backdrop';
+export type ArtKind = MediaKind | 'backdrop' | 'episode';
 
 /**
  * Provider artwork is served through /api/art so provider hosts never reach the client. `v` changes
@@ -70,7 +70,7 @@ export const toSeries = (r: SeriesRow): Series => ({
 });
 export const toEpisode = (r: EpisodeRow): Episode => ({
   id: r.id, seriesId: r.series_id, season: r.season, episode: r.episode, title: cleanEpisodeTitle(r.title, null, r.episode), plot: r.plot,
-  duration: r.duration, container: r.container,
+  duration: r.duration, container: r.container, image: artUrl('episode', r.id, r.image ?? null),
 });
 
 /** SQL fragment that removes hidden rows; `alias` must expose country, language, category_id. */
@@ -269,7 +269,8 @@ export function visibleChannels(db: Db, ids: string[], rules: HideRules): Channe
   return db.prepare(`SELECT t.* FROM channels t WHERE t.id IN (${list}) AND ${hide.sql}`).all(...ids, ...hide.params) as ChannelRow[];
 }
 
-export function rawArtUrl(db: Db, kind: MediaKind, id: string): string | null {
+export function rawArtUrl(db: Db, kind: MediaKind | 'episode', id: string): string | null {
+  if (kind === 'episode') return (db.prepare('SELECT image FROM episodes WHERE id = ?').pluck().get(id) as string | null | undefined) ?? null;
   const col = kind === 'live' ? 'logo' : 'poster';
   const row = db.prepare(`SELECT ${col} AS u FROM ${KIND_TABLE[kind]} WHERE id = ?`).get(id) as { u: string | null } | undefined;
   return row?.u ?? null;

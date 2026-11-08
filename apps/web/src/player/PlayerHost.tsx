@@ -11,6 +11,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../store/app';
 import { useFormFactor } from '../lib/hooks';
 import { readLocal, writeLocal } from '../lib/storage';
+import { useMiniSize } from './miniSize';
 
 const PlayerScreen = lazy(() => import('./PlayerScreen'));
 
@@ -103,6 +104,7 @@ function MiniFrame(props: { mini: boolean; form: string; onTap: () => void; chil
   /** where the pointer went down, and the frame's centre then */
   const drag = useRef<{ x: number; y: number; cx: number; cy: number; id: number; moved: boolean } | null>(null);
   const [offset, setOffset] = useState<{ x: number; y: number } | null>(null);
+  const size = useMiniSize();
 
   // leaving the player while in full screen: the mini player can't be full screen
   useEffect(() => {
@@ -145,6 +147,7 @@ function MiniFrame(props: { mini: boolean; form: string; onTap: () => void; chil
     <div
       className={props.mini ? 'mini-frame' : 'player-frame'}
       data-corner={props.mini ? corner : undefined}
+      data-size={props.mini ? size : undefined}
       data-dragging={offset ? '' : undefined}
       style={props.mini && offset ? { transform: `translate(${offset.x}px, ${offset.y}px)` } : undefined}
       onPointerDown={onDown}

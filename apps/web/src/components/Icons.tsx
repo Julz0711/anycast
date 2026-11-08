@@ -144,3 +144,14 @@ export const BrandMark = () => (
 export const IconSparkle = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" /></svg>
 );
+/** theater mode: a wide frame */
+export const IconTheater = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="2.5" y="6" width="19" height="12" rx="2" /><path d="M6 10v4M18 10v4" /></svg>
+);
+/** mini player size: a screen with a bigger or a smaller picture in it */
+export const IconResize = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="2.5" y="4.5" width="19" height="15" rx="2" /><rect x="8.5" y="9.5" width="10" height="7" rx="1" fill="currentColor" stroke="none" /></svg>
+);
+export const IconShrink = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="2.5" y="4.5" width="19" height="15" rx="2" /><rect x="13" y="12.5" width="5.5" height="4" rx="0.75" fill="currentColor" stroke="none" /></svg>
+);

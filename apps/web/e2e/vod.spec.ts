@@ -41,7 +41,7 @@ test.describe(() => {
     await page.goto(`/play/episode/${fx.series.ep1}`);
     await expectPlaying(page);
     await expect.poll(() => video(page).evaluate((v: HTMLVideoElement) => v.duration), { timeout: 20_000 }).toBeGreaterThan(60);
-    await expect(page.getByText('Next', { exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Episodes' }).getByRole('button', { name: /^Up next: / })).toBeVisible();
 
     await video(page).evaluate((v: HTMLVideoElement) => {
       v.currentTime = v.duration - 3;
@@ -55,4 +55,55 @@ test.describe(() => {
     await expectPlaying(page);
     expect(await currentTime(page)).toBeLessThan(30);
   });
+});
+
+test.describe(() => {
+  test.use({ profileOptions: { setupDone: true, prefs: { player: { autoplayNext: false, upNextSeconds: 0 } } } });
+
+  test('credits: going on to the next episode early teaches the series where its end credits start', async ({ profile }) => {
+    await profile.api.delete(`/api/series/${fx.series.id}/credits`);
+    const page = await profile.device();
+    await page.goto(`/play/episode/${fx.series.ep1}?series=${fx.series.id}`);
+    await expectPlaying(page);
+    await expect.poll(() => video(page).evaluate((v: HTMLVideoElement) => v.duration), { timeout: 20_000 }).toBeGreaterThan(90);
+    // no card before the end yet (setting: only at the end)
+    await video(page).evaluate((v: HTMLVideoElement) => {
+      v.currentTime = v.duration - 25;
+    });
+    await expectPlaying(page);
+    await expect(page.getByRole('dialog', { name: 'Next episode' })).toHaveCount(0);
+    // the viewer moves on 25 s before the end: the credits of this series start about there
+    await page.getByRole('region', { name: 'Episodes' }).getByRole('button', { name: /^Up next: / }).click();
+    await expect(page).toHaveURL(new RegExp(`/play/episode/${fx.series.ep2}`));
+    await expect
+      .poll(async () => ((await (await profile.api.get(`/api/series/${fx.series.id}`)).json()) as { creditsLead: number | null }).creditsLead, { timeout: 10_000 })
+      .toBeGreaterThan(15);
+
+    // the next episode shows the card once its credits start, without waiting for the end
+    await expectPlaying(page);
+    await expect.poll(() => video(page).evaluate((v: HTMLVideoElement) => v.duration), { timeout: 20_000 }).toBeGreaterThan(90);
+    await video(page).evaluate((v: HTMLVideoElement) => {
+      v.currentTime = v.duration - 20;
+    });
+    const card = page.getByRole('dialog', { name: 'Next episode' });
+    await expect(card).toBeVisible();
+    await expect(card.getByText("Timed to this series' end credits.")).toBeVisible();
+    await card.getByRole('button', { name: 'Watch credits' }).click();
+    await expect(card).toHaveCount(0);
+  });
+});
+
+test('theater mode makes the video taller and is remembered', async ({ profile }) => {
+  const page = await profile.device();
+  await page.goto(`/play/movie/${fx.movie.id}`);
+  await expectPlaying(page);
+  const stage = page.locator('.pl-stage');
+  const before = (await stage.boundingBox())!.height;
+  await page.getByRole('button', { name: 'Theater mode' }).click();
+  await expect(page.getByRole('button', { name: 'Theater mode' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => (await stage.boundingBox())!.height).toBeGreaterThan(before + 100);
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Theater mode' })).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('w');
+  await expect(page.getByRole('button', { name: 'Theater mode' })).toHaveAttribute('aria-pressed', 'false');
 });

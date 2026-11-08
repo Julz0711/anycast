@@ -6,6 +6,7 @@ import {
   toChannel, toEpisode, toMovie, toSeries, visibleChannels,
 } from '../catalog/store';
 import { markSeen, newEpisodeIds, newEpisodes, seenAt } from '../catalog/followed';
+import { clearCredits, creditsLead, recordCredits } from '../catalog/credits';
 import { movieDetail } from '../catalog/movieinfo';
 import { auth, type Services } from '../context';
 import { listedChannelIds } from '../lists';
@@ -203,7 +204,28 @@ export function catalogRoutes(app: FastifyInstance, s: Services): void {
       list.push(e);
       seasons.set(e.season, list);
     }
-    return { ...adult.item(toSeries(row)), seasons: [...seasons.entries()].map(([season, episodes]) => ({ season, episodes })) };
+    return {
+      ...adult.item(toSeries(row)),
+      seasons: [...seasons.entries()].map(([season, episodes]) => ({ season, episodes })),
+      creditsLead: creditsLead(s.db, row.id),
+    };
+  });
+
+  app.put<{ Params: { id: string } }>('/api/series/:id/credits', async (req, reply) => {
+    const row = getSeries(s.db, req.params.id);
+    if (!row) return reply.code(404).send({ error: 'not_found', message: 'Series not found' });
+    scope(req).adult.assertOpen(row.category_id);
+    const body = z.object({ seconds: z.number().finite().min(0).max(24 * 3600) }).safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'bad_request', message: 'seconds must be a number' });
+    return { creditsLead: recordCredits(s.db, row.id, body.data.seconds) };
+  });
+
+  app.delete<{ Params: { id: string } }>('/api/series/:id/credits', async (req, reply) => {
+    const row = getSeries(s.db, req.params.id);
+    if (!row) return reply.code(404).send({ error: 'not_found', message: 'Series not found' });
+    scope(req).adult.assertOpen(row.category_id);
+    clearCredits(s.db, row.id);
+    return { creditsLead: null };
   });
 
   app.put<{ Params: { id: string } }>('/api/series/:id/seen', async (req, reply) => {

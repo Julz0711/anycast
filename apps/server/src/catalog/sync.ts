@@ -462,9 +462,9 @@ export class CatalogSync {
     const info = await this.requireClient().seriesInfo(seriesId);
     const seriesName = (this.db.prepare('SELECT name FROM series WHERE id = ?').pluck().get(seriesId) as string | undefined) ?? null;
     const insert = this.db.prepare(
-      `INSERT INTO episodes (id, series_id, season, episode, title, plot, duration, container, first_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO episodes (id, series_id, season, episode, title, plot, duration, container, image, first_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET series_id = excluded.series_id, season = excluded.season, episode = excluded.episode,
-         title = excluded.title, plot = excluded.plot, duration = excluded.duration, container = excluded.container`,
+         title = excluded.title, plot = excluded.plot, duration = excluded.duration, container = excluded.container, image = excluded.image`,
     );
     // episodes that appear after the series' first fetch are new (followed.ts); the first fetch's are not
     const known = this.db.prepare('SELECT 1 FROM episodes WHERE series_id = ? LIMIT 1').get(seriesId) !== undefined;
@@ -478,7 +478,8 @@ export class CatalogSync {
         insert.run(
           e.id, seriesId, e.season, e.episode_num ?? i + 1,
           e.title?.trim() ? cleanEpisodeTitle(e.title, seriesName, e.episode_num ?? i + 1) : `Episode ${e.episode_num ?? i + 1}`,
-          e.info.plot, e.info.duration_secs ?? parseDuration(e.info.duration), e.container_extension?.toLowerCase() ?? null, firstSeen,
+          e.info.plot, e.info.duration_secs ?? parseDuration(e.info.duration), e.container_extension?.toLowerCase() ?? null,
+          e.info.movie_image && /^https?:\/\//i.test(e.info.movie_image) ? e.info.movie_image : null, firstSeen,
         );
       });
       this.db.prepare('UPDATE series SET episodes_synced_at = ? WHERE id = ?').run(Date.now(), seriesId);
