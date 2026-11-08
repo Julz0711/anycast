@@ -18,6 +18,7 @@ import { isTypingTarget } from '../lib/misc';
 import { fmtBehind, fmtClock, fmtDay, fmtDuration, fmtRange } from '../lib/time';
 import { parseMediaTime, parseTimeInput } from '../lib/timeParse';
 import { createEngine, PlaybackFailure, type Engine } from './engine';
+import { LiveBufferGate } from './liveBuffer';
 import { setConvertCodec } from './caps';
 import { fromApiError, fromPlaybackFailure, type PlayerErr } from './errors';
 import { absolutePosition, computeWindow, mediaTimeFor, programAt, resolveSeek, type Win } from './timelineMath';
@@ -96,6 +97,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const engineRef = useRef<Engine | null>(null);
+  /** live: holds playback until the Live buffer is filled (at the start and after a stall) */
+  const gateRef = useRef<LiveBufferGate | null>(null);
   const streamRef = useRef<Stream | null>(null);
   const loadSeq = useRef(0);
   const endedAt = useRef<number[]>([]);
@@ -251,6 +254,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       setCountdown(null);
       setUpNext(null);
       setEnded(false);
+      gateRef.current?.release();
+      gateRef.current = null;
       engineRef.current?.destroy();
       engineRef.current = null;
       let pi: PlaybackInfo;
@@ -330,9 +335,17 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       playing.current = { item, tracks: playingTracks(pi.tracks, pi.tracks?.subtitleIndex ?? null) };
       const video = videoRef.current!;
       try {
-        const engine = await createEngine(video, pi, { live: isLive, onFatal, onTracks: () => setTracksVer((x) => x + 1) });
+        const liveBuffer = useApp.getState().prefs.player.liveBuffer;
+        const engine = await createEngine(video, pi, { live: isLive, liveBuffer, onFatal, onTracks: () => setTracksVer((x) => x + 1) });
         if (seq !== loadSeq.current) return engine.destroy();
         engineRef.current = engine;
+        if (isLive && !airplayRef.current) {
+          // fill the Live buffer before playing, so a hiccup from the provider doesn't stall the picture
+          const gate = new LiveBufferGate(video, liveBuffer, (h) => h && setWaiting(true));
+          gateRef.current = gate;
+          const ok = await gate.hold();
+          if (seq !== loadSeq.current || !ok) return;
+        }
       } catch (e) {
         if (seq !== loadSeq.current) return;
         onFatal(e instanceof PlaybackFailure ? e : new PlaybackFailure('unsupported', String((e as Error).message ?? e)));
@@ -350,6 +363,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     if (isLive) writeLocal('anycast.lastChannel', id);
     return () => {
       loadSeq.current++;
+      gateRef.current?.release();
       engineRef.current?.destroy();
       engineRef.current = null;
     };
@@ -395,6 +409,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     if (b && b.position > 1) void saveProgress(b);
     if (castingRef.current) castStopMedia();
     loadSeq.current++;
+    gateRef.current?.release();
     engineRef.current?.destroy();
     engineRef.current = null;
     setMoved(stopped.by);
@@ -876,6 +891,13 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const slowTimer = useRef<number>();
   const onWaiting = () => {
     setWaiting(true);
+    // a live stall: wait for the Live buffer again instead of playing on frame by frame
+    const gate = gateRef.current;
+    if (isLive && gate?.shouldRebuffer()) {
+      void gate.hold().then((ok) => {
+        if (ok && gateRef.current === gate) play();
+      });
+    }
     window.clearTimeout(slowTimer.current);
     slowTimer.current = window.setTimeout(() => setSlow(true), 15_000);
   };
@@ -1113,8 +1135,10 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           onTimeUpdate={() => setTick((x) => x + 1)}
           onWaiting={onWaiting}
           onPlaying={onPlaying}
-          onCanPlay={() => setWaiting(false)}
+          onCanPlay={() => !gateRef.current?.holding && setWaiting(false)}
           onPause={() => {
+            // the Live buffer filling up, not the viewer
+            if (gateRef.current?.holding) return;
             setPaused(true);
             const b = progressBody();
             if (b && b.position > 1) void saveProgress(b);
