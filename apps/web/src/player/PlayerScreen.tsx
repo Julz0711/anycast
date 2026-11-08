@@ -29,6 +29,7 @@ import { TracksMenu } from './TracksMenu';
 import { EpisodeList } from './EpisodeList';
 import { UpNextCard, upNextDue } from './upNext';
 import { RewindTip } from './RewindTip';
+import { useVolume, VolumeControl, VOLUME_STEP } from './volume';
 import { useVariants, useVersionFallback, VersionsMenu, versionLabel } from './variants';
 import { IconBack, IconClose, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock, IconTheater, IconResize, IconShrink } from '../components/Icons';
 import { MINI_SIZE_LABEL, nextMiniSize, setMiniSize, useMiniSize } from './miniSize';
@@ -96,6 +97,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
 
   const rootRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const vol = useVolume(videoRef);
   const engineRef = useRef<Engine | null>(null);
   /** live: holds playback until the Live buffer is filled (at the start and after a stall) */
   const gateRef = useRef<LiveBufferGate | null>(null);
@@ -141,8 +143,10 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       }),
     [],
   );
-  const [ripple, setRipple] = useState<{ side: 'l' | 'r'; text: string; key: number } | null>(null);
+  const [ripple, setRipple] = useState<{ side: 'l' | 'r' | 'c'; text: string; key: number } | null>(null);
   const dragging = useRef(false);
+  /** the volume slider is being dragged: keep the controls up */
+  const holdChrome = useRef(false);
   const overlay = !mini && (form === 'tv' || fullscreen);
   const canTheater = form !== 'phone' && form !== 'tv';
   const isAdmin = useApp((s) => s.me?.user.isAdmin ?? false);
@@ -647,7 +651,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     window.clearTimeout(hideTimer.current);
     hideTimer.current = window.setTimeout(() => {
       const v = videoRef.current;
-      if (v && !v.paused && !dragging.current) setChrome(false);
+      if (v && !v.paused && !dragging.current && !holdChrome.current) setChrome(false);
     }, 4000);
   }, []);
   useEffect(() => {
@@ -657,6 +661,13 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   useEffect(() => {
     if (menu) setChrome(true);
   }, [menu]);
+  const holdVolume = useCallback(
+    (holding: boolean) => {
+      holdChrome.current = holding;
+      if (!holding) activity();
+    },
+    [activity],
+  );
 
   /* ---------------- keyboard ---------------- */
   const back = useCallback(() => {
@@ -685,7 +696,13 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       // TV: with the controls showing and focus on a button, arrows move focus (spatial nav).
       if (form === 'tv' && arrows && !wasHidden && onButton) return;
       if (form === 'tv' && (k === 'ArrowUp' || k === 'ArrowDown') && !wasHidden) return;
+      // the volume slider handles its own arrows
+      if (arrows && t?.classList.contains('pl-vol-range')) return;
       const handled = () => (e.preventDefault(), e.stopImmediatePropagation());
+      const nudgeVolume = (up: boolean) => {
+        const lv = vol.nudge(up ? VOLUME_STEP : -VOLUME_STEP);
+        setRipple({ side: 'c', text: lv === 0 ? 'Muted' : `${Math.round(lv * 100)}%`, key: Date.now() });
+      };
       switch (k) {
         case ' ':
         case 'k':
@@ -712,9 +729,25 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
         case 'ArrowDown':
         case 'ChannelUp':
         case 'ChannelDown':
-          if (!isLive) return;
+          if (!isLive) {
+            // movies and episodes: up/down is volume (live TV keeps them for channels)
+            if (k === 'ArrowUp' || k === 'ArrowDown') {
+              handled();
+              nudgeVolume(k === 'ArrowUp');
+            }
+            return;
+          }
           handled();
           void zap(k === 'ArrowUp' || k === 'ChannelUp' ? -1 : 1);
+          break;
+        case '+':
+        case '=':
+        case 'AudioVolumeUp':
+        case '-':
+        case 'AudioVolumeDown':
+          if (k.startsWith('Audio') && form === 'tv') return; // the TV's own volume
+          handled();
+          nudgeVolume(k === '+' || k === '=' || k === 'AudioVolumeUp');
           break;
         case 'Enter':
           if (t?.getAttribute('role') !== 'slider') return;
@@ -740,7 +773,9 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           break;
         case 'm':
         case 'M':
-          if (videoRef.current) videoRef.current.muted = !videoRef.current.muted;
+          handled();
+          vol.toggleMute();
+          setRipple({ side: 'c', text: videoRef.current?.muted ? 'Muted' : `${Math.round((videoRef.current?.volume ?? 1) * 100)}%`, key: Date.now() });
           break;
         case 't':
         case 'T':
@@ -771,7 +806,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [mini, form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds, pipSupported, togglePip, canTheater, toggleTheater]);
+  }, [mini, form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds, pipSupported, togglePip, canTheater, toggleTheater, vol.nudge, vol.toggleMute]);
 
   // shrinking closes menus; the mini player has its own few controls
   useEffect(() => {
@@ -1419,6 +1454,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
               <button type="button" className="btn" onClick={addToList} disabled={kind === 'episode' && !seriesId}>
                 <IconListAdd /> {kind === 'episode' ? 'Add series to list' : 'Add to list'}
               </button>
+              {!casting && form !== 'tv' && <VolumeControl vol={vol} onHold={holdVolume} />}
               {canTheater && !overlay && (
                 <button
                   type="button"
