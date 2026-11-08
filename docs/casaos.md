@@ -36,9 +36,12 @@ Fill in:
 
 | Line | Value |
 |---|---|
-| `XTREAM_URL`, `XTREAM_USERNAME`, `XTREAM_PASSWORD` | your provider login (same as on your PC) |
 | `ANYCAST_SECRET` | a long random string; generate one with `openssl rand -hex 32` |
 | `ANYCAST_ADMIN_USER`, `ANYCAST_ADMIN_PASSWORD` | the AnyCast login you'll use in the app |
+| `XTREAM_URL`, `XTREAM_USERNAME`, `XTREAM_PASSWORD` | optional: leave them empty and enter your provider login in the app (step 3) |
+
+If you already filled in the `XTREAM_*` lines, that's fine too: AnyCast uses them, and you can still
+change the login in the app later.
 
 Leave `PORT`, `DATA_DIR` and `BUFFER_DIR` as they are (the container sets the paths itself).
 Save with Ctrl+O, Enter, then Ctrl+X.
@@ -57,6 +60,11 @@ docker compose logs -f   # Ctrl+C to stop watching; the first catalog sync shows
 ```
 
 Open `http://<server-ip>:8787` in a browser and sign in with the admin login from `.env`.
+Without `XTREAM_*` in `.env`, AnyCast now asks for your provider: enter the server address,
+username and password from your IPTV provider (or paste your whole playlist link into the address
+field), press **Test login**, then **Connect**. The password is stored encrypted with
+`ANYCAST_SECRET` and is never shown again. To change it later: **Settings › Provider** (admin only).
+
 The first sync of your ~195k items takes about a minute; the app is usable while it runs.
 
 The container also appears in the CasaOS dashboard, where you can start, stop and see its logs.
@@ -138,7 +146,8 @@ survives updates. To be safe across a rebuild or a move to another server, keep 
 Your accounts, profiles, favorites, progress (Continue watching and what you've watched), channel
 lists, settings, filters, parental PINs and pinned channels can be saved to one file. The file
 never contains your provider login, sign-in sessions or `ANYCAST_SECRET`; the catalog and guide
-come back from the provider on the next sync. It does contain the password and PIN *hashes*, so
+come back from the provider on the next sync (on a new server, enter the provider login again in
+the app first). It does contain the password and PIN *hashes*, so
 keep it somewhere private.
 
 **Automatic:** once a day the server writes `anycast-backup-YYYY-MM-DD.json` to `/data/backups`
@@ -185,3 +194,7 @@ After a restore, sign in with the accounts and passwords from the backup.
 - **Port 8787 is taken:** change the left side of `"8787:8787"` in `docker-compose.yml`, e.g. `"8790:8787"`.
 - **Provider check:** `docker compose exec anycast node_modules/.bin/tsx src/doctor/cli.ts` runs the
   doctor inside the container (FFmpeg is included there, so you also get stream formats).
+  The doctor reads the `XTREAM_*` lines from `.env`, so it needs them even if you entered the login in the app.
+- **"The provider rejected this username or password":** check the login in Settings › Provider
+  (admin). Leave the password empty to keep the saved one, or type it again. If `.env` has `XTREAM_*`
+  lines, editing them there and restarting also replaces the login.

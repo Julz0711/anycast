@@ -365,4 +365,12 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (profile_id, hour, kind, item_id)
   ) WITHOUT ROWID;
   `,
+  `
+  -- the provider login can be entered in the app (Settings › Provider) as well as in .env:
+  -- origin = where the saved login came from ('env' or 'app'); env_hash = HMAC of the .env login
+  -- last applied, so an unchanged .env never overwrites a login entered in the app
+  ALTER TABLE source ADD COLUMN origin TEXT;
+  ALTER TABLE source ADD COLUMN env_hash TEXT;
+  UPDATE source SET origin = 'env';
+  `,
 ];

@@ -46,10 +46,11 @@ cp .env.example .env
 
 Edit `.env` on the machine that runs AnyCast:
 
-- `XTREAM_URL`, `XTREAM_USERNAME`, `XTREAM_PASSWORD`: your provider login.
 - `ANYCAST_SECRET`: a long random string, for example from `openssl rand -hex 32`. It encrypts the
   stored provider login, so don't change it later.
 - `ANYCAST_ADMIN_USER`, `ANYCAST_ADMIN_PASSWORD`: the first account, created on the first start.
+- `XTREAM_URL`, `XTREAM_USERNAME`, `XTREAM_PASSWORD` (optional): your provider login. You can leave
+  them empty and enter it in the app instead (first start, later Settings › Provider, admins only).
 
 Then:
 
@@ -57,7 +58,8 @@ Then:
 docker compose up -d --build
 ```
 
-Open `http://<server>:8787`, sign in with the admin account and pick the languages you watch. The
+Open `http://<server>:8787`, sign in with the admin account, enter your provider login if `.env` has
+none, and pick the languages you watch. The
 first catalog sync runs in the background and usually takes under a minute. The database lives in
 the `anycast-data` volume and the live buffer in `anycast-buffer`. All server settings (buffer caps,
 reverse proxy, log level) are listed in [apps/server/README.md](apps/server/README.md#configuration).

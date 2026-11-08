@@ -157,7 +157,9 @@ export class CatalogSync {
 
   /** Background scheduler: catalog when older than 12 h, EPG when older than 1 h. */
   start(): void {
+    if (this.timer) return;
     const tick = () => {
+      if (!this.source.credentials()) return;
       const now = Date.now();
       if (!this.running && now - (this.lastCatalog() ?? 0) > CATALOG_INTERVAL_MS) {
         this.syncAll().catch(() => undefined);

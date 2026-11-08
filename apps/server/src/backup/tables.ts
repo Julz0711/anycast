@@ -28,7 +28,7 @@
  *   swipe_passed      movies and series a profile swiped away in Swipe; losing them only means
  *                     they can come up in the deck again
  *   source            the provider login (Xtream URL, user, password), encrypted with ANYCAST_SECRET:
- *                     it comes from .env, and a backup file must never carry it
+ *                     a backup file must never carry it; it is entered again in the app (or .env)
  *   kv                only the last catalog / guide sync times (sync state, not user data)
  *   categories, channels, movies, series, episodes
  *                     the catalog: synced from the provider again
