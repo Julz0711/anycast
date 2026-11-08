@@ -82,6 +82,9 @@ export function normalizeHiddenTabs(hidden: unknown, order: readonly TabId[]): T
 
 export const LIVE_BUFFER_CHOICES = [2, 4, 8, 15, 30] as const;
 export type LiveBufferSeconds = (typeof LIVE_BUFFER_CHOICES)[number];
+/** Seconds without mouse, touch or key activity before the player's controls fade out while playing. */
+export const CONTROLS_HIDE_CHOICES = [1, 2, 3, 5, 8] as const;
+export type ControlsHideSeconds = (typeof CONTROLS_HIDE_CHOICES)[number];
 
 export interface Preferences {
   appearance: {
@@ -126,6 +129,8 @@ export interface Preferences {
      * much behind live.
      */
     liveBuffer: LiveBufferSeconds;
+    /** seconds of no activity before the player's controls hide while it plays */
+    controlsHide: ControlsHideSeconds;
     /**
      * off: no subtitles unless chosen for the item; on: always, in the preferred subtitle language
      * when there is one; auto: only when the audio is not in the preferred subtitle language
@@ -196,6 +201,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     upNextSeconds: 30,
     miniPlayer: true,
     liveBuffer: 4,
+    controlsHide: 2,
     subtitlesDefault: 'off',
     preferredAudioLanguage: 'en',
     preferredSubtitleLanguage: null,
@@ -252,6 +258,7 @@ export function mergePreferences(partial: unknown): Preferences {
   if (![6, 12, 24].includes(home.rowLimit)) home.rowLimit = DEFAULT_PREFERENCES.home.rowLimit;
   if (![0, 15, 30, 45, 60, 90].includes(prefs.player.upNextSeconds)) prefs.player.upNextSeconds = DEFAULT_PREFERENCES.player.upNextSeconds;
   if (!LIVE_BUFFER_CHOICES.includes(prefs.player.liveBuffer)) prefs.player.liveBuffer = DEFAULT_PREFERENCES.player.liveBuffer;
+  if (!CONTROLS_HIDE_CHOICES.includes(prefs.player.controlsHide)) prefs.player.controlsHide = DEFAULT_PREFERENCES.player.controlsHide;
   const pinned = prefs.categories.pinned;
   prefs.categories.pinned = Array.isArray(pinned) ? [...new Set(pinned.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 200) : [];
   return prefs;

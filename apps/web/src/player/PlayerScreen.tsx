@@ -646,13 +646,15 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   }, []);
 
   const hideTimer = useRef<number>();
+  const hideAfterMs = useRef(prefs.controlsHide * 1000);
+  hideAfterMs.current = prefs.controlsHide * 1000;
   const activity = useCallback(() => {
     setChrome(true);
     window.clearTimeout(hideTimer.current);
     hideTimer.current = window.setTimeout(() => {
       const v = videoRef.current;
       if (v && !v.paused && !dragging.current && !holdChrome.current) setChrome(false);
-    }, 4000);
+    }, hideAfterMs.current);
   }, []);
   useEffect(() => {
     if (!overlay) setChrome(true);
