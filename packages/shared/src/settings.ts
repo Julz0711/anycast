@@ -80,6 +80,9 @@ export function normalizeHiddenTabs(hidden: unknown, order: readonly TabId[]): T
   return order.filter((t) => out.has(t));
 }
 
+export const LIVE_BUFFER_CHOICES = [2, 4, 8, 15, 30] as const;
+export type LiveBufferSeconds = (typeof LIVE_BUFFER_CHOICES)[number];
+
 export interface Preferences {
   appearance: {
     accent: AccentId;
@@ -117,6 +120,12 @@ export interface Preferences {
     upNextSeconds: 0 | 15 | 30 | 45 | 60 | 90;
     /** leaving the player keeps the stream playing in a small window while you browse */
     miniPlayer: boolean;
+    /**
+     * Live TV: seconds of stream buffered before playback starts and again after a stall. More is
+     * smoother on a shaky provider or network, but channels take that long to start and play that
+     * much behind live.
+     */
+    liveBuffer: LiveBufferSeconds;
     /**
      * off: no subtitles unless chosen for the item; on: always, in the preferred subtitle language
      * when there is one; auto: only when the audio is not in the preferred subtitle language
@@ -186,6 +195,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     autoplayCountdown: 10,
     upNextSeconds: 30,
     miniPlayer: true,
+    liveBuffer: 4,
     subtitlesDefault: 'off',
     preferredAudioLanguage: 'en',
     preferredSubtitleLanguage: null,
@@ -241,6 +251,7 @@ export function mergePreferences(partial: unknown): Preferences {
   home.hiddenSections = Array.isArray(home.hiddenSections) ? home.sections.filter((t) => home.hiddenSections.includes(t)) : [];
   if (![6, 12, 24].includes(home.rowLimit)) home.rowLimit = DEFAULT_PREFERENCES.home.rowLimit;
   if (![0, 15, 30, 45, 60, 90].includes(prefs.player.upNextSeconds)) prefs.player.upNextSeconds = DEFAULT_PREFERENCES.player.upNextSeconds;
+  if (!LIVE_BUFFER_CHOICES.includes(prefs.player.liveBuffer)) prefs.player.liveBuffer = DEFAULT_PREFERENCES.player.liveBuffer;
   const pinned = prefs.categories.pinned;
   prefs.categories.pinned = Array.isArray(pinned) ? [...new Set(pinned.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 200) : [];
   return prefs;

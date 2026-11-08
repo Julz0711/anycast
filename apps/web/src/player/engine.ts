@@ -49,6 +49,38 @@ export function chooseEngine(type: PlaybackInfo['type'], env: { mse: boolean; na
 
 type Listener = () => void;
 
+/** Seconds of live stream kept ahead of the playhead unless the user picked another Live buffer. */
+export const DEFAULT_LIVE_BUFFER = 4;
+
+/**
+ * mpegts.js on a live channel. Its latency chasing (on before) jumps the playhead forward whenever
+ * more than 1.5 s is buffered: every jump drops frames, and the buffer never grows past that, so
+ * any hiccup from the provider stalls the picture. Instead the buffer is filled up to the Live
+ * buffer before playback starts (see liveBuffer.ts), and latency that grew past it (after a
+ * stall) is caught up by playing a little faster, without skipping.
+ */
+export function mpegtsLiveConfig(buffer: number) {
+  return {
+    liveBufferLatencyChasing: false,
+    liveSync: true,
+    liveSyncTargetLatency: buffer + 1,
+    liveSyncMaxLatency: buffer * 2 + 4,
+    liveSyncPlaybackRate: 1.1,
+  };
+}
+
+/**
+ * hls.js: how far behind the live edge to start (more room for a slow segment) and how much to
+ * buffer. The server's live playlist holds 8 segments of 4 s, so the start point stays inside it.
+ */
+export function hlsLiveConfig(buffer: number) {
+  return {
+    liveSyncDuration: Math.min(24, Math.max(12, buffer + 8)),
+    liveMaxLatencyDuration: Math.min(30, Math.max(20, buffer + 16)),
+    maxBufferLength: Math.max(30, buffer * 2),
+  };
+}
+
 /* ---------- native element text tracks (native HLS: the master playlist's subtitle renditions) ---------- */
 function nativeText(video: HTMLVideoElement): TextTrack[] {
   return Array.from(video.textTracks).filter((t) => t.kind === 'subtitles' || t.kind === 'captions');
@@ -61,15 +93,22 @@ const nativeTracks = (video: HTMLVideoElement) => ({
 export async function createEngine(
   video: HTMLVideoElement,
   info: PlaybackInfo,
-  hooks: { live: boolean; onFatal: (e: PlaybackFailure) => void; onTracks: Listener },
+  hooks: {
+    live: boolean;
+    /** seconds of live stream the player keeps ahead of the playhead (Settings › Player › Live buffer) */
+    liveBuffer?: number;
+    onFatal: (e: PlaybackFailure) => void;
+    onTracks: Listener;
+  },
 ): Promise<Engine> {
+  const buffer = hooks.liveBuffer ?? DEFAULT_LIVE_BUFFER;
   const mse = typeof window !== 'undefined' && ('MediaSource' in window || 'ManagedMediaSource' in window);
   const kind = chooseEngine(info.type, { mse, nativeHls: video.canPlayType('application/vnd.apple.mpegurl') !== '', appleWebKit: isAppleWebKit() });
 
   if (kind === 'hls.js') {
     const { default: Hls } = await import('hls.js');
     if (!Hls.isSupported()) throw new PlaybackFailure('unsupported', "This browser can't play HLS streams.");
-    const hls = new Hls({ enableWorker: true, backBufferLength: 120, maxBufferLength: 30, liveDurationInfinity: false, // Retry fragments on 409 too (the server restarted ffmpeg after a seek elsewhere), not just 5xx/timeouts.
+    const hls = new Hls({ enableWorker: true, backBufferLength: 120, ...hlsLiveConfig(buffer), liveDurationInfinity: false, // Retry fragments on 409 too (the server restarted ffmpeg after a seek elsewhere), not just 5xx/timeouts.
       fragLoadPolicy: {
         default: {
           maxTimeToFirstByteMs: 10_000,
@@ -131,7 +170,7 @@ export async function createEngine(
     if (!mpegts.isSupported()) throw new PlaybackFailure('unsupported', "This browser can't play MPEG-TS streams.");
     const player = mpegts.createPlayer(
       { type: 'mpegts', isLive: hooks.live, url: new URL(info.url, location.href).href, withCredentials: true },
-      { enableWorker: true, liveBufferLatencyChasing: true, lazyLoad: false },
+      { enableWorker: true, lazyLoad: false, ...mpegtsLiveConfig(buffer) },
     );
     player.on(mpegts.Events.ERROR, (type: string, detail: string, data?: { code?: number; msg?: string }) => {
       const status = data?.code && data.code > 0 ? data.code : undefined;

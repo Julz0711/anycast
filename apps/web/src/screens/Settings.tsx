@@ -362,6 +362,17 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
           onChange={(v) => setPref('player', { upNextSeconds: v })}
         />
       </Row>
+      <Row
+        label="Live buffer"
+        hint={`Live TV waits for ${p.liveBuffer} s of stream before it plays, and again if the stream stalls. More is smoother when the provider or network is shaky; less makes channels start faster and play closer to live.`}
+      >
+        <Segmented
+          label="Live buffer"
+          value={p.liveBuffer}
+          options={opts<P['player']['liveBuffer']>([2, '2 s'], [4, '4 s'], [8, '8 s'], [15, '15 s'], [30, '30 s'])}
+          onChange={(v) => setPref('player', { liveBuffer: v })}
+        />
+      </Row>
       <Row label="Mini player" hint={p.miniPlayer ? 'Leaving the player keeps it playing in a corner while you browse. Drag it to any corner.' : 'Off: leaving the player stops playback.'}>
         <Toggle label="Mini player" checked={p.miniPlayer} onChange={(v) => setPref('player', { miniPlayer: v })} />
       </Row>
