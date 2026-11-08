@@ -373,6 +373,17 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
           onChange={(v) => setPref('player', { liveBuffer: v })}
         />
       </Row>
+      <Row
+        label="Hide controls after"
+        hint={`While a video plays, the controls fade out after ${p.controlsHide} s without moving the mouse, tapping or pressing a key.`}
+      >
+        <Segmented
+          label="Hide controls after"
+          value={p.controlsHide}
+          options={opts<P['player']['controlsHide']>([1, '1 s'], [2, '2 s'], [3, '3 s'], [5, '5 s'], [8, '8 s'])}
+          onChange={(v) => setPref('player', { controlsHide: v })}
+        />
+      </Row>
       <Row label="Mini player" hint={p.miniPlayer ? 'Leaving the player keeps it playing in a corner while you browse. Drag it to any corner.' : 'Off: leaving the player stops playback.'}>
         <Toggle label="Mini player" checked={p.miniPlayer} onChange={(v) => setPref('player', { miniPlayer: v })} />
       </Row>
