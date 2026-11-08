@@ -262,3 +262,15 @@
 [data-form="phone"] .pl-eps-seasons { margin-left: 0; flex-basis: 100%; }
 [data-form="phone"] .pl-ep-thumb { width: 8.5rem; }
 [data-form="phone"] .pl-ep-plot { -webkit-line-clamp: 2; }
+
+/* volume: mute button + slider in the pill row (not on phone or TV, they have their own) */
+.pl-ripple[data-side="c"] { left: 50%; margin-left: -2.5rem; }
+.pl-vol { display: inline-flex; align-items: center; gap: 0.5rem; height: 2.5rem; padding-right: 0.875rem; border: 1px solid var(--border); border-radius: 999px; }
+.pl-vol .pl-vol-btn { border: 0; width: 2.5rem; padding: 0; }
+.pl-vol-range { -webkit-appearance: none; appearance: none; width: 6.5rem; height: 1.5rem; background: transparent; cursor: pointer; margin: 0; }
+.pl-vol-range::-webkit-slider-runnable-track { height: 0.25rem; border-radius: 999px; background: linear-gradient(to right, var(--accent) var(--vol), var(--track-2, rgba(255,255,255,0.25)) var(--vol)); }
+.pl-vol-range::-moz-range-track { height: 0.25rem; border-radius: 999px; background: var(--track-2, rgba(255,255,255,0.25)); }
+.pl-vol-range::-moz-range-progress { height: 0.25rem; border-radius: 999px; background: var(--accent); }
+.pl-vol-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 0.875rem; height: 0.875rem; margin-top: -0.3125rem; border-radius: 50%; background: var(--text); border: 0; }
+.pl-vol-range::-moz-range-thumb { width: 0.875rem; height: 0.875rem; border-radius: 50%; background: var(--text); border: 0; }
+.pl-vol-range:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
