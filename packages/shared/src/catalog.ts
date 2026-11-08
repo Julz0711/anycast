@@ -255,7 +255,8 @@ export interface StreamProbe {
   container: string | null;
   /** seconds, VOD only */
   duration: number | null;
-  video: { codec: string; width: number | null; height: number | null; fps: number | null } | null;
+  /** bitDepth: 10 for 10-bit video; null when unknown (older servers send none) */
+  video: { codec: string; width: number | null; height: number | null; fps: number | null; bitDepth?: number | null } | null;
   audio: { codec: string; channels: number | null; language: string | null }[];
   subtitles: { codec: string; language: string | null }[];
 }

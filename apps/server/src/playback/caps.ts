@@ -4,7 +4,10 @@ import { z } from 'zod';
 export interface ClientCaps {
   hls: boolean;
   mse: boolean;
-  /** codec families: avc1, hev1/hvc1, vp09, av01, mp4a, ac-3, ec-3, opus, mp3, flac */
+  /**
+   * codec families: avc1, hev1/hvc1, vp09, av01, mp4a, ac-3, ec-3, opus, mp3, flac; plus avc1-10 and
+   * hvc1-10 when the device also plays 10-bit H.264 / HEVC (the plain names only promise 8-bit)
+   */
   codecs: string[];
 }
 
@@ -46,4 +49,18 @@ const FAMILIES: Record<string, string[]> = {
 export function supportsCodec(caps: ClientCaps, codec: string): boolean {
   const names = FAMILIES[codec] ?? [codec];
   return names.some((n) => caps.codecs.includes(n));
+}
+
+/** 10-bit (and deeper) video needs its own family: "plays HEVC" usually means 8-bit Main only. */
+const DEEP_FAMILIES: Record<string, string[]> = {
+  h264: ['avc1-10'],
+  hevc: ['hvc1-10', 'hev1-10'],
+};
+
+/** Whether the client decodes this video, bit depth included (unknown depth counts as 8-bit). */
+export function supportsVideo(caps: ClientCaps, video: { codec: string; bitDepth?: number | null }): boolean {
+  if (!supportsCodec(caps, video.codec)) return false;
+  const deep = DEEP_FAMILIES[video.codec];
+  if (!deep || !video.bitDepth || video.bitDepth <= 8) return true;
+  return deep.some((n) => caps.codecs.includes(n));
 }

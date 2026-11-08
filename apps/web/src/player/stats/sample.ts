@@ -130,9 +130,9 @@ export function sourceOf(info: PlaybackInfo, routeKind: string): StreamSource {
 }
 
 /** "HEVC · 3840×2160 · 23.98 fps" */
-export function videoLine(v: { codec: string; width: number | null; height: number | null; fps: number | null } | null): string {
+export function videoLine(v: { codec: string; width: number | null; height: number | null; fps: number | null; bitDepth?: number | null } | null): string {
   if (!v) return 'None';
-  return [codecLabel(v.codec), v.width && v.height ? `${v.width}×${v.height}` : null, v.fps ? `${v.fps} fps` : null].filter(Boolean).join(' · ');
+  return [codecLabel(v.codec), v.bitDepth && v.bitDepth > 8 ? `${v.bitDepth}-bit` : null, v.width && v.height ? `${v.width}×${v.height}` : null, v.fps ? `${v.fps} fps` : null].filter(Boolean).join(' · ');
 }
 
 /** "AC-3 · 5.1 · deu" (+ "· 2 more") */
@@ -145,4 +145,22 @@ export function audioLine(a: { codec: string; channels: number | null; language:
 export function fmtSeconds(s: number | null): string {
   if (s === null || !Number.isFinite(s)) return '—';
   return `${s.toFixed(1)} s`;
+}
+
+/**
+ * What the Stats panel offers when the picture looks wrong (grey, washed out, colored specks):
+ * - the device plays the source video itself: convert that codec on this device from now on
+ * - the server converts on the GPU: hardware encoding can be turned off (admins, Settings)
+ */
+export type PictureFix = { kind: 'convert'; codec: string; label: string } | { kind: 'hardware'; label: string } | null;
+
+export function pictureFix(info: Pick<PlaybackInfo, 'pipeline' | 'diagnostics'>): PictureFix {
+  const d = info.diagnostics;
+  if (info.pipeline === 'transcode') {
+    const enc = d?.videoEncoder;
+    return enc && enc.method !== 'software' ? { kind: 'hardware', label: enc.label } : null;
+  }
+  const codec = d?.probe.video?.codec;
+  // only codecs the server can leave out of this device's list (see player/caps.ts)
+  return codec === 'hevc' || codec === 'h264' ? { kind: 'convert', codec, label: codecLabel(codec) } : null;
 }

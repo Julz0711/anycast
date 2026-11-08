@@ -1,5 +1,5 @@
 import type { Pipeline, PlaybackInfo } from '@anycast/shared';
-import { supportsCodec, type ClientCaps } from './caps';
+import { supportsCodec, supportsVideo, type ClientCaps } from './caps';
 import type { ProbeResult } from './probe';
 
 export interface PipelineChoice {
@@ -27,7 +27,7 @@ export function choosePipeline(
   const audioIndex = tracks.audio ?? 0;
   const video = probe.video?.codec ?? null;
   const audio = probe.audio[audioIndex]?.codec ?? probe.audio[0]?.codec ?? null;
-  const videoOk = video === null || supportsCodec(caps, video);
+  const videoOk = !probe.video || supportsVideo(caps, probe.video);
   const audioOk = audio === null || supportsCodec(caps, audio);
   if (!videoOk) return { pipeline: 'transcode', type: 'hls' };
   const direct = (audioIndex === 0 || probe.audio.length <= 1) && !tracks.subtitles;
@@ -58,6 +58,10 @@ export function explainPipeline(probe: ProbeResult, caps: ClientCaps, mode: 'vod
   let reason: string;
   switch (choice.pipeline) {
     case 'transcode':
+      if (vn && probe.video?.bitDepth && probe.video.bitDepth > 8 && supportsCodec(caps, v!)) {
+        reason = `This device plays ${vn} but not ${probe.video.bitDepth}-bit ${vn}, so the server converts it to 8-bit H.264${audioOk ? '' : ` and the ${an} audio to AAC`}.`;
+        break;
+      }
       reason = `This device can't decode ${vn ?? 'this'} video, so the server converts it to H.264${audioOk ? '' : ` and the ${an} audio to AAC`}.`;
       break;
     case 'transcode-audio':

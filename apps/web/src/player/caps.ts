@@ -1,4 +1,5 @@
 import { airPlayApi } from './cast/airplay';
+import { readJson, writeLocal } from '../lib/storage';
 import { isAppleWebKit } from './engine';
 
 /**
@@ -16,6 +17,9 @@ export const CODEC_PROBES: Record<string, string[]> = {
   avc1: ['video/mp4; codecs="avc1.640028"', 'video/mp4; codecs="avc1.42E01E"'],
   hvc1: ['video/mp4; codecs="hvc1.1.6.L120.90"'],
   hev1: ['video/mp4; codecs="hev1.1.6.L120.90"'],
+  /** 10-bit: HEVC Main 10 and H.264 High 10 (the names above only promise 8-bit) */
+  'hvc1-10': ['video/mp4; codecs="hvc1.2.4.L120.90"', 'video/mp4; codecs="hev1.2.4.L120.90"'],
+  'avc1-10': ['video/mp4; codecs="avc1.6E0028"'],
   mp4a: ['audio/mp4; codecs="mp4a.40.2"'],
   'ac-3': ['audio/mp4; codecs="ac-3"'],
   'ec-3': ['audio/mp4; codecs="ec-3"'],
@@ -27,7 +31,16 @@ export interface CapsEnv {
   /** iOS 17+ ManagedMediaSource */
   ManagedMediaSource?: { isTypeSupported(t: string): boolean } | undefined;
   canPlayType: (t: string) => string;
+  /** Firefox and its forks (Zen, LibreWolf...) */
+  gecko?: boolean;
 }
+
+/**
+ * Families never claimed on Firefox and its forks: they answer yes to HEVC (Windows, through the
+ * GPU's decoder), but the picture can come out grey and washed out with colored specks, while the
+ * same file plays fine in Chrome or Edge. The server converts HEVC to H.264 for them instead.
+ */
+const GECKO_SKIP = new Set(['hvc1', 'hev1', 'hvc1-10']);
 
 export function detectCaps(env: CapsEnv): Caps {
   const ms = env.MediaSource ?? env.ManagedMediaSource;
@@ -35,6 +48,7 @@ export function detectCaps(env: CapsEnv): Caps {
   const hls = env.canPlayType('application/vnd.apple.mpegurl') !== '';
   const codecs: string[] = [];
   for (const [name, types] of Object.entries(CODEC_PROBES)) {
+    if (env.gecko && GECKO_SKIP.has(name)) continue;
     const ok = types.some((t) => {
       try {
         return (mse && ms!.isTypeSupported(t)) || env.canPlayType(t) === 'probably';
@@ -56,13 +70,45 @@ export function preferNativeHls(caps: Caps, env: { appleWebKit: boolean; airPlay
   return env.appleWebKit && env.airPlay && caps.hls ? { ...caps, mse: false } : caps;
 }
 
+/**
+ * Video codecs (ffprobe names: hevc, h264, ...) this device should never play directly, because
+ * the picture came out wrong here: the server converts them instead. Set from the player's Stats
+ * panel, undone in Settings > About.
+ */
+const CONVERT_KEY = 'anycast.convertVideo';
+export const CODEC_FAMILIES: Record<string, string[]> = {
+  h264: ['avc1', 'avc1-10'],
+  hevc: ['hvc1', 'hev1', 'hvc1-10'],
+};
+
+export function convertedCodecs(): string[] {
+  const v = readJson<unknown>(CONVERT_KEY);
+  return Array.isArray(v) ? v.filter((c): c is string => typeof c === 'string') : [];
+}
+
+export function setConvertCodec(codec: string, on: boolean): void {
+  const now = new Set(convertedCodecs());
+  if (on) now.add(codec);
+  else now.delete(codec);
+  writeLocal(CONVERT_KEY, now.size ? JSON.stringify([...now]) : null);
+  memo = null;
+}
+
+/** Leaves out the families of codecs this device converts. */
+export function withoutConverted(caps: Caps, converted: string[]): Caps {
+  if (!converted.length) return caps;
+  const drop = new Set(converted.flatMap((c) => CODEC_FAMILIES[c] ?? [c]));
+  return { ...caps, codecs: caps.codecs.filter((c) => !drop.has(c)) };
+}
+
 let memo: string | null = null;
 export function capsHeader(): string | null {
   if (memo) return memo;
   if (typeof document === 'undefined') return null;
   const v = document.createElement('video');
   const w = window as unknown as { MediaSource?: CapsEnv['MediaSource']; ManagedMediaSource?: CapsEnv['ManagedMediaSource'] };
-  const caps = detectCaps({ MediaSource: w.MediaSource, ManagedMediaSource: w.ManagedMediaSource, canPlayType: (t) => v.canPlayType(t) });
-  memo = JSON.stringify(preferNativeHls(caps, { appleWebKit: isAppleWebKit(), airPlay: airPlayApi() }));
+  const gecko = typeof navigator !== 'undefined' && /\bGecko\/\d/.test(navigator.userAgent) && /\bFirefox\//.test(navigator.userAgent);
+  const caps = detectCaps({ MediaSource: w.MediaSource, ManagedMediaSource: w.ManagedMediaSource, canPlayType: (t) => v.canPlayType(t), gecko });
+  memo = JSON.stringify(withoutConverted(preferNativeHls(caps, { appleWebKit: isAppleWebKit(), airPlay: airPlayApi() }), convertedCodecs()));
   return memo;
 }

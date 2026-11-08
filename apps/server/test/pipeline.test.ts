@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_CAPS, parseCaps } from '../src/playback/caps';
 import { buildHlsArgs, completedSegments } from '../src/playback/ffmpeg';
-import { choosePipeline } from '../src/playback/pipeline';
-import { parseFfprobe, type ProbeResult } from '../src/playback/probe';
+import { choosePipeline, explainPipeline } from '../src/playback/pipeline';
+import { parseBitDepth, parseFfprobe, ProbeCache, type ProbeResult } from '../src/playback/probe';
 
 const probe = (container: string, video: string | null, audio: string | null): ProbeResult => ({
   container, duration: 100,
@@ -33,6 +33,49 @@ describe('choosePipeline', () => {
   });
 });
 
+describe('10-bit video', () => {
+  const deep = (codec: string): ProbeResult => ({ ...probe('mkv', codec, 'aac'), video: { codec, width: 1920, height: 1080, bitDepth: 10 } });
+  const safari10 = { ...safari, codecs: [...safari.codecs, 'hvc1-10'] };
+  test('converted unless the device plays the 10-bit profile', () => {
+    expect(choosePipeline(deep('hevc'), safari, 'vod').pipeline).toBe('transcode');
+    expect(choosePipeline(deep('hevc'), safari10, 'vod').pipeline).toBe('remux');
+    expect(choosePipeline(deep('h264'), chrome, 'vod').pipeline).toBe('transcode');
+    // unknown depth (old cached probes) and 8-bit stay as before
+    expect(choosePipeline(probe('mkv', 'hevc', 'aac'), safari, 'vod').pipeline).toBe('remux');
+    expect(choosePipeline({ ...deep('hevc'), video: { codec: 'hevc', width: 1, height: 1, bitDepth: 8 } }, safari, 'vod').pipeline).toBe('remux');
+  });
+  test('the reason names the bit depth', () => {
+    const c = choosePipeline(deep('hevc'), safari, 'vod');
+    expect(explainPipeline(deep('hevc'), safari, 'vod', c)).toBe('This device plays HEVC but not 10-bit HEVC, so the server converts it to 8-bit H.264.');
+  });
+  test('parseBitDepth reads the pixel format', () => {
+    expect(parseBitDepth({ pix_fmt: 'yuv420p' })).toBe(8);
+    expect(parseBitDepth({ pix_fmt: 'yuvj420p' })).toBe(8);
+    expect(parseBitDepth({ pix_fmt: 'yuv420p10le' })).toBe(10);
+    expect(parseBitDepth({ pix_fmt: 'p010le' })).toBe(10);
+    expect(parseBitDepth({ pix_fmt: 'yuv422p12be' })).toBe(12);
+    expect(parseBitDepth({ bits_per_raw_sample: '10' })).toBe(10);
+    expect(parseBitDepth({})).toBeNull();
+    expect(parseFfprobe({ streams: [{ codec_type: 'video', codec_name: 'hevc', pix_fmt: 'yuv420p10le' }] }).video?.bitDepth).toBe(10);
+  });
+  test('cached probes without a bit depth are probed again', async () => {
+    const rows = new Map<string, string>();
+    const db = {
+      prepare: (sql: string) => ({
+        get: (k: string) => (rows.has(k) ? { data: rows.get(k), probed_at: Date.now() } : undefined),
+        run: (k: string, data: string) => (sql.startsWith('INSERT') ? rows.set(k, data) : undefined),
+      }),
+    };
+    rows.set('episode:1', JSON.stringify(probe('mkv', 'hevc', 'aac')));
+    let probes = 0;
+    const cache = new ProbeCache(db as never, async () => (probes++, deep('hevc')));
+    expect(cache.cached('episode:1')).toBeNull();
+    expect((await cache.get('episode:1', () => 'u')).video?.bitDepth).toBe(10);
+    expect(cache.cached('episode:1')?.video?.bitDepth).toBe(10);
+    expect(probes).toBe(1);
+  });
+});
+
 describe('parseCaps', () => {
   test('header JSON, codec strings normalized', () => {
     expect(parseCaps('{"hls":true,"mse":false,"codecs":["avc1.640028","HVC1","mp4a.40.2"]}')).toEqual({ hls: true, mse: false, codecs: ['avc1', 'hvc1', 'mp4a'] });
@@ -54,7 +97,7 @@ test('parseFfprobe normalizes containers and skips cover art', () => {
     ],
   });
   expect(r).toEqual({
-    container: 'mkv', duration: 125.5, video: { codec: 'hevc', width: 3840, height: 2160 },
+    container: 'mkv', duration: 125.5, video: { codec: 'hevc', width: 3840, height: 2160, bitDepth: null },
     audio: [{ codec: 'eac3', language: 'deu', channels: 6, title: null, default: false }],
     subtitles: [{ codec: 'subrip', language: 'eng', title: null, default: false, forced: false }],
   });

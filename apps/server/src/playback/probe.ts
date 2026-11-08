@@ -7,7 +7,7 @@ export interface ProbeResult {
   container: string | null;
   duration: number | null;
   /** fps: frames per second when ffprobe reports a frame rate (older cached probes have none) */
-  video: { codec: string; width: number | null; height: number | null; fps?: number } | null;
+  video: { codec: string; width: number | null; height: number | null; fps?: number; bitDepth?: number | null } | null;
   audio: ProbeAudio[];
   subtitles: ProbeSubtitle[];
 }
@@ -18,6 +18,7 @@ export interface ProbeSubtitle { codec: string; language: string | null; title?:
 
 interface FfprobeStream {
   codec_type?: string; codec_name?: string; width?: number; height?: number; channels?: number;
+  pix_fmt?: string; bits_per_raw_sample?: string;
   avg_frame_rate?: string; r_frame_rate?: string;
   tags?: Record<string, string>; disposition?: { attached_pic?: number; default?: number; forced?: number };
 }
@@ -39,6 +40,21 @@ export function parseFrameRate(raw: string | undefined): number | null {
   return Number.isFinite(fps) && fps > 0 && fps < 1000 ? Math.round(fps * 100) / 100 : null;
 }
 
+/**
+ * Bits per sample of a video stream: from the pixel format ("yuv420p10le" -> 10, "p010le" -> 10),
+ * else bits_per_raw_sample; 8 for plain formats; null when ffprobe says nothing.
+ */
+export function parseBitDepth(s: { pix_fmt?: string; bits_per_raw_sample?: string } | undefined): number | null {
+  const f = s?.pix_fmt?.toLowerCase();
+  if (f) {
+    const m = /^p0(\d\d)/.exec(f) ?? /(\d+)(?:le|be)$/.exec(f);
+    const bits = m ? Number(m[1]) : 8;
+    return bits >= 8 && bits <= 16 ? bits : 8;
+  }
+  const raw = Number(s?.bits_per_raw_sample);
+  return Number.isInteger(raw) && raw >= 8 && raw <= 16 ? raw : null;
+}
+
 /** A stream tag, case-insensitively (MP4 and MKV differ), trimmed; null when empty. */
 function tag(s: FfprobeStream, name: string): string | null {
   for (const [k, v] of Object.entries(s.tags ?? {})) if (k.toLowerCase() === name && v.trim()) return v.trim();
@@ -53,7 +69,7 @@ export function parseFfprobe(json: FfprobeOutput): ProbeResult {
   return {
     container: normalizeContainer(json.format?.format_name),
     duration: Number.isFinite(duration) && duration > 0 ? duration : null,
-    video: v?.codec_name ? { codec: v.codec_name, width: v.width ?? null, height: v.height ?? null, ...(fps ? { fps } : {}) } : null,
+    video: v?.codec_name ? { codec: v.codec_name, width: v.width ?? null, height: v.height ?? null, ...(fps ? { fps } : {}), bitDepth: parseBitDepth(v) } : null,
     // every stream of a type is listed, in order, so list position = ffmpeg's 0:a:N / 0:s:N
     audio: streams
       .filter((s) => s.codec_type === 'audio')
@@ -116,7 +132,10 @@ export class ProbeCache {
     const row = this.db.prepare('SELECT data, probed_at FROM probe_cache WHERE key = ?').get(key) as { data: string; probed_at: number } | undefined;
     if (!row) return null;
     if (key.startsWith('live:') && Date.now() - row.probed_at > LIVE_TTL_MS) return null;
-    return JSON.parse(row.data) as ProbeResult;
+    const data = JSON.parse(row.data) as ProbeResult;
+    // probed before bit depth was recorded: probe again, so 10-bit video isn't sent to a device that only plays 8-bit
+    if (data.video && !('bitDepth' in data.video)) return null;
+    return data;
   }
 
   async get(key: string, url: () => string): Promise<ProbeResult> {

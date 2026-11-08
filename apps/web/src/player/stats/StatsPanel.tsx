@@ -7,7 +7,7 @@ import type { PlaybackInfo } from '@anycast/shared';
 import type { EngineKind } from '../engine';
 import { IconClose } from '../../components/Icons';
 import {
-  audioLine, bufferAhead, decodedBytes, ENGINE_LABEL, fmtBitrate, fmtSeconds, frameCounts, pipelineLine, RateMeter, SOURCE_LABEL, sourceOf,
+  audioLine, bufferAhead, decodedBytes, ENGINE_LABEL, fmtBitrate, fmtSeconds, frameCounts, pictureFix, pipelineLine, RateMeter, SOURCE_LABEL, sourceOf,
   streamBytes, videoLine, type FrameCounts,
 } from './sample';
 import '../../theme/player-extras.css';
@@ -21,6 +21,8 @@ export interface StatsPanelProps {
   /** live: how far the playhead is behind real time, in ms */
   behindLiveMs: number | null;
   onClose: () => void;
+  /** the picture looks wrong: convert this codec on this device from now on, and play again */
+  onConvert?: (codec: string) => void;
 }
 
 interface Live {
@@ -108,6 +110,7 @@ export default function StatsPanel(p: StatsPanelProps) {
           <Row name="Container" stat="container">{d?.probe.container?.toUpperCase() ?? '—'}</Row>
           <Row name="Video" stat="video">{d ? videoLine(d.probe.video) : '—'}{live?.decoded ? <span className="muted"> (playing {live.decoded})</span> : null}</Row>
           <Row name="Audio" stat="audio">{d ? audioLine(d.probe.audio) : '—'}</Row>
+          <PictureHelp info={p.info} onConvert={p.onConvert} />
           {d?.assumed && (
             <dd className="pl-stats-why" data-stat="assumed">
               The server couldn't probe this stream; the codecs above are assumed.
@@ -124,5 +127,25 @@ export default function StatsPanel(p: StatsPanelProps) {
       )}
       <p className="pl-stats-foot muted">Press I to hide</p>
     </section>
+  );
+}
+
+function PictureHelp({ info, onConvert }: { info: PlaybackInfo; onConvert?: (codec: string) => void }) {
+  const fix = pictureFix(info);
+  if (!fix || (fix.kind === 'convert' && !onConvert)) return null;
+  return (
+    <dd className="pl-stats-why pl-stats-fix" data-stat="picture-fix">
+      Picture grey, washed out or full of colored specks?{' '}
+      {fix.kind === 'convert' ? (
+        <>
+          This device decodes the {fix.label} video itself.{' '}
+          <button type="button" className="btn" onClick={() => onConvert!(fix.codec)}>
+            Convert {fix.label} on this device
+          </button>
+        </>
+      ) : (
+        <>The server converts this video on the GPU ({fix.label}). An admin can turn hardware encoding off in Settings, under Playback.</>
+      )}
+    </dd>
   );
 }
