@@ -342,6 +342,12 @@ export interface Api {
   'GET /api/series/:id': { res: SeriesDetail };
   /** The series page was opened: its new episodes stop being new. */
   'PUT /api/series/:id/seen': { res: { ok: true } };
+  /**
+   * The viewer went on to the next episode with `seconds` left (the end credits, most likely): a
+   * sample for SeriesDetail.creditsLead, which is the median of the last few. DELETE forgets them.
+   */
+  'PUT /api/series/:id/credits': { body: { seconds: number }; res: { creditsLead: number } };
+  'DELETE /api/series/:id/credits': { res: { creditsLead: null } };
   /** Hydrate items by id (favorites, deep links): comma-separated ids per kind, at most 500 each. Hidden items are left out. */
   'GET /api/items': { query: { live?: string; movie?: string; series?: string }; res: ItemsById };
   'GET /api/search': { query: { q: string }; res: SearchResults };

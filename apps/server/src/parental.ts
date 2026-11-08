@@ -116,7 +116,7 @@ export class AdultView {
   }
 
   episode<E extends Episode>(e: E, categoryId: string): E {
-    return this.lockedIds.has(categoryId) ? { ...e, title: LOCKED_NAME, plot: null, locked: true } : e;
+    return this.lockedIds.has(categoryId) ? { ...e, title: LOCKED_NAME, plot: null, image: null, locked: true } : e;
   }
 
   programs(list: EpgProgram[], categoryId: string): EpgProgram[] {

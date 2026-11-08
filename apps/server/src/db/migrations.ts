@@ -373,4 +373,16 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE source ADD COLUMN env_hash TEXT;
   UPDATE source SET origin = 'env';
   `,
+  `
+  -- the provider's still image per episode (get_series_info › info.movie_image), shown in the player's episode list
+  ALTER TABLE episodes ADD COLUMN image TEXT;
+  -- where a series' end credits start, as seconds before the end of an episode: learned from when
+  -- viewers go on to the next episode (the player shows its Up next card from then on)
+  CREATE TABLE series_credits (
+    series_id TEXT PRIMARY KEY,
+    seconds REAL NOT NULL,
+    samples TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  ) WITHOUT ROWID;
+  `,
 ];

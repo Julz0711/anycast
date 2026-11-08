@@ -119,6 +119,8 @@ export interface Episode {
   plot: string | null;
   duration: number | null;
   container: string | null;
+  /** the provider's still for the episode (/api/art/episode/…), when it has one */
+  image?: string | null;
   /** new since the profile last opened the series */
   isNew?: boolean;
   /** in a locked adult category: name is LOCKED_NAME and artwork, plot and guide are withheld */
@@ -127,6 +129,11 @@ export interface Episode {
 
 export interface SeriesDetail extends Series {
   seasons: { season: number; episodes: Episode[] }[];
+  /**
+   * Where the series' end credits start, in seconds before the end of an episode, learned from when
+   * viewers went on to the next episode (PUT /api/series/:id/credits). null: not learned yet.
+   */
+  creditsLead?: number | null;
 }
 
 /** A playable item reference */

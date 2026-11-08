@@ -134,3 +134,25 @@ test('phone: the mini player sits above the tab bar, drags to another corner and
   await expect(page).toHaveURL(new RegExp(`/play/movie/${fx.movie.id}`));
   expect(await sameVideo(page)).toBe(true);
 });
+
+test('the mini player has three sizes, remembered on the device', async ({ profile }) => {
+  const page = await profile.device();
+  await page.goto(`/play/live/${fx.archiveChannel.id}`);
+  await expectPlaying(page);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  const mini = page.getByRole('region', { name: 'Mini player' });
+  await expect(mini).toHaveAttribute('data-size', 'm');
+  const width = async () => (await mini.boundingBox())!.width;
+  const medium = await width();
+  await mini.getByRole('button', { name: /^Mini player size: Medium/ }).click();
+  await expect(mini).toHaveAttribute('data-size', 'l');
+  await expect.poll(width).toBeGreaterThan(medium + 50);
+  await mini.getByRole('button', { name: /^Mini player size: Large/ }).click();
+  await expect(mini).toHaveAttribute('data-size', 's');
+  await expect.poll(width).toBeLessThan(medium - 30);
+  // still small after a reload (the session is gone, so open it again)
+  await page.goto(`/play/live/${fx.archiveChannel.id}`);
+  await expectPlaying(page);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(mini).toHaveAttribute('data-size', 's');
+});

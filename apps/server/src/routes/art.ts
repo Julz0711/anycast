@@ -102,7 +102,7 @@ export class ArtCache {
  */
 export function artRoutes(app: FastifyInstance, s: Services, cache = new ArtCache(path.join(s.config.dataDir, 'art'))): void {
   app.get<{ Params: { kind: string; id: string }; Querystring: { v?: string } }>('/api/art/:kind/:id', async (req, reply) => {
-    const kind = z.enum(['live', 'movie', 'series', 'backdrop']).safeParse(req.params.kind);
+    const kind = z.enum(['live', 'movie', 'series', 'backdrop', 'episode']).safeParse(req.params.kind);
     if (kind.success) {
       const adult = s.parental.view(parentalCtx(req));
       const of = kind.data === 'backdrop' ? 'movie' : kind.data;

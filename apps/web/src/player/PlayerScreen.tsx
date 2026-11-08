@@ -9,11 +9,11 @@ import type { CastPlayResponse, Episode, PlaybackInfo, TimelineInfo, TrackChoice
 import { useApp, useIsFavorite } from '../store/app';
 import { useWatchTime } from './watchTime';
 import { recordRecentChannel, saveProgress, saveProgressOnUnload, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
-import { cachedGet, call } from '../api/client';
+import { cachedGet, call, clearApiCache } from '../api/client';
 import { lookup, resolveItems } from '../api/catalog';
 import { setBufferPin, useBufferPins } from '../api/buffer';
 import { useAsync, useFormFactor } from '../lib/hooks';
-import { writeLocal } from '../lib/storage';
+import { readLocal, writeLocal } from '../lib/storage';
 import { isTypingTarget } from '../lib/misc';
 import { fmtBehind, fmtClock, fmtDay, fmtDuration, fmtRange } from '../lib/time';
 import { parseMediaTime, parseTimeInput } from '../lib/timeParse';
@@ -25,9 +25,12 @@ import { Ribbon, VodBar } from './Timeline';
 import { useThumbIndex } from './thumbs';
 import { hasTrackChoice, playingTracks, reloadTracks as keepTracks, renditionOf, subtitleAction, type TrackRequest } from './tracks';
 import { TracksMenu } from './TracksMenu';
+import { EpisodeList } from './EpisodeList';
+import { UpNextCard, upNextDue } from './upNext';
 import { RewindTip } from './RewindTip';
 import { useVariants, useVersionFallback, VersionsMenu, versionLabel } from './variants';
-import { IconBack, IconClose, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock } from '../components/Icons';
+import { IconBack, IconClose, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock, IconTheater, IconResize, IconShrink } from '../components/Icons';
+import { MINI_SIZE_LABEL, nextMiniSize, setMiniSize, useMiniSize } from './miniSize';
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
 import { useMediaSession } from './mediaSession';
@@ -85,6 +88,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const navigate = useNavigate();
   const form = useFormFactor();
   const prefs = useApp((s) => s.prefs.player);
+  const showArt = useApp((s) => s.prefs.appearance.showArtwork);
   const zapList = useApp((s) => s.zapList);
   const isLive = kind === 'live';
   const vodKind = kind === 'episode' ? 'episode' : 'movie';
@@ -117,9 +121,27 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const [fullscreen, setFullscreen] = useState(false);
   const [menu, setMenu] = useState<null | 'tracks' | 'jump' | 'versions'>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
+  /** the Up next card: at the end credits (before the episode ends) or at the end */
+  const [upNext, setUpNext] = useState<null | 'credits' | 'end'>(null);
+  /** the card was waved away (Watch credits) or already shown for this episode */
+  const upNextDone = useRef(false);
+  /** the remaining time of the playing episode (s), for learning where the credits start */
+  const remainingRef = useRef<number | null>(null);
+  const [ended, setEnded] = useState(false);
+  /** theater mode: the video as big as the window allows, full width (per device) */
+  const [theater, setTheater] = useState(() => readLocal('anycast.theater') === '1');
+  const toggleTheater = useCallback(
+    () =>
+      setTheater((t) => {
+        writeLocal('anycast.theater', t ? null : '1');
+        return !t;
+      }),
+    [],
+  );
   const [ripple, setRipple] = useState<{ side: 'l' | 'r'; text: string; key: number } | null>(null);
   const dragging = useRef(false);
   const overlay = !mini && (form === 'tv' || fullscreen);
+  const canTheater = form !== 'phone' && form !== 'tv';
   const isAdmin = useApp((s) => s.me?.user.isAdmin ?? false);
   const bufPins = useBufferPins(isLive && isAdmin);
   const pinned = !!bufPins.pins?.channelIds.includes(id);
@@ -227,6 +249,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       setError(null);
       setWaiting(true);
       setCountdown(null);
+      setUpNext(null);
+      setEnded(false);
       engineRef.current?.destroy();
       engineRef.current = null;
       let pi: PlaybackInfo;
@@ -320,6 +344,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   );
 
   useEffect(() => {
+    upNextDone.current = false;
     const atParam = sp.get('at');
     void load(atParam ? Number(atParam) : null, { fromStart: sp.get('start') === '0' });
     if (isLive) writeLocal('anycast.lastChannel', id);
@@ -376,6 +401,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     setError(null);
     setWaiting(false);
     setCountdown(null);
+    setUpNext(null);
   }, [stopped]);
 
   const takeOver = useCallback(async () => {
@@ -481,6 +507,9 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const program = isLive && timeline ? programAt(position, timeline.programs) : null;
   const duration = !isLive && casting && ccDuration > 0 ? ccDuration : !isLive && video && Number.isFinite(video.duration) ? video.duration : (movie.data?.duration ?? episode?.duration ?? 0);
   const buffered = video && video.buffered.length ? video.buffered.end(video.buffered.length - 1) : 0;
+  // the real length of the stream (not the catalog's guess) for the Up next card
+  const realDuration = !isLive && casting && ccDuration > 0 ? ccDuration : !isLive && video && Number.isFinite(video.duration) ? video.duration : 0;
+  remainingRef.current = kind === 'episode' && realDuration > 0 ? Math.max(0, realDuration - ct) : null;
 
   // 1 s clock so "behind live" and the live edge keep moving even while paused
   useEffect(() => {
@@ -688,6 +717,12 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           handled();
           toggleFullscreen();
           break;
+        case 'w':
+        case 'W':
+          if (!canTheater || overlay) return;
+          handled();
+          toggleTheater();
+          break;
         case 'm':
         case 'M':
           if (videoRef.current) videoRef.current.muted = !videoRef.current.muted;
@@ -721,7 +756,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [mini, form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds, pipSupported, togglePip]);
+  }, [mini, form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds, pipSupported, togglePip, canTheater, toggleTheater]);
 
   // shrinking closes menus; the mini player has its own few controls
   useEffect(() => {
@@ -776,17 +811,66 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   });
 
   /* ---------------- next episode ---------------- */
+  /** where this series' end credits start (s before the end), learned here or by the server */
+  const [learned, setLearned] = useState<{ series: string; lead: number | null } | null>(null);
+  const creditsLead = learned && learned.series === seriesId ? learned.lead : (series.data?.creditsLead ?? null);
+  const upNextLead = creditsLead ?? prefs.upNextSeconds;
+  const upNextRef = useRef(upNext);
+  upNextRef.current = upNext;
   const goNext = useCallback(() => {
     if (!nextEpisode) return;
+    // Moving on before the Up next card showed (or after waving it away) says where the credits
+    // start for this series: the time that was left. The card shows from there next time.
+    const left = remainingRef.current;
+    if (upNextRef.current === null && seriesId && left !== null && left >= 5 && left <= 600) {
+      const sid = seriesId;
+      void call('PUT /api/series/:id/credits', { params: { id: sid }, body: { seconds: left } }).then(
+        (r) => {
+          setLearned({ series: sid, lead: r.creditsLead });
+          clearApiCache(`/api/series/${sid}`);
+        },
+        () => undefined,
+      );
+    }
     setCountdown(null);
+    setUpNext(null);
     go(`/play/episode/${nextEpisode.id}?series=${nextEpisode.seriesId}`);
-  }, [nextEpisode, go]);
+  }, [nextEpisode, go, seriesId]);
+  const forgetCredits = useCallback(() => {
+    if (!seriesId) return;
+    const sid = seriesId;
+    setLearned({ series: sid, lead: null });
+    void call('DELETE /api/series/:id/credits', { params: { id: sid } }).then(() => clearApiCache(`/api/series/${sid}`), () => undefined);
+  }, [seriesId]);
+
+  // the end credits start (as far as we know): Up next, counting down when autoplay is on
+  const shownPausedNow = casting ? ccPlayer === 'PAUSED' : paused || needsTap;
+  const creditsDue = kind === 'episode' && !!nextEpisode && !mini && !error && !moved && upNextDue(realDuration, ct, upNextLead);
+  useEffect(() => {
+    if (upNext === 'end') return;
+    if (creditsDue && upNext === null && !upNextDone.current && !shownPausedNow) {
+      upNextDone.current = true;
+      setUpNext('credits');
+      if (prefs.autoplayNext) setCountdown(Math.max(5, prefs.autoplayCountdown));
+    } else if (!creditsDue && upNext === 'credits') {
+      // sought back out of the credits: start over
+      upNextDone.current = false;
+      setUpNext(null);
+      setCountdown(null);
+    }
+  }, [creditsDue, upNext, shownPausedNow, prefs.autoplayNext, prefs.autoplayCountdown]);
+  // the countdown waits while the viewer pauses (the end of the episode doesn't count as a pause)
   useEffect(() => {
     if (countdown === null) return;
     if (countdown <= 0) return goNext();
+    if (shownPausedNow && !ended) return;
     const t = setTimeout(() => setCountdown((c) => (c === null ? null : c - 1)), 1000);
     return () => clearTimeout(t);
-  }, [countdown, goNext]);
+  }, [countdown, goNext, shownPausedNow, ended]);
+  const dismissUpNext = () => {
+    setCountdown(null);
+    setUpNext(null);
+  };
 
   /* ---------------- video events ---------------- */
   const slowTimer = useRef<number>();
@@ -796,6 +880,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     slowTimer.current = window.setTimeout(() => setSlow(true), 15_000);
   };
   const onPlaying = () => {
+    setEnded(false);
     setWaiting(false);
     setSlow(false);
     setPaused(false);
@@ -824,8 +909,13 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     }
     const b = progressBody();
     if (b) void saveProgress(b);
-    if (kind === 'episode' && nextEpisode && prefs.autoplayNext) setCountdown(prefs.autoplayCountdown);
-    else setPaused(true);
+    setPaused(true);
+    if (kind === 'episode' && nextEpisode) {
+      setEnded(true);
+      setUpNext('end');
+      // already counting down from the credits: let it run out
+      if (prefs.autoplayNext) setCountdown((c) => (c === null ? prefs.autoplayCountdown : c));
+    }
   };
   const onVideoError = () => {
     const v = videoRef.current;
@@ -981,7 +1071,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   };
   const tracks = info?.tracks;
   const hasTracks = hasTrackChoice(tracks);
-  const showPlayOverlay = !casting && !error && !moved && countdown === null && (needsTap || (paused && !waiting));
+  const showPlayOverlay = !casting && !error && !moved && upNext !== 'end' && (needsTap || (paused && !waiting));
   const shownPaused = casting ? ccPlayer === 'PAUSED' : paused || needsTap;
 
   /* ---------------- media session (lock screen, media keys) ---------------- */
@@ -1010,6 +1100,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       className="player"
       data-mode={mini ? 'mini' : overlay ? 'overlay' : 'stacked'}
       data-chrome={chrome ? 'on' : 'off'}
+      data-theater={canTheater && theater && !mini && !overlay ? 'on' : undefined}
       onPointerMove={overlay ? activity : undefined}
     >
       <div className="pl-stage">
@@ -1154,21 +1245,20 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             </div>
           </div>
         )}
-        {countdown !== null && nextEpisode && (
-          <div className="pl-next" role="dialog" aria-label="Next episode" data-nav-trap="">
-            <div className="muted" style={{ fontSize: '0.8125rem' }}>
-              Up next · S{nextEpisode.season} E{nextEpisode.episode}
-            </div>
-            <div className="pl-next-title">{nextEpisode.title}</div>
-            <div className="actions">
-              <button type="button" className="btn btn-primary" onClick={goNext} autoFocus>
-                <IconPlay /> Play now · {countdown}
-              </button>
-              <button type="button" className="btn" onClick={() => setCountdown(null)}>
-                Cancel
-              </button>
-            </div>
-          </div>
+        {upNext && nextEpisode && !mini && (
+          <UpNextCard
+            key={upNext}
+            episode={nextEpisode}
+            image={showArt ? (nextEpisode.image ?? series.data?.poster ?? null) : null}
+            countdown={countdown}
+            total={countdown === null ? null : upNext === 'credits' ? Math.max(5, prefs.autoplayCountdown) : prefs.autoplayCountdown}
+            atEnd={upNext === 'end'}
+            focus={form === 'tv' || upNext === 'end'}
+            learned={creditsLead !== null}
+            onPlay={goNext}
+            onDismiss={dismissUpNext}
+            onForget={forgetCredits}
+          />
         )}
         {mini && (
           <MiniBar
@@ -1305,6 +1395,18 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
               <button type="button" className="btn" onClick={addToList} disabled={kind === 'episode' && !seriesId}>
                 <IconListAdd /> {kind === 'episode' ? 'Add series to list' : 'Add to list'}
               </button>
+              {canTheater && !overlay && (
+                <button
+                  type="button"
+                  className={`btn${theater ? ' on' : ''}`}
+                  onClick={toggleTheater}
+                  aria-pressed={theater}
+                  aria-label="Theater mode"
+                  title={theater ? 'Default view (W)' : 'Theater mode (W)'}
+                >
+                  <IconTheater />
+                </button>
+              )}
               <button type="button" className="btn" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}>
                 <IconFullscreen />
               </button>
@@ -1351,19 +1453,14 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
         )}
 
         {isLive && !overlay && timeline && <Earlier timeline={timeline} now={now} position={position} onPlay={seekAbs} />}
-        {!isLive && !overlay && kind === 'episode' && nextEpisode && (
-          <div className="pl-upnext">
-            <span className="label">Next</span>
-            <button type="button" className="pl-earlier-row" onClick={goNext}>
-              <span className="tabnum muted">
-                S{nextEpisode.season} E{nextEpisode.episode}
-              </span>
-              <span className="ellipsis" style={{ flex: 1 }}>
-                {nextEpisode.title}
-              </span>
-              <span className="accent">Play</span>
-            </button>
-          </div>
+        {!overlay && kind === 'episode' && series.data && (
+          <EpisodeList
+            series={series.data}
+            currentId={id}
+            nextId={nextEpisode?.id}
+            currentProgress={duration > 0 ? ct / duration : null}
+            onPlay={(e) => (e.id === nextEpisode?.id ? goNext() : go(`/play/episode/${e.id}?series=${e.seriesId}`))}
+          />
         )}
       </div>
     </div>
@@ -1445,6 +1542,8 @@ function MiniBar(props: {
   onExpand: () => void;
   onClose: () => void;
 }) {
+  const size = useMiniSize();
+  const next = nextMiniSize(size);
   return (
     <div className="mini-bar">
       {props.problem && (
@@ -1467,6 +1566,15 @@ function MiniBar(props: {
             {props.paused ? <IconPlay /> : <IconPause />}
           </button>
         )}
+        <button
+          type="button"
+          className="mini-btn"
+          onClick={() => setMiniSize(next)}
+          aria-label={`Mini player size: ${MINI_SIZE_LABEL[size]}. Make it ${MINI_SIZE_LABEL[next].toLowerCase()}`}
+          title={`Make it ${MINI_SIZE_LABEL[next].toLowerCase()}`}
+        >
+          {next === 's' ? <IconShrink /> : <IconResize />}
+        </button>
         <button type="button" className="mini-btn" onClick={props.onExpand} aria-label="Expand player">
           <IconExpand />
         </button>

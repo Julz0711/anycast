@@ -347,6 +347,21 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
       <Row label="Autoplay next episode" hint={p.autoplayNext ? `Starts after a ${p.autoplayCountdown} s countdown.` : 'Off: playback stops at the end of an episode.'}>
         <Toggle label="Autoplay next episode" checked={p.autoplayNext} onChange={(v) => setPref('player', { autoplayNext: v })} />
       </Row>
+      <Row
+        label="Up next card"
+        hint={
+          p.upNextSeconds === 0
+            ? 'Shows when an episode ends.'
+            : `Shows when the end credits start. Until AnyCast has learned where they start for a series (from when you skip to the next episode), it shows ${p.upNextSeconds} s before the end.`
+        }
+      >
+        <Segmented
+          label="Up next card"
+          value={p.upNextSeconds}
+          options={opts<P['player']['upNextSeconds']>([0, 'At the end'], [15, '15 s'], [30, '30 s'], [45, '45 s'], [60, '60 s'], [90, '90 s'])}
+          onChange={(v) => setPref('player', { upNextSeconds: v })}
+        />
+      </Row>
       <Row label="Mini player" hint={p.miniPlayer ? 'Leaving the player keeps it playing in a corner while you browse. Drag it to any corner.' : 'Off: leaving the player stops playback.'}>
         <Toggle label="Mini player" checked={p.miniPlayer} onChange={(v) => setPref('player', { miniPlayer: v })} />
       </Row>

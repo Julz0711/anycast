@@ -110,6 +110,11 @@ export interface Preferences {
     timelineStyle: 'ribbon' | 'bar';
     autoplayNext: boolean;
     autoplayCountdown: number;
+    /**
+     * The Up next card on episodes: this many seconds before the end, until AnyCast has learned where
+     * the series' end credits start (SeriesDetail.creditsLead). 0: only when the episode ends.
+     */
+    upNextSeconds: 0 | 15 | 30 | 45 | 60 | 90;
     /** leaving the player keeps the stream playing in a small window while you browse */
     miniPlayer: boolean;
     /**
@@ -179,6 +184,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     timelineStyle: 'ribbon',
     autoplayNext: true,
     autoplayCountdown: 10,
+    upNextSeconds: 30,
     miniPlayer: true,
     subtitlesDefault: 'off',
     preferredAudioLanguage: 'en',
@@ -234,6 +240,7 @@ export function mergePreferences(partial: unknown): Preferences {
   home.sections = normalizeHomeSections(home.sections);
   home.hiddenSections = Array.isArray(home.hiddenSections) ? home.sections.filter((t) => home.hiddenSections.includes(t)) : [];
   if (![6, 12, 24].includes(home.rowLimit)) home.rowLimit = DEFAULT_PREFERENCES.home.rowLimit;
+  if (![0, 15, 30, 45, 60, 90].includes(prefs.player.upNextSeconds)) prefs.player.upNextSeconds = DEFAULT_PREFERENCES.player.upNextSeconds;
   const pinned = prefs.categories.pinned;
   prefs.categories.pinned = Array.isArray(pinned) ? [...new Set(pinned.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 200) : [];
   return prefs;
