@@ -11,7 +11,7 @@
 .home-hero {
   position: relative; display: grid; grid-template-columns: minmax(0, 26rem) minmax(0, 1fr); gap: 1.75rem; align-items: center;
   padding: 1.25rem; border-radius: 1.25rem; margin-top: 0.5rem; overflow: hidden;
-  background: linear-gradient(110deg, color-mix(in srgb, var(--tone, var(--surface)) 30%, var(--surface)) 0%, var(--surface) 55%);
+  background: var(--glow-grain), linear-gradient(in oklab 110deg, color-mix(in oklab, var(--tone, var(--surface)) 30%, var(--surface)) 0%, color-mix(in oklab, var(--tone, var(--surface)) 12%, var(--surface)) 30%, color-mix(in oklab, var(--tone, var(--surface)) 3%, var(--surface)) 50%, var(--surface) 65%);
 }
 .home-hero.no-art { grid-template-columns: minmax(0, 1fr); padding: 1.5rem 1.75rem; }
 .home-hero-art .wide-art { border-radius: 0.875rem; }
