@@ -8,6 +8,8 @@ test('volume: slider, arrow keys and mute, remembered after a reload', async ({ 
   await expectPlaying(page);
 
   const slider = page.getByRole('slider', { name: 'Volume' });
+  // the slider slides out next to the speaker on hover, like YouTube
+  await page.getByRole('button', { name: 'Mute' }).hover();
   await slider.fill('40');
   await expect.poll(() => vol(page)).toEqual({ level: 0.4, muted: false });
 

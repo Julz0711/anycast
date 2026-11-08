@@ -274,3 +274,86 @@
 .pl-vol-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 0.875rem; height: 0.875rem; margin-top: -0.3125rem; border-radius: 50%; background: var(--text); border: 0; }
 .pl-vol-range::-moz-range-thumb { width: 0.875rem; height: 0.875rem; border-radius: 50%; background: var(--text); border: 0; }
 .pl-vol-range:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* ------------------------------------------------------------------------------------------
+   Control bar on the video, YouTube style (desktop, tablet, phone; the TV keeps its overlay).
+   Shows while the mouse moves over the video, while paused, or after a tap; hides when idle.
+   ------------------------------------------------------------------------------------------ */
+.player[data-bar]:not([data-theater]):not([data-mode="overlay"]) .pl-stage { height: min(56.25vw, calc(100dvh - 13rem)); }
+[data-form="phone"] .player[data-bar] .pl-stage { height: auto; }
+.pl-bar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding: 3rem calc(0.75rem + var(--safe-r)) 0.25rem calc(0.75rem + var(--safe-l)); background: linear-gradient(to top, rgba(0,0,0,0.78) 0, rgba(0,0,0,0.42) 55%, rgba(0,0,0,0) 100%); color: #fff; transition: opacity 200ms ease; }
+.player[data-bar] .pl-top { transition: opacity 200ms ease; }
+.player[data-bar][data-chrome="off"] .pl-bar:not(:has(:focus-visible)),
+.player[data-bar][data-chrome="off"] .pl-top { opacity: 0; pointer-events: none; }
+.player[data-bar][data-chrome="off"] .pl-stage { cursor: none; }
+.player[data-bar][data-mode="overlay"] .pl-panel { display: none; }
+.player[data-bar][data-mode="overlay"] .pl-bar { padding-bottom: calc(0.5rem + var(--safe-b)); padding-left: max(1.25rem, var(--safe-l)); padding-right: max(1.25rem, var(--safe-r)); }
+.pl-top-title { min-width: 0; font-size: 1.125rem; font-weight: 600; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+
+/* the seek bar: thin, grows under the mouse; programme blocks sit above it like chapters */
+.pl-bar .ribbon { margin: 0 0.375rem; }
+.pl-bar .rb-labels, .pl-bar .rb-gap-note { display: none; }
+.pl-bar .rb-track { height: 1rem; }
+.pl-bar .rb-rail { height: 3px; margin-top: -1.5px; border-radius: 0; background: rgba(255,255,255,0.22); transition: height 120ms ease, margin 120ms ease; }
+.pl-bar .rb-track:hover .rb-rail, .pl-bar .rb-track.dragging .rb-rail, .pl-bar .rb-track:focus-visible .rb-rail { height: 5px; margin-top: -2.5px; }
+.pl-bar .rb-range { background: rgba(255,255,255,0.4); }
+.pl-bar .rb-range[data-source="buffer"] { background: rgba(255,255,255,0.32); }
+.pl-bar .rb-knob { width: 0.875rem; height: 0.875rem; margin: -0.4375rem 0 0 -0.4375rem; box-shadow: none; transform: scale(0); transition: transform 120ms ease; }
+.pl-bar .rb-track:hover .rb-knob, .pl-bar .rb-track.dragging .rb-knob, .pl-bar .rb-track:focus-visible .rb-knob { transform: scale(1); }
+.pl-bar .rb-track:focus-visible .rb-knob { box-shadow: 0 0 0 3px rgba(255,255,255,0.9); }
+.pl-bar .rb-live { background: #fff; }
+.pl-bar .rb-blocks { height: 1.375rem; margin-bottom: 0.375rem; }
+.pl-bar .rb-block { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.78); }
+.pl-bar .rb-block:hover { background: rgba(255,255,255,0.22); color: #fff; }
+.pl-bar .rb-block[data-state="future"] { background: transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); }
+@media (hover: none) { .pl-bar .rb-knob { transform: scale(1); } }
+
+.pl-bar-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; min-height: 2.75rem; }
+.pl-bar-l, .pl-bar-r { display: flex; align-items: center; gap: 0.125rem; min-width: 0; }
+.pl-bar-r { flex: none; }
+.pl-ic { width: 2.75rem; height: 2.75rem; flex: none; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #fff; opacity: 0.92; transition: opacity var(--dur), background var(--dur), color var(--dur); }
+.pl-ic:hover { opacity: 1; background: rgba(255,255,255,0.12); }
+.pl-ic .ico { width: 1.5rem; height: 1.5rem; }
+.pl-ic.on { color: var(--accent); opacity: 1; }
+.pl-ic[disabled] { opacity: 0.35; cursor: default; background: transparent; }
+.pl-ic:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+.pl-ic > span { display: none; }
+.pl-ic-text { width: auto; padding: 0 0.75rem; border-radius: 999px; font-size: 0.8125rem; font-weight: 600; white-space: nowrap; }
+.pl-time { padding: 0 0.625rem; font-size: 0.8125rem; color: rgba(255,255,255,0.92); white-space: nowrap; }
+.pl-bar-live { display: inline-flex; align-items: center; gap: 0.375rem; padding-left: 0.375rem; min-width: 0; }
+.pl-bar .pl-badge { background: transparent; padding: 0 0.25rem; font-size: 0.8125rem; white-space: nowrap; }
+.pl-bar .pl-badge.live { letter-spacing: 0.04em; }
+.pl-golive { height: 1.75rem; padding: 0 0.75rem; border-radius: 999px; background: rgba(255,255,255,0.16); color: #fff; font-size: 0.75rem; font-weight: 700; white-space: nowrap; transition: background var(--dur); }
+.pl-golive:hover { background: rgba(255,255,255,0.26); }
+
+/* volume: the icon, and the slider slides out on hover (always out on touch screens) */
+.pl-bar .pl-vol { height: auto; padding: 0; border: 0; gap: 0; }
+.pl-bar .pl-vol-btn { width: 2.75rem; height: 2.75rem; border-radius: 50%; color: #fff; background: transparent; }
+.pl-bar .pl-vol-btn:hover { background: rgba(255,255,255,0.12); }
+.pl-bar .pl-vol-btn .ico { width: 1.5rem; height: 1.5rem; }
+.pl-bar .pl-vol-range { width: 0; opacity: 0; margin: 0; transition: width 160ms ease, opacity 160ms ease, margin 160ms ease; }
+.pl-bar .pl-vol:hover .pl-vol-range, .pl-bar .pl-vol:focus-within .pl-vol-range { width: 4.75rem; opacity: 1; margin: 0 0.5rem 0 0.125rem; }
+.pl-bar .pl-vol-range::-webkit-slider-runnable-track { background: linear-gradient(to right, #fff var(--vol), rgba(255,255,255,0.3) var(--vol)); }
+.pl-bar .pl-vol-range::-moz-range-track { background: rgba(255,255,255,0.3); }
+.pl-bar .pl-vol-range::-moz-range-progress { background: #fff; }
+.pl-bar .pl-vol-range::-webkit-slider-thumb { background: #fff; }
+.pl-bar .pl-vol-range::-moz-range-thumb { background: #fff; }
+@media (hover: none) { .pl-bar .pl-vol-range { width: 4.75rem; opacity: 1; margin: 0 0.5rem 0 0.125rem; } }
+
+/* menus opened from the bar (audio & subtitles, version) float above it */
+.pl-pop { position: absolute; right: calc(0.75rem + var(--safe-r)); bottom: 4.5rem; z-index: 4; max-width: calc(100% - 1.5rem); max-height: calc(100% - 5.5rem); overflow: auto; border-radius: 1rem; box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
+.pl-pop .pl-menu, .pl-pop .pl-jump { margin-top: 0; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.player[data-bar] .pl-stage > .pl-notice { position: absolute; top: 0.75rem; left: 50%; transform: translateX(-50%); z-index: 3; margin: 0; max-width: calc(100% - 8rem); box-shadow: 0 6px 18px rgba(0,0,0,0.45); }
+.player[data-bar] .pl-slow { bottom: 5.25rem; }
+.player[data-bar] .pl-next { bottom: 5.25rem; }
+
+/* below the video: title and the extras (favorite, lists, stats, jump…) */
+.player[data-bar] .pl-panel { padding-top: 1rem; }
+.player[data-bar] .pl-pills { justify-content: flex-start; padding-top: 0.875rem; }
+
+/* phone: a slimmer bar */
+[data-form="phone"] .pl-bar { padding: 1.75rem 0.25rem 0; }
+[data-form="phone"] .pl-bar-row { min-height: 2.5rem; }
+[data-form="phone"] .pl-ic { width: 2.5rem; height: 2.5rem; }
+[data-form="phone"] .pl-ic .ico { width: 1.375rem; height: 1.375rem; }
+[data-form="phone"] .pl-time { font-size: 0.75rem; padding: 0 0.375rem; }

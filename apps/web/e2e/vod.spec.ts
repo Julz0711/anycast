@@ -26,7 +26,7 @@ test('couch to bed: pause a movie, another device offers Resume at the same posi
   await expect.poll(() => currentTime(couch)).toBeGreaterThanOrEqual(90);
   await expectPlaying(couch);
   await couch.getByRole('button', { name: 'Pause', exact: true }).click();
-  await expect(couch.locator('.pl-controls').getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+  await expect(couch.getByTestId('control-bar').getByRole('button', { name: 'Play', exact: true })).toBeVisible();
   const pos = await currentTime(couch);
 
   await expect(bed.getByRole('link', { name: `Resume from ${fmtDuration(pos)}` })).toBeVisible({ timeout: 5_000 });

@@ -14,7 +14,8 @@ async function hoverAt(page: Page, t: number) {
   const bar = page.getByRole('slider', { name: 'Seek' });
   const box = (await bar.boundingBox())!;
   const duration = Number(await bar.getAttribute('aria-valuemax'));
-  await page.mouse.move(box.x + (box.width * t) / duration, box.y + box.height / 2);
+  // aim at the middle of that second, so pixel rounding cannot land on the one before
+  await page.mouse.move(box.x + (box.width * (t + 0.5)) / duration, box.y + box.height / 2);
 }
 
 async function showControls(page: Page) {

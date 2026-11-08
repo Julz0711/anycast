@@ -31,6 +31,7 @@ import { UpNextCard, upNextDue } from './upNext';
 import { RewindTip } from './RewindTip';
 import { useVolume, VolumeControl, VOLUME_STEP } from './volume';
 import { useVariants, useVersionFallback, VersionsMenu, versionLabel } from './variants';
+import { IconFullscreenExit, IconNext, IconSkip } from './barIcons';
 import { IconBack, IconClose, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock, IconTheater, IconResize, IconShrink } from '../components/Icons';
 import { MINI_SIZE_LABEL, nextMiniSize, setMiniSize, useMiniSize } from './miniSize';
 import { openAddToList } from '../store/lists';
@@ -149,6 +150,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const holdChrome = useRef(false);
   const overlay = !mini && (form === 'tv' || fullscreen);
   const canTheater = form !== 'phone' && form !== 'tv';
+  /** the control bar sits on the video, YouTube style (everywhere but the TV, which keeps its remote-friendly overlay) */
+  const bar = form !== 'tv' && !mini;
   const isAdmin = useApp((s) => s.me?.user.isAdmin ?? false);
   const bufPins = useBufferPins(isLive && isAdmin);
   const pinned = !!bufPins.pins?.channelIds.includes(id);
@@ -646,6 +649,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   }, []);
 
   const hideTimer = useRef<number>();
+  const menuOpen = useRef(false);
+  menuOpen.current = menu !== null;
   const hideAfterMs = useRef(prefs.controlsHide * 1000);
   hideAfterMs.current = prefs.controlsHide * 1000;
   const activity = useCallback(() => {
@@ -653,13 +658,20 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     window.clearTimeout(hideTimer.current);
     hideTimer.current = window.setTimeout(() => {
       const v = videoRef.current;
-      if (v && !v.paused && !dragging.current && !holdChrome.current) setChrome(false);
+      if (v && !v.paused && !dragging.current && !holdChrome.current && !menuOpen.current) setChrome(false);
     }, hideAfterMs.current);
   }, []);
   useEffect(() => {
-    if (!overlay) setChrome(true);
+    if (!overlay && !bar) setChrome(true);
     else activity();
-  }, [overlay, activity]);
+  }, [overlay, bar, activity]);
+  // the mouse left the video: tuck the bar away right away while playing, like YouTube
+  const leaveStage = (e: RPointerEvent<HTMLDivElement>) => {
+    const v = videoRef.current;
+    if (e.pointerType !== 'mouse' || !v || v.paused || dragging.current || holdChrome.current || menuOpen.current) return;
+    window.clearTimeout(hideTimer.current);
+    setChrome(false);
+  };
   useEffect(() => {
     if (menu) setChrome(true);
   }, [menu]);
@@ -803,12 +815,18 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           if (e.keyCode === 461 || e.keyCode === 10009) {
             handled();
             back();
+          } else if (/^[0-9]$/.test(k) && !isLive && form !== 'tv') {
+            // 0–9 jump to 0 %–90 % of a movie or episode, like YouTube
+            const d = videoRef.current?.duration;
+            if (!d || !Number.isFinite(d)) return;
+            handled();
+            seekVod((d * Number(k)) / 10);
           }
       }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [mini, form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds, pipSupported, togglePip, canTheater, toggleTheater, vol.nudge, vol.toggleMute]);
+  }, [mini, form, overlay, chrome, menu, activity, togglePlay, skip, zap, goLive, toggleFullscreen, back, isLive, prefs.skipBackSeconds, prefs.skipForwardSeconds, pipSupported, togglePip, canTheater, toggleTheater, vol.nudge, vol.toggleMute, seekVod]);
 
   // shrinking closes menus; the mini player has its own few controls
   useEffect(() => {
@@ -1012,6 +1030,11 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       return;
     }
     if (Math.abs(dx) > 12 || Math.abs(dy) > 12) return;
+    // a mouse click on the video plays or pauses at once (a double click goes full screen)
+    if (bar && e.pointerType === 'mouse') {
+      togglePlay();
+      return;
+    }
     const r = e.currentTarget.getBoundingClientRect();
     const fx = (e.clientX - r.left) / r.width;
     const side = fx < 0.33 ? 'l' : fx > 0.67 ? 'r' : 'c';
@@ -1027,7 +1050,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     lastTap.current = { t, side };
     window.clearTimeout(tapTimer.current);
     tapTimer.current = window.setTimeout(() => {
-      if (overlay) setChrome((c) => !c);
+      if (overlay || bar) setChrome((c) => !c);
       else togglePlay();
     }, side === 'c' ? 0 : 280);
   };
@@ -1153,6 +1176,100 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     !isLive,
   );
 
+  const seekEl = (
+    isLive ? (
+          timeline || !info ? (
+            <Ribbon
+              win={win}
+              now={now}
+              position={position}
+              timeline={timeline}
+              showBlocks={prefs.timelineStyle === 'ribbon' && !(bar && form === 'phone' && !overlay)}
+              onSeek={seekAbs}
+              onSkip={(d) => skip(d)}
+              onDragChange={(d) => {
+                dragging.current = d;
+                if (d) setChrome(true);
+              }}
+              onBlockUnavailable={flash}
+            />
+          ) : (
+            <Skeleton h="2.5rem" />
+          )
+        ) : (
+          <VodBar
+            position={ct}
+            duration={duration}
+            buffered={buffered}
+            onSeek={seekVod}
+            onSkip={(d) => skip(d)}
+            thumbs={thumbs.index}
+            onScrubStart={thumbs.refresh}
+            hint={seekHint}
+          />
+        )
+  );
+  const notices = (
+    <>
+        {notice && (
+          <p className="pl-notice" role="status">
+            {notice}
+          </p>
+        )}
+        {pinMsg && (
+          <p className={`pl-notice${pinMsg.error ? ' error' : ''}`} role={pinMsg.error ? 'alert' : 'status'} data-testid="pin-message">
+            {pinMsg.text}{' '}
+            <button type="button" className="link-btn" onClick={() => setPinMsg(null)}>
+              OK
+            </button>
+          </p>
+        )}
+
+    </>
+  );
+  const menus = (
+    <>
+        {menu === 'jump' && (
+          <JumpBox
+            live={isLive}
+            onClose={() => setMenu(null)}
+            onJump={(raw) => {
+              if (isLive) {
+                const r = parseTimeInput(raw, { now, position });
+                if (!r.ok) return r.error;
+                seekAbs(r.at);
+              } else {
+                const r = parseMediaTime(raw, { position: ct, duration });
+                if (!r.ok) return r.error;
+                seekVod(r.at);
+              }
+              setMenu(null);
+              return null;
+            }}
+          />
+        )}
+        {menu === 'versions' && (
+          <VersionsMenu
+            variants={variants}
+            current={id}
+            onPick={(v) => {
+              setMenu(null);
+              if (v !== id) go(`/play/live/${encodeURIComponent(v)}`);
+            }}
+            onClose={() => setMenu(null)}
+          />
+        )}
+        {menu === 'tracks' && tracks && (
+          <TracksMenu tracks={tracks} subtitle={subIdx} onAudio={chooseAudio} onSubtitle={chooseSubtitle} onClose={() => setMenu(null)} />
+        )}
+
+    </>
+  );
+  /** tracks and versions open over the video (not on a small phone picture, where they open below it) */
+  const menusInStage = bar && (form !== 'phone' || overlay);
+  const skipLabel = (s: number) => (s < 60 ? String(s) : '1m');
+  const nextAction = isLive ? { label: 'Next channel', run: () => void zap(1) } : nextEpisode ? { label: 'Next episode', run: goNext } : null;
+
   return (
     <div
       ref={rootRef}
@@ -1160,9 +1277,14 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       data-mode={mini ? 'mini' : overlay ? 'overlay' : 'stacked'}
       data-chrome={chrome ? 'on' : 'off'}
       data-theater={canTheater && theater && !mini && !overlay ? 'on' : undefined}
-      onPointerMove={overlay ? activity : undefined}
+      data-bar={bar ? 'on' : undefined}
+      onPointerMove={overlay && !bar ? activity : undefined}
     >
-      <div className="pl-stage">
+      <div
+        className="pl-stage"
+        onPointerMove={bar ? (e) => e.pointerType === 'mouse' && activity() : undefined}
+        onPointerLeave={bar ? leaveStage : undefined}
+      >
         <video
           ref={videoRef}
           className="pl-video"
@@ -1186,7 +1308,13 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           onEnded={onEnded}
           onError={onVideoError}
         />
-        <div className="pl-gesture" onPointerDown={onGestureDown} onPointerUp={onGestureUp} aria-hidden="true" />
+        <div
+          className="pl-gesture"
+          onPointerDown={onGestureDown}
+          onPointerUp={onGestureUp}
+          onDoubleClick={bar ? (e) => (e.nativeEvent as PointerEvent).pointerType !== 'touch' && toggleFullscreen() : undefined}
+          aria-hidden="true"
+        />
         {(casting || airplay.active) && (
           <div className="pl-cast" role="status" data-testid="cast-overlay">
             {casting ? <IconCast connected /> : <IconAirPlay />}
@@ -1211,22 +1339,19 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           <button type="button" className="pl-round" onClick={back} aria-label="Back">
             <IconBack />
           </button>
-          {isLive && info && !error && (
+          {bar && overlay && <span className="pl-top-title ellipsis">{title}</span>}
+          {!bar && isLive && info && !error && (
             <span className={`pl-badge tabnum${atLive ? ' live' : ''}`} aria-live="off">
               {atLive ? 'LIVE' : `${fmtBehind(behind)} behind live`}
             </span>
           )}
           {form === 'phone' && (
             <span className="pl-top-end">
-              <CastButton airplay={airplay} className="pl-round" />
               <button type="button" className="pl-round" aria-label={kind === 'episode' ? 'Add series to list' : 'Add to list'} onClick={addToList} disabled={kind === 'episode' && !seriesId}>
                 <IconListAdd />
               </button>
               <button type="button" className="pl-round" aria-pressed={fav} aria-label={fav ? 'Remove from favorites' : 'Add to favorites'} onClick={toggleFav} disabled={kind === 'episode' && !seriesId}>
                 <IconStar filled={fav} className={`ico${fav ? ' accent' : ''}`} />
-              </button>
-              <button type="button" className="pl-round" onClick={toggleFullscreen} aria-label="Full screen">
-                <IconFullscreen />
               </button>
             </span>
           )}
@@ -1321,6 +1446,87 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             onForget={forgetCredits}
           />
         )}
+        {bar && notices}
+        {menusInStage && menu && (menu !== 'jump' || overlay) && (
+          <div className="pl-pop" onPointerDown={(e) => e.stopPropagation()}>
+            {menus}
+          </div>
+        )}
+        {bar && (
+          <div className="pl-bar" data-testid="control-bar">
+            {seekEl}
+            <div className="pl-bar-row" data-nav-row="pl-bar">
+              <div className="pl-bar-l">
+                <button type="button" className="pl-ic" onClick={togglePlay} aria-label={shownPaused ? 'Play' : 'Pause'} title={shownPaused ? 'Play (k)' : 'Pause (k)'}>
+                  {shownPaused ? <IconPlay /> : <IconPause />}
+                </button>
+                {form !== 'phone' && (
+                  <>
+                    <button type="button" className="pl-ic" onClick={() => skip(-1)} aria-label={`Back ${prefs.skipBackSeconds} seconds`} title={`Back ${prefs.skipBackSeconds} s (←)`}>
+                      <IconSkip dir={-1} label={skipLabel(prefs.skipBackSeconds)} />
+                    </button>
+                    <button type="button" className="pl-ic" onClick={() => skip(1)} aria-label={`Forward ${prefs.skipForwardSeconds} seconds`} title={`Forward ${prefs.skipForwardSeconds} s (→)`} disabled={atLive}>
+                      <IconSkip dir={1} label={skipLabel(prefs.skipForwardSeconds)} />
+                    </button>
+                  </>
+                )}
+                {nextAction && (
+                  <button type="button" className="pl-ic" onClick={nextAction.run} aria-label={nextAction.label} title={isLive ? 'Next channel (↓)' : 'Next episode'}>
+                    <IconNext />
+                  </button>
+                )}
+                {!casting && form !== 'phone' && <VolumeControl vol={vol} onHold={holdVolume} />}
+                {isLive ? (
+                  info && !error ? (
+                    <span className="pl-bar-live">
+                      <span className={`pl-badge tabnum${atLive ? ' live' : ''}`} aria-live="off">
+                        {atLive ? 'LIVE' : `${fmtBehind(behind)} behind live`}
+                      </span>
+                      {!atLive && (
+                        <button type="button" className="pl-golive" onClick={goLive} aria-label={`Go live, ${fmtBehind(behind)} behind`}>
+                          Go live
+                        </button>
+                      )}
+                    </span>
+                  ) : null
+                ) : (
+                  <span className="pl-time tabnum">
+                    {fmtDuration(ct)} / {fmtDuration(duration)}
+                  </span>
+                )}
+              </div>
+              <div className="pl-bar-r">
+                {hasTracks && (
+                  <button type="button" className={`pl-ic${menu === 'tracks' ? ' on' : ''}`} onClick={() => setMenu(menu === 'tracks' ? null : 'tracks')} aria-expanded={menu === 'tracks'} aria-label="Audio & subtitles" title="Audio & subtitles">
+                    <IconTracks />
+                  </button>
+                )}
+                {variants.length > 1 && (
+                  <button type="button" className="pl-ic pl-ic-text" onClick={() => setMenu(menu === 'versions' ? null : 'versions')} aria-expanded={menu === 'versions'} aria-label={`Version${version ? ` · ${versionLabel(version)}` : ''}`} title="Version">
+                    {version ? versionLabel(version) : 'Version'}
+                  </button>
+                )}
+                <CastButton airplay={airplay} className="pl-ic" />
+                {!casting && <PipButton pip={pip} className="pl-ic" />}
+                {canTheater && !overlay && (
+                  <button
+                    type="button"
+                    className={`pl-ic${theater ? ' on' : ''}`}
+                    onClick={toggleTheater}
+                    aria-pressed={theater}
+                    aria-label="Theater mode"
+                    title={theater ? 'Default view (W)' : 'Theater mode (W)'}
+                  >
+                    <IconTheater />
+                  </button>
+                )}
+                <button type="button" className="pl-ic" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen'} title={fullscreen ? 'Exit full screen (F)' : 'Full screen (F)'}>
+                  {fullscreen ? <IconFullscreenExit /> : <IconFullscreen />}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {mini && (
           <MiniBar
             title={title}
@@ -1350,52 +1556,10 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           {overlay && isLive && info && <div className={`pl-behind tabnum${atLive ? ' live' : ''}`}>{atLive ? 'Live' : `${fmtBehind(behind)} behind live`}</div>}
         </div>
 
-        {isLive ? (
-          timeline || !info ? (
-            <Ribbon
-              win={win}
-              now={now}
-              position={position}
-              timeline={timeline}
-              showBlocks={prefs.timelineStyle === 'ribbon'}
-              onSeek={seekAbs}
-              onSkip={(d) => skip(d)}
-              onDragChange={(d) => {
-                dragging.current = d;
-                if (d) setChrome(true);
-              }}
-              onBlockUnavailable={flash}
-            />
-          ) : (
-            <Skeleton h="2.5rem" />
-          )
-        ) : (
-          <VodBar
-            position={ct}
-            duration={duration}
-            buffered={buffered}
-            onSeek={seekVod}
-            onSkip={(d) => skip(d)}
-            thumbs={thumbs.index}
-            onScrubStart={thumbs.refresh}
-            hint={seekHint}
-          />
-        )}
+        {!bar && seekEl}
 
-        {notice && (
-          <p className="pl-notice" role="status">
-            {notice}
-          </p>
-        )}
-        {pinMsg && (
-          <p className={`pl-notice${pinMsg.error ? ' error' : ''}`} role={pinMsg.error ? 'alert' : 'status'} data-testid="pin-message">
-            {pinMsg.text}{' '}
-            <button type="button" className="link-btn" onClick={() => setPinMsg(null)}>
-              OK
-            </button>
-          </p>
-        )}
-
+        {!bar && notices}
+        {!bar && (
         <div className="pl-controls" data-nav-row="pl-controls">
           <button type="button" className="pl-round" onClick={() => skip(-1)} aria-label={`Back ${prefs.skipBackSeconds} seconds`}>
             −{prefs.skipBackSeconds < 60 ? `${prefs.skipBackSeconds}s` : '1m'}
@@ -1407,6 +1571,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             +{prefs.skipForwardSeconds < 60 ? `${prefs.skipForwardSeconds}s` : '1m'}
           </button>
         </div>
+        )}
 
         <div className="pl-pills" data-nav-row="pl-pills">
           <button type="button" className="btn" onClick={() => setMenu(menu === 'jump' ? null : 'jump')} aria-expanded={menu === 'jump'}>
@@ -1417,7 +1582,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
               Start of programme
             </button>
           )}
-          {isLive && (
+          {isLive && !bar && (
             <button type="button" className="btn btn-primary" onClick={goLive} disabled={atLive} aria-label={atLive ? 'Watching live' : `Go live, ${fmtBehind(behind)} behind`}>
               {atLive ? 'Live' : 'Go live'}
             </button>
@@ -1438,12 +1603,12 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
               <IconClock /> Keep a rewind buffer
             </button>
           )}
-          {variants.length > 1 && (
+          {variants.length > 1 && !bar && (
             <button type="button" className="btn" onClick={() => setMenu(menu === 'versions' ? null : 'versions')} aria-expanded={menu === 'versions'}>
               Version{version ? ` · ${versionLabel(version)}` : ''}
             </button>
           )}
-          {hasTracks && (
+          {hasTracks && !bar && (
             <button type="button" className="btn" onClick={() => setMenu(menu === 'tracks' ? null : 'tracks')} aria-expanded={menu === 'tracks'}>
               <IconTracks /> Audio &amp; subtitles
             </button>
@@ -1456,8 +1621,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
               <button type="button" className="btn" onClick={addToList} disabled={kind === 'episode' && !seriesId}>
                 <IconListAdd /> {kind === 'episode' ? 'Add series to list' : 'Add to list'}
               </button>
-              {!casting && form !== 'tv' && <VolumeControl vol={vol} onHold={holdVolume} />}
-              {canTheater && !overlay && (
+              {!bar && canTheater && !overlay && (
                 <button
                   type="button"
                   className={`btn${theater ? ' on' : ''}`}
@@ -1469,51 +1633,20 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
                   <IconTheater />
                 </button>
               )}
-              <button type="button" className="btn" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}>
-                <IconFullscreen />
-              </button>
+              {!bar && (
+                <button type="button" className="btn" onClick={toggleFullscreen} aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}>
+                  <IconFullscreen />
+                </button>
+              )}
             </>
           )}
-          {form !== 'phone' && <CastButton airplay={airplay} label />}
-          {!casting && <PipButton pip={pip} />}
+          {form !== 'phone' && !bar && <CastButton airplay={airplay} label />}
+          {!casting && !bar && <PipButton pip={pip} />}
           <StatsButton open={stats.open} onToggle={stats.toggle} />
           {form === 'tv' && <span className="pl-hint">◀ ▶ seek · ▲▼ channels · Back to close</span>}
         </div>
 
-        {menu === 'jump' && (
-          <JumpBox
-            live={isLive}
-            onClose={() => setMenu(null)}
-            onJump={(raw) => {
-              if (isLive) {
-                const r = parseTimeInput(raw, { now, position });
-                if (!r.ok) return r.error;
-                seekAbs(r.at);
-              } else {
-                const r = parseMediaTime(raw, { position: ct, duration });
-                if (!r.ok) return r.error;
-                seekVod(r.at);
-              }
-              setMenu(null);
-              return null;
-            }}
-          />
-        )}
-        {menu === 'versions' && (
-          <VersionsMenu
-            variants={variants}
-            current={id}
-            onPick={(v) => {
-              setMenu(null);
-              if (v !== id) go(`/play/live/${encodeURIComponent(v)}`);
-            }}
-            onClose={() => setMenu(null)}
-          />
-        )}
-        {menu === 'tracks' && tracks && (
-          <TracksMenu tracks={tracks} subtitle={subIdx} onAudio={chooseAudio} onSubtitle={chooseSubtitle} onClose={() => setMenu(null)} />
-        )}
-
+        {(!menusInStage || (menu === 'jump' && !overlay)) && menus}
         {isLive && !overlay && timeline && <Earlier timeline={timeline} now={now} position={position} onPlay={seekAbs} />}
         {!overlay && kind === 'episode' && series.data && (
           <EpisodeList
