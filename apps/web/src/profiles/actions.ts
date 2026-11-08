@@ -6,8 +6,36 @@ import { useApp } from '../store/app';
 import { refreshMe, selectProfile } from '../store/actions';
 import { askPin } from '../store/parental';
 
-/** The profile being switched to, for the full-screen hand-over (null when none). */
-export const useSwitching = create<{ to: Profile | null }>(() => ({ to: null }));
+/**
+ * The full-screen hand-over while switching profiles (to is null when none):
+ * 'in' fades the cover up over the current page, 'hold' keeps it while the next profile loads
+ * underneath, 'out' fades it away to reveal the new profile's Home.
+ */
+export type SwitchPhase = 'in' | 'hold' | 'out';
+export const useSwitching = create<{ to: Profile | null; phase: SwitchPhase }>(() => ({ to: null, phase: 'in' }));
+
+/** Hand-over timings in ms per animation setting (exported for tests). */
+export const SWITCH_TIMING = {
+  full: { cover: 200, minHold: 520, maxHold: 1600, reveal: 320 },
+  reduced: { cover: 80, minHold: 200, maxHold: 1200, reveal: 120 },
+  off: { cover: 0, minHold: 120, maxHold: 1200, reveal: 0 },
+} as const;
+
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const animSetting = (): keyof typeof SWITCH_TIMING => {
+  const a = document.documentElement.dataset.anim;
+  return a === 'off' || a === 'reduced' ? a : 'full';
+};
+
+/** Resolves once the profile's own preferences (accent, layout...) are in, or after maxMs. */
+function prefsReady(maxMs: number): Promise<void> {
+  if (useApp.getState().prefsLoaded) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => { clearTimeout(t); unsub(); resolve(); };
+    const t = setTimeout(done, maxMs);
+    const unsub = useApp.subscribe((s) => { if (s.prefsLoaded) done(); });
+  });
+}
 
 const replaceInMe = (p: Profile) => {
   const me = useApp.getState().me;
@@ -27,11 +55,13 @@ export function enterWithPin(p: Profile, why = 'Enter the PIN to open this profi
   });
 }
 
-let switchTimer: ReturnType<typeof setTimeout> | undefined;
+let switchRun = 0;
 
 /**
  * Switches to a profile: asks for its PIN when it is locked (always, like opening it fresh), then
- * shows a short hand-over and loads it. Resolves false when the PIN was cancelled.
+ * covers the screen with a short hand-over, loads the profile underneath and reveals it once its
+ * preferences are in, so the old page never flickers into the new one. Resolves (false when the
+ * PIN was cancelled) once the screen is covered, so callers can navigate out of sight.
  */
 export async function switchProfile(p: Profile): Promise<boolean> {
   const current = useApp.getState().profileId;
@@ -41,11 +71,22 @@ export async function switchProfile(p: Profile): Promise<boolean> {
   void call('POST /api/profiles/leave', { body: { keep: p.id } })
     .catch(() => undefined)
     .then(refreshMe);
-  clearTimeout(switchTimer);
-  useSwitching.setState({ to: p });
+  const run = ++switchRun;
+  const t = SWITCH_TIMING[animSetting()];
+  useSwitching.setState({ to: p, phase: 'in' });
+  await wait(t.cover);
+  if (run !== switchRun) return true;
+  useSwitching.setState({ phase: 'hold' });
+  const started = Date.now();
   selectProfile(p.id);
-  const reduced = document.documentElement.dataset.anim === 'reduced' || document.documentElement.dataset.anim === 'off';
-  switchTimer = setTimeout(() => useSwitching.setState({ to: null }), reduced ? 250 : 900);
+  void (async () => {
+    await prefsReady(t.maxHold);
+    await wait(Math.max(0, t.minHold - (Date.now() - started)));
+    if (run !== switchRun) return;
+    useSwitching.setState({ phase: 'out' });
+    await wait(t.reveal);
+    if (run === switchRun) useSwitching.setState({ to: null, phase: 'in' });
+  })();
   return true;
 }
 

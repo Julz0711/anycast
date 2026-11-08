@@ -17,7 +17,7 @@
   --who-pic: clamp(6.5rem, 11vw, 9.5rem);
   min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
   padding: calc(2.5rem + var(--safe-t)) 1.25rem calc(2.5rem + var(--safe-b));
-  background: radial-gradient(60rem 30rem at 50% -10%, var(--accent-tint), transparent 70%), var(--bg);
+  background: var(--glow-grain), radial-gradient(64rem 34rem at 50% -12%, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 9%, transparent) 30%, color-mix(in srgb, var(--accent) 3.5%, transparent) 58%, color-mix(in srgb, var(--accent) 0.8%, transparent) 80%, transparent), var(--bg);
 }
 .who-brand { position: absolute; top: calc(1.5rem + var(--safe-t)); left: calc(2rem + var(--safe-l)); display: flex; align-items: center; gap: 0.625rem; font-size: 1.125rem; font-weight: 700; letter-spacing: -0.02em; }
 .who-title { font-size: clamp(1.75rem, 4vw, 2.75rem); font-weight: 700; letter-spacing: -0.03em; }
@@ -131,13 +131,20 @@
 .hub-row > span { flex: 1; text-align: left; }
 .hub-row .hub-chev { width: 1rem; height: 1rem; }
 
-/* ---------- switching hand-over ---------- */
+/* ---------- switching hand-over (profiles/actions.ts drives data-phase: in → hold → out) ---------- */
 .switching {
   --who-pic: 7rem;
   position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem;
-  background: var(--bg); animation: sw-fade calc(var(--dur) * 5) ease-in-out both; pointer-events: none;
+  background: var(--glow-grain), radial-gradient(36rem 28rem at 50% 45%, color-mix(in srgb, var(--accent) 9%, transparent), color-mix(in srgb, var(--accent) 4%, transparent) 40%, color-mix(in srgb, var(--accent) 1%, transparent) 70%, transparent), var(--bg);
+  pointer-events: none;
 }
-.switching .pic { animation: sw-pic calc(var(--dur) * 5) cubic-bezier(0.2, 0.7, 0.2, 1) both; box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--accent); }
-.switching-name { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; }
-@keyframes sw-fade { 0% { opacity: 0; } 15%, 70% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes sw-pic { 0% { transform: scale(calc(1 - 0.15 * var(--move))); } 40%, 100% { transform: scale(1); } }
+.switching[data-phase="in"] { animation: sw-cover 200ms cubic-bezier(0.3, 0, 0.2, 1) both; }
+.switching[data-phase="out"] { opacity: 0; transition: opacity 320ms cubic-bezier(0.4, 0, 0.2, 1); }
+.switching .pic { box-shadow: 0 0 0 3px var(--bg), 0 0 0 6px var(--accent), 0 1.5rem 3rem -1rem rgb(0 0 0 / 0.6); animation: sw-pic 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.switching-name { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; animation: sw-name 520ms cubic-bezier(0.2, 0.8, 0.2, 1) 60ms both; }
+.switching[data-phase="out"] .pic, .switching[data-phase="out"] .switching-name { transform: scale(calc(1 + 0.04 * var(--move))); transition: transform 320ms cubic-bezier(0.4, 0, 0.2, 1); }
+[data-anim="reduced"] .switching[data-phase="in"] { animation-duration: 80ms !important; }
+[data-anim="reduced"] .switching[data-phase="out"] { transition-duration: 120ms; }
+@keyframes sw-cover { from { opacity: 0; } }
+@keyframes sw-pic { from { opacity: 0; transform: scale(calc(1 - 0.08 * var(--move))); } }
+@keyframes sw-name { from { opacity: 0; transform: translateY(calc(0.375rem * var(--move))); } }
