@@ -35,7 +35,7 @@ export function toStreamProbe(p: ProbeResult): StreamProbe {
   return {
     container: p.container,
     duration: p.duration,
-    video: p.video ? { codec: p.video.codec, width: p.video.width, height: p.video.height, fps: p.video.fps ?? null } : null,
+    video: p.video ? { codec: p.video.codec, width: p.video.width, height: p.video.height, fps: p.video.fps ?? null, bitDepth: p.video.bitDepth ?? null } : null,
     audio: p.audio.map((a) => ({ codec: a.codec, channels: a.channels, language: a.language })),
     subtitles: p.subtitles.map((t) => ({ codec: t.codec, language: t.language })),
   };

@@ -14,7 +14,7 @@ import { fmtBytes, setBufferPin } from '../api/buffer';
 import { useAsync, useFormFactor } from '../lib/hooks';
 import { COMMON_LANGUAGES, countryName, languageName } from '../lib/lang';
 import { fmtLength, fmtRelativeAgo } from '../lib/time';
-import { capsHeader } from '../player/caps';
+import { capsHeader, convertedCodecs, setConvertCodec } from '../player/caps';
 import { isDemo } from '../demo/flag';
 import { TABS, visibleTabs } from '../layout/tabs';
 import { ProgressBar, Segmented, Skeleton, Toggle } from '../components/ui';
@@ -752,6 +752,29 @@ function SwipeSettings() {
   );
 }
 
+const CODEC_LABEL: Record<string, string> = { hevc: 'HEVC', h264: 'H.264' };
+
+/** Codecs this device has the server convert, because they played with a broken picture here (player Stats panel). */
+function ConvertedCodecs() {
+  const [codecs, setCodecs] = useState(convertedCodecs);
+  if (!codecs.length) return null;
+  const names = codecs.map((c) => CODEC_LABEL[c] ?? c.toUpperCase()).join(', ');
+  return (
+    <Row label="Always converted here" hint={`${names} played with a broken picture on this device, so the server converts it to H.264 for this device.`}>
+      <button
+        type="button"
+        className="btn"
+        onClick={() => {
+          for (const c of codecs) setConvertCodec(c, false);
+          setCodecs([]);
+        }}
+      >
+        Play directly again
+      </button>
+    </Row>
+  );
+}
+
 function About() {
   const health = useAsync(() => call('GET /api/health'), []);
   const caps = useMemo(() => {
@@ -775,6 +798,7 @@ function About() {
           {[caps.mse ? 'MSE' : null, caps.hls ? 'native HLS' : null, ...(caps.codecs ?? [])].filter(Boolean).join(' · ') || 'Basic playback only'}
         </span>
       </Row>
+      <ConvertedCodecs />
       <Row label="Reset settings" hint="Puts every setting for this profile back to its default. Filters and favorites stay.">
         {confirmReset ? (
           <span className="row-actions">

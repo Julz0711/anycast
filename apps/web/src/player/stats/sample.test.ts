@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { PlaybackInfo } from '@anycast/shared';
-import { audioLine, bufferAhead, fmtBitrate, frameCounts, pipelineLine, RateMeter, sourceOf, streamBytes, videoLine } from './sample';
+import { audioLine, bufferAhead, fmtBitrate, frameCounts, pictureFix, pipelineLine, RateMeter, sourceOf, streamBytes, videoLine } from './sample';
 
 const ranges = (...r: [number, number][]) => ({ length: r.length, start: (i: number) => r[i]![0], end: (i: number) => r[i]![1] }) as TimeRanges;
 
@@ -60,6 +60,17 @@ describe('stats sampling', () => {
     expect(sourceOf(pi('/api/stream/episode/1/video.mp4'), 'episode')).toBe('episode');
     const probe = { container: 'ts', duration: null, video: null, audio: [], subtitles: [] };
     expect(sourceOf(pi('/x', { diagnostics: { source: 'buffer', reason: '', probe, assumed: false } }), 'live')).toBe('buffer');
+  });
+
+  test('picture help: convert a codec the device plays itself, or point at hardware encoding', () => {
+    const video = (codec: string) => ({ codec, width: 1920, height: 1080, fps: 24, bitDepth: 10 });
+    const d = (codec: string) => ({ source: 'episode' as const, reason: '', assumed: false, probe: { container: 'mp4', duration: 60, video: video(codec), audio: [], subtitles: [] } });
+    expect(pictureFix({ pipeline: 'remux', diagnostics: d('hevc') })).toEqual({ kind: 'convert', codec: 'hevc', label: 'HEVC' });
+    expect(pictureFix({ pipeline: 'transcode-audio', diagnostics: d('h264') })).toMatchObject({ kind: 'convert', codec: 'h264' });
+    expect(pictureFix({ pipeline: 'remux', diagnostics: d('vp9') })).toBeNull();
+    expect(pictureFix({ pipeline: 'transcode', diagnostics: { ...d('hevc'), videoEncoder: { active: 'h264_vaapi', method: 'vaapi', label: 'VAAPI' } } })).toEqual({ kind: 'hardware', label: 'VAAPI' });
+    expect(pictureFix({ pipeline: 'transcode', diagnostics: { ...d('hevc'), videoEncoder: { active: 'libx264', method: 'software', label: 'Software' } } })).toBeNull();
+    expect(videoLine(video('hevc'))).toBe('HEVC · 10-bit · 1920×1080 · 24 fps');
   });
 
   test('the pipeline line names the encoder of a full transcode', () => {

@@ -18,6 +18,7 @@ import { isTypingTarget } from '../lib/misc';
 import { fmtBehind, fmtClock, fmtDay, fmtDuration, fmtRange } from '../lib/time';
 import { parseMediaTime, parseTimeInput } from '../lib/timeParse';
 import { createEngine, PlaybackFailure, type Engine } from './engine';
+import { setConvertCodec } from './caps';
 import { fromApiError, fromPlaybackFailure, type PlayerErr } from './errors';
 import { absolutePosition, computeWindow, mediaTimeFor, programAt, resolveSeek, type Win } from './timelineMath';
 import { Ribbon, VodBar } from './Timeline';
@@ -346,6 +347,21 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     if (!s || s.seq !== lastLoad.current.seq) return void load(lastLoad.current.at, lastLoad.current.opts);
     void load(isLive && !s.liveEdge ? positionRef.current : null);
   }, [isLive, load]);
+
+  /**
+   * The picture came out wrong (Stats panel): this device stops playing that codec itself, and the
+   * stream comes again, converted, from the same spot. Asking for the audio track again makes the
+   * server close the old run, so the single provider connection is free for the new one.
+   */
+  const convertCodec = useCallback(
+    (codec: string) => {
+      setConvertCodec(codec, true);
+      const s = streamRef.current;
+      const audio = s?.info.tracks?.audioIndex ?? 0;
+      void load(isLive && s && !s.liveEdge ? positionRef.current : null, isLive ? { audio } : { audio, position: videoRef.current?.currentTime ?? 0 });
+    },
+    [isLive, load],
+  );
 
   /* ---------------- one connection: taken over, take over, release ---------------- */
   useEffect(() => {
@@ -1063,7 +1079,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             </span>
           )}
         </div>
-        {stats.open && <StatsOverlay video={video} info={info} routeKind={kind} engine={engineRef.current?.kind ?? null} behindLiveMs={isLive && info ? rawBehind : null} onClose={stats.close} />}
+        {stats.open && <StatsOverlay video={video} info={info} routeKind={kind} engine={engineRef.current?.kind ?? null} behindLiveMs={isLive && info ? rawBehind : null} onClose={stats.close} onConvert={casting ? undefined : convertCodec} />}
         {ripple && (
           <div key={ripple.key} className="pl-ripple" data-side={ripple.side} aria-hidden="true">
             {ripple.text}
