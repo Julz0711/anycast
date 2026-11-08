@@ -1,25 +1,28 @@
 /* The recap (screens/Recap.tsx): full-screen story cards. --rc-tone is the current card's colour. */
+/* Registered as a colour so moving between cards cross-fades the tone (gradients can't transition otherwise). */
+@property --rc-tone { syntax: '<color>'; inherits: true; initial-value: #5b4bc4; }
 .recap {
+  transition: --rc-tone 600ms ease;
   position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; gap: 1.5rem;
   background: var(--bg); color: #fff; overscroll-behavior: contain;
   padding: calc(1rem + var(--safe-t)) calc(1rem + var(--safe-r)) calc(1rem + var(--safe-b)) calc(1rem + var(--safe-l));
 }
 .rc-backdrop {
-  position: absolute; inset: 0; pointer-events: none; transition: background 600ms ease;
+  position: absolute; inset: 0; pointer-events: none;
   background:
-    radial-gradient(60rem 40rem at 20% 10%, color-mix(in srgb, var(--rc-tone) 28%, transparent), transparent 70%),
-    radial-gradient(50rem 40rem at 90% 100%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%), var(--bg);
+    var(--glow-grain),
+    radial-gradient(60rem 40rem at 20% 10%, color-mix(in srgb, var(--rc-tone) 28%, transparent), color-mix(in srgb, var(--rc-tone) 12%, transparent) 35%, color-mix(in srgb, var(--rc-tone) 3%, transparent) 60%, transparent 75%),
+    radial-gradient(50rem 40rem at 90% 100%, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 7%, transparent) 35%, color-mix(in srgb, var(--accent) 2%, transparent) 60%, transparent 75%), var(--bg);
 }
 .rc-stage { position: relative; height: 100%; max-height: 52rem; aspect-ratio: 9 / 16; max-width: 100%; display: flex; }
 .rc-frame {
   position: relative; flex: 1; min-width: 0; border-radius: 1.5rem; overflow: hidden; display: flex; flex-direction: column;
-  background: linear-gradient(160deg, color-mix(in srgb, var(--rc-tone) 70%, #0b0b10) 0%, color-mix(in srgb, var(--rc-tone) 22%, #0b0b10) 55%, #0b0b10 100%);
+  background: var(--glow-grain), linear-gradient(in oklab 160deg, color-mix(in oklab, var(--rc-tone) 70%, #0b0b10) 0%, color-mix(in srgb, var(--rc-tone) 22%, #0b0b10) 55%, #0b0b10 100%);
   box-shadow: 0 2rem 6rem -1.5rem color-mix(in srgb, var(--rc-tone) 55%, transparent), 0 0 0 1px #ffffff14 inset;
-  transition: background 600ms ease, box-shadow 600ms ease;
 }
 .rc-glow {
   position: absolute; width: 140%; aspect-ratio: 1; left: -20%; top: -45%; border-radius: 50%; pointer-events: none;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 45%, transparent), transparent);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 45%, transparent), color-mix(in srgb, var(--accent) 24%, transparent) 35%, color-mix(in srgb, var(--accent) 8%, transparent) 65%, transparent);
   opacity: 0.55; animation: rc-drift 14s ease-in-out infinite alternate; filter: blur(10px);
 }
 @keyframes rc-drift { from { transform: translate(-6%, 0) scale(1); } to { transform: translate(8%, 12%) scale(1.15); } }
@@ -134,15 +137,27 @@
 /* Home teaser (screens/Home.tsx) */
 .recap-teaser {
   position: relative; display: flex; align-items: center; gap: 1rem; width: 100%; padding: 1.125rem 1.25rem; border-radius: 1.25rem; overflow: hidden; color: #fff;
-  background: linear-gradient(115deg, color-mix(in srgb, var(--accent) 55%, #2a1a5e) 0%, #2a1a5e 55%, #0f1630 100%);
+  isolation: isolate;
+  /* One smooth sweep (no hard colour stop mid-card), mixed in OKLab so it doesn't go grey in the middle. */
+  background:
+    var(--glow-grain),
+    linear-gradient(in oklab 110deg, color-mix(in oklab, var(--accent) 52%, #241a4f) 0%, color-mix(in oklab, var(--accent) 22%, #221a4c) 32%, #1d1842 62%, #141633 100%);
+  transition: transform var(--dur) var(--ease-out);
 }
-.recap-teaser::after { content: ''; position: absolute; right: -3rem; top: -4rem; width: 14rem; height: 14rem; border-radius: 50%; background: radial-gradient(closest-side, #ffffff30, transparent); pointer-events: none; }
-.recap-teaser:hover { filter: brightness(1.08); }
+/* Soft accent light behind the play button: eased stops so it fades out without a visible ring. */
+.recap-teaser::after {
+  content: ''; --rt-light: color-mix(in oklab, var(--accent) 30%, #d8d4ff); position: absolute; z-index: -1; right: -6rem; top: 50%; width: 22rem; height: 22rem; translate: 0 -50%; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--rt-light) 22%, transparent), color-mix(in oklab, var(--rt-light) 12%, transparent) 30%, color-mix(in oklab, var(--rt-light) 5%, transparent) 58%, color-mix(in oklab, var(--rt-light) 1.5%, transparent) 80%, transparent);
+  opacity: 0.8; transition: opacity calc(var(--dur) * 2) ease;
+}
+.recap-teaser:hover::after, .recap-teaser:focus-visible::after { opacity: 1; }
+.recap-teaser:hover .recap-teaser-play { transform: scale(calc(1 + 0.06 * var(--move))); }
+.recap-teaser:active { transform: scale(calc(1 - 0.01 * var(--move))); }
 .recap-teaser-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .recap-teaser-kicker { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.8; }
 .recap-teaser-title { font-size: 1.375rem; font-weight: 800; letter-spacing: -0.02em; }
 .recap-teaser-sub { font-size: 0.875rem; opacity: 0.85; }
-.recap-teaser-play { width: 3rem; height: 3rem; border-radius: 50%; background: #fff; color: #111; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.recap-teaser-play { position: relative; width: 3rem; height: 3rem; border-radius: 50%; background: #fff; color: #111; display: inline-flex; align-items: center; justify-content: center; flex: none; box-shadow: 0 0.5rem 1.5rem -0.5rem rgb(0 0 0 / 0.5); transition: transform var(--dur) var(--ease-out); }
 .recap-teaser-play .ico { width: 1.25rem; height: 1.25rem; }
 [data-form="phone"] .home-sec-recap { padding: 0 var(--gutter); }
 .rc-poster:not(.big) .ph { font-size: 0; }

@@ -14,6 +14,9 @@
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
+  /* A faint film grain laid over soft glows and dark gradients so 8-bit screens dither them instead of banding. */
+  --glow-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 .09 0 0 0 -.03'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   color-scheme: dark;
 }
 *, *::before, *::after { box-sizing: border-box; }
@@ -33,7 +36,8 @@ h1, h2, h3, p { margin: 0; }
 .muted { color: var(--muted); }
 .accent { color: var(--accent); }
 [data-anim="off"] *, [data-anim="off"] *::before, [data-anim="off"] *::after { transition: none !important; animation: none !important; }
-[data-anim="reduced"] *, [data-anim="reduced"] *::before { animation-duration: 1ms !important; }
+/* Reduced: animations jump to their end state (one 1ms run, never a 1ms loop, which would strobe). */
+[data-anim="reduced"] *, [data-anim="reduced"] *::before, [data-anim="reduced"] *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; animation-delay: 0ms !important; }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--track); border-radius: 5px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -433,3 +437,12 @@ ul.fav-live, ul.fav-grid { list-style: none; margin: 0; }
 .chips-arrow:hover { background: var(--surface); }
 @media (hover: hover) and (pointer: fine) { [data-form="large"] .chips-arrow { display: inline-flex; } }
 [data-form="phone"] .fav-bar .seg + .seg { width: auto; }
+
+/* ---------- motion for sheets and dialogs (scaled by --move, killed by data-anim="off") ---------- */
+.sheet-backdrop { animation: fade-in calc(var(--dur) * 1.2) ease-out both; }
+.sheet-backdrop > .sheet, .sheet-backdrop > .pin-dialog { animation: sheet-in calc(var(--dur) * 1.6) var(--ease-out) both; }
+[data-form="phone"] .sheet-backdrop > .sheet, [data-form="phone"] .sheet-backdrop > .pin-dialog { animation-name: sheet-up; animation-duration: calc(var(--dur) * 1.8); }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(calc(0.5rem * var(--move))) scale(calc(1 - 0.015 * var(--move))); } }
+@keyframes sheet-up { from { transform: translateY(calc(100% * var(--move))); opacity: calc(1 - var(--move)); } }
+.pl-menu { animation: fade-in var(--dur) ease-out both; }

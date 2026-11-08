@@ -164,9 +164,10 @@ function HubRow(props: { icon: React.ReactNode; label: string; onClick: () => vo
 /** A short full-screen hand-over while the next profile opens. */
 export function SwitchOverlay() {
   const to = useSwitching((s) => s.to);
+  const phase = useSwitching((s) => s.phase);
   if (!to) return null;
   return (
-    <div className="switching" role="status" aria-live="polite">
+    <div className="switching" data-phase={phase} role="status" aria-live="polite">
       <ProfileAvatar profile={to} size="xl" />
       <span className="switching-name">{to.name}</span>
     </div>
