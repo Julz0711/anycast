@@ -43,10 +43,10 @@ test('a slot deleted behind another viewer is made again, not served as a missin
     audio: 0, subtitles: [],
   });
   try {
-    // viewer A plays from the start to slot 20 within one run
+    // viewer A plays from the start to slot 30 within one run
     const [first] = await session.segment(0);
-    for (let n = 1; n <= 20; n++) await session.segment(n);
-    // the session prunes slots more than 10 behind the last request (checked every second)
+    for (let n = 1; n <= 30; n++) await session.segment(n);
+    // the session prunes slots more than 20 behind the last request (checked every second)
     await expect.poll(() => existsSync(first!), { timeout: 20_000, interval: 250 }).toBe(false);
     // viewer B starts the same title from the beginning
     const [again] = await session.segment(0);

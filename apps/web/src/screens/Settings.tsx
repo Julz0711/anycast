@@ -14,7 +14,7 @@ import { fmtBytes, setBufferPin } from '../api/buffer';
 import { useAsync, useFormFactor } from '../lib/hooks';
 import { COMMON_LANGUAGES, countryName, languageName } from '../lib/lang';
 import { fmtLength, fmtRelativeAgo } from '../lib/time';
-import { capsHeader, convertedCodecs, setConvertCodec } from '../player/caps';
+import { capsHeader, convertedCodecs, isMobileDevice, liveHls, setConvertCodec } from '../player/caps';
 import { isDemo } from '../demo/flag';
 import { TABS, visibleTabs } from '../layout/tabs';
 import { ProgressBar, Segmented, Skeleton, Toggle } from '../components/ui';
@@ -371,6 +371,19 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
           value={p.liveBuffer}
           options={opts<P['player']['liveBuffer']>([2, '2 s'], [4, '4 s'], [8, '8 s'], [15, '15 s'], [30, '30 s'])}
           onChange={(v) => setPref('player', { liveBuffer: v })}
+        />
+      </Row>
+      <Row
+        label="Live stream"
+        hint={`${
+          p.liveStream === 'auto' ? `Auto: ${liveHls('auto', isMobileDevice()) ? 'Steady on this device (a phone or tablet)' : 'Direct on this device'}. ` : ''
+        }Direct plays the provider's stream as it is, closest to live. Steady gets it from your server in short segments, which buffers more and keeps sound and picture in sync, a few seconds further behind live. Try Steady if the sound cuts out or drifts.`}
+      >
+        <Segmented
+          label="Live stream"
+          value={p.liveStream}
+          options={opts<P['player']['liveStream']>(['auto', 'Auto'], ['direct', 'Direct'], ['steady', 'Steady'])}
+          onChange={(v) => setPref('player', { liveStream: v })}
         />
       </Row>
       <Row

@@ -3,14 +3,14 @@ import { createRoot } from 'react-dom/client';
 import './theme/global.css';
 import { App } from './App';
 import { configureClient } from './api/client';
-import { capsHeader } from './player/caps';
+import { capsHeader, withLiveStream } from './player/caps';
 import { useApp } from './store/app';
 import { bootstrap, clearProfile, onUnauthorized } from './store/actions';
 import { requireUnlock } from './store/parental';
 
 configureClient({
   profileId: () => useApp.getState().profileId,
-  caps: capsHeader,
+  caps: () => withLiveStream(capsHeader(), useApp.getState().prefs.player.liveStream),
   onUnauthorized,
   onProfileInvalid: clearProfile,
   onAdultLocked: () => requireUnlock({ force: true }),

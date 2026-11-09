@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectCaps, preferNativeHls, withoutConverted } from './caps';
+import { detectCaps, isMobileDevice, liveHls, preferNativeHls, withLiveStream, withoutConverted } from './caps';
 import { chooseEngine } from './engine';
 
 describe('detectCaps', () => {
@@ -68,5 +68,26 @@ describe('preferNativeHls', () => {
     expect(preferNativeHls(caps, { appleWebKit: false, airPlay: false })).toBe(caps);
     expect(preferNativeHls(caps, { appleWebKit: true, airPlay: false })).toBe(caps);
     expect(preferNativeHls({ ...caps, hls: false }, { appleWebKit: true, airPlay: true }).mse).toBe(true);
+  });
+});
+
+describe('Live stream (liveHls)', () => {
+  it('phones and tablets get steady HLS on auto, desktops direct', () => {
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130 Mobile Safari/537.36' })).toBe(true);
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15' })).toBe(true);
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', maxTouchPoints: 5 })).toBe(true);
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', maxTouchPoints: 0 })).toBe(false);
+    expect(isMobileDevice({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130 Safari/537.36' })).toBe(false);
+    expect(liveHls('auto', true)).toBe(true);
+    expect(liveHls('auto', false)).toBe(false);
+    expect(liveHls('steady', false)).toBe(true);
+    expect(liveHls('direct', true)).toBe(false);
+  });
+  it('the header gets liveHls only when it applies', () => {
+    const h = JSON.stringify({ hls: false, mse: true, codecs: ['avc1'] });
+    expect(JSON.parse(withLiveStream(h, 'auto', true)!)).toEqual({ hls: false, mse: true, codecs: ['avc1'], liveHls: true });
+    expect(withLiveStream(h, 'auto', false)).toBe(h);
+    expect(withLiveStream(h, 'direct', true)).toBe(h);
+    expect(withLiveStream(null, 'steady', false)).toBeNull();
   });
 });

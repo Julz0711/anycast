@@ -9,6 +9,12 @@ export interface ClientCaps {
    * hvc1-10 when the device also plays 10-bit H.264 / HEVC (the plain names only promise 8-bit)
    */
   codecs: string[];
+  /**
+   * Live TV as HLS even when the client has MSE (phones, or Settings > Player > Live stream:
+   * Steady): the server re-times the audio and the player buffers whole segments, instead of
+   * playing the provider's raw MPEG-TS through mpegts.js.
+   */
+  liveHls?: boolean;
 }
 
 /** Assumed when a client sends nothing: plays H.264/AAC via HLS or MSE. */
@@ -18,6 +24,7 @@ const CapsSchema = z.object({
   hls: z.boolean().catch(false),
   mse: z.boolean().catch(false),
   codecs: z.array(z.string()).catch([]),
+  liveHls: z.boolean().optional().catch(undefined),
 });
 
 export function parseCaps(raw: string | string[] | undefined | null): ClientCaps {
@@ -26,7 +33,8 @@ export function parseCaps(raw: string | string[] | undefined | null): ClientCaps
   try {
     const parsed = CapsSchema.safeParse(JSON.parse(value));
     if (!parsed.success) return DEFAULT_CAPS;
-    return { ...parsed.data, codecs: parsed.data.codecs.map((c) => c.trim().toLowerCase().split('.')[0]!).filter(Boolean) };
+    const { liveHls, ...rest } = parsed.data;
+    return { ...rest, ...(liveHls ? { liveHls: true } : {}), codecs: parsed.data.codecs.map((c) => c.trim().toLowerCase().split('.')[0]!).filter(Boolean) };
   } catch {
     return DEFAULT_CAPS;
   }
