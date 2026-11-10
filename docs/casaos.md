@@ -74,70 +74,70 @@ or the two will compete for it.
 
 ## 4. Optional: HTTPS and access from outside (recommended)
 
-Installing AnyCast as an app on your phone needs HTTPS. There are two ways:
-
-- **Your own domain** (e.g. `https://tv.example.com`): works on any device, nothing to install on
-  it, but the AnyCast sign-in page is on the internet. See [4a](#4a-your-own-domain).
-- **Tailscale**: private, only your own devices with the Tailscale app can reach it. Below.
-
-CasaOS has Tailscale in its App Store:
+Installing AnyCast as an app on your phone needs HTTPS. The easiest way is Tailscale, which CasaOS
+has in its App Store. It reaches your server from anywhere without opening ports on your router, and
+only your own devices (with the Tailscale app) can get in.
 
 1. Install **Tailscale** from the CasaOS App Store and sign in.
 2. Install the Tailscale app on your phone and PC with the same account.
 3. On the server, run `sudo tailscale serve --bg 8787`.
 
-AnyCast is then at `https://<server-name>.<your-tailnet>.ts.net`, with a valid certificate, from
-anywhere, without opening ports on your router. On the phone, open it and use "Add to Home Screen".
+AnyCast is then at `https://<server-name>.<your-tailnet>.ts.net`, with a valid certificate. On the
+phone, open it and use "Add to Home Screen". To use a name of your own instead, see 4a.
 
-## 4a. Your own domain
+## 4a. Optional: your own domain over Tailscale
 
-This puts AnyCast at `https://tv.<your-domain>` with a free Let's Encrypt certificate, reachable
-from anywhere. The parts: your domain points at your home's internet address, your router passes
-web traffic to the server, and Nginx Proxy Manager (NPM) on the server handles HTTPS and hands
-requests to AnyCast.
+This puts AnyCast at `https://tv.<your-domain>` (e.g. `tv.example.com`). It is still private: the
+name points at the server's Tailscale address, which only devices in your tailnet can reach. No
+port forwarding, and it works behind DS-Lite/CGNAT.
 
 ```
-phone ──https──> tv.example.com ──DNS──> your home IP ──router 80/443──> NPM ──http──> AnyCast :8787
+phone (Tailscale on) ──https──> tv.example.com = 100.x.y.z ──tailnet──> Nginx Proxy Manager ──> AnyCast :8787
 ```
 
-**0. Check your line can take incoming connections.** In your router's status page, compare the
-internet (WAN) IPv4 address with what https://whatismyip.com shows. If they differ, or the router's
-address starts with `100.64.` to `100.127.`, you're behind CGNAT and port forwarding can't work.
-Ask your internet provider for a public IPv4 address (often free, sometimes called "Dual Stack"
-instead of "DS-Lite"), or use Tailscale instead.
+You need: Tailscale set up as in step 4 (steps 1 and 2), a domain, and a free Cloudflare account
+for the domain's DNS. Cloudflare is only used for DNS here, not for your traffic: the certificate
+needs a DNS provider with an API, which most registrars don't offer.
 
-**1. A name that follows your home IP.** Home IP addresses change now and then, so the domain
-points at a name that updates itself:
+**1. Find the server's Tailscale address.** Open https://login.tailscale.com/admin/machines. Your
+server's row shows an address like `100.101.102.103`. In its `…` menu choose **Disable key expiry**,
+otherwise the server drops off the tailnet after 180 days.
 
-- **FRITZ!Box:** turn on MyFRITZ! (Internet › MyFRITZ! Account). It gives you an address like
-  `abc123.myfritz.net` that always points home.
-- **Any other router:** create a free name at https://www.duckdns.org (e.g. `julz-home.duckdns.org`)
-  and enter it in the router's "Dynamic DNS" settings with the DuckDNS token. If the router has no
-  DuckDNS option, install **DuckDNS** from the CasaOS App Store instead.
+**2. Stop `tailscale serve`** if you set it up in step 4, because it occupies port 443:
+`sudo tailscale serve reset`. (Without a `tailscale` command on the host: CasaOS dashboard ›
+Tailscale app › terminal, same command.)
 
-**2. DNS at your domain registrar.** Add a record:
+**3. Move the DNS to Cloudflare.** Sign up at https://dash.cloudflare.com, **Add a domain**, enter
+your domain, pick the **Free** plan. Cloudflare shows two nameservers (like `ada.ns.cloudflare.com`).
+At your registrar, replace the domain's nameservers with these two. The domain stays registered
+where it is. Cloudflare emails you when it's active (minutes to a few hours).
 
-| Type | Name | Value |
-|---|---|---|
-| CNAME | `tv` | the name from step 1, e.g. `julz-home.duckdns.org` |
+**4. Add the DNS record** in Cloudflare › your domain › DNS › Records › Add record:
 
-It can take up to an hour to work. Check with `nslookup tv.example.com`: it should print your home IP.
+| Type | Name | IPv4 address | Proxy status |
+|---|---|---|---|
+| A | `tv` | the Tailscale address from step 1 | **DNS only** (grey cloud) |
 
-**3. Free ports 80 and 443 on the server.** The CasaOS dashboard itself uses port 80. Move it:
-CasaOS dashboard › Settings (gear) › WebUI port, e.g. `8080`. The dashboard is then at
-`http://<server-ip>:8080`.
+**5. Create an API token** for the certificate: Cloudflare › My Profile › API Tokens › Create Token ›
+template **Edit zone DNS** › Zone Resources: *Include, Specific zone,* your domain › Continue ›
+Create Token. Copy it (shown once).
 
-**4. Install Nginx Proxy Manager** from the CasaOS App Store. Its admin page is at
+**6. Free ports 80 and 443 on the server.** The CasaOS dashboard uses port 80. Move it: CasaOS
+dashboard › Settings (gear) › WebUI port, e.g. `8080`. The dashboard is then at `http://<server-ip>:8080`.
+
+**7. Install Nginx Proxy Manager** from the CasaOS App Store. Its admin page is at
 `http://<server-ip>:81` (first sign-in: `admin@example.com` / `changeme`, it asks you to change both).
 
-**5. Forward the ports on your router** to the server's home IP: TCP **80** and TCP **443**. Port 80
-is needed for the certificate (and NPM sends visitors on to https). Don't forward 8787 or 81.
+**8. Get the certificate:** NPM › SSL Certificates › Add SSL Certificate › Let's Encrypt.
+Domain Names `tv.example.com`, turn on **Use a DNS Challenge**, DNS Provider **Cloudflare**, and in
+Credentials File Content replace the sample token so the line reads
+`dns_cloudflare_api_token = <your token>`. Agree and Save. It takes a minute.
 
-**6. Add the proxy host in NPM:** Hosts › Proxy Hosts › Add Proxy Host.
+**9. Add the proxy host:** NPM › Hosts › Proxy Hosts › Add Proxy Host.
 
 - *Details:* Domain Names `tv.example.com`, Scheme `http`, Forward Hostname/IP the server's home IP
   (e.g. `192.168.1.20`), Forward Port `8787`. Turn on **Block Common Exploits** and **Websockets Support**.
-- *SSL:* Request a new SSL certificate, turn on **Force SSL** and **HTTP/2 Support**, agree, Save.
+- *SSL:* pick the certificate from step 8, turn on **Force SSL** and **HTTP/2 Support**.
 - *Advanced:* paste these lines, so live TV isn't held back or cut off by the proxy:
 
   ```
@@ -147,13 +147,21 @@ is needed for the certificate (and NPM sends visitors on to https). Don't forwar
   proxy_send_timeout 1h;
   ```
 
-**7. Tell AnyCast it sits behind a proxy.** Add `TRUST_PROXY=true` to `.env` and restart with
+**10. Tell AnyCast it sits behind a proxy.** Add `TRUST_PROXY=true` to `.env` and restart with
 `docker compose up -d`. Without it AnyCast sees every visitor as the proxy, so the sign-in limit
 (10 tries a minute) would apply to everyone at once, and sign-in cookies aren't marked https-only.
 
-Open `https://tv.example.com` on your phone (on mobile data, to be sure it works from outside) and
-use "Add to Home Screen". Because the sign-in page is now public, use a long admin password and give
-each person their own account.
+Open `https://tv.example.com` on a device with Tailscale switched on and use "Add to Home Screen".
+The certificate renews itself.
+
+**If the name doesn't resolve** (often on home Wi-Fi, where the router blocks DNS answers that
+point to private addresses): Tailscale admin › DNS › Global nameservers › add `1.1.1.1` and turn on
+**Override DNS servers**. Devices with Tailscale on then look names up through Cloudflare.
+
+**Public instead of private:** to reach AnyCast from devices without Tailscale, point the record
+at your home IP (needs a public IPv4, not DS-Lite), forward TCP 80 and 443 on your router to the
+server, and use the same NPM setup. The sign-in page is then on the internet, so use a long admin
+password.
 
 ## 4b. Casting to a TV (Chromecast, AirPlay)
 
@@ -168,9 +176,7 @@ Two things to know:
 - **The TV opens the stream from your server itself**, and it is not on your tailnet. So in the
   app, open Settings › All settings › Casting and set **Server address for TVs** to the server's
   home network address, e.g. `http://192.168.1.20:8787` (the address you opened in step 3).
-  Without it, the TV is sent the `ts.net` address and can't play. With your own domain (4a) the
-  TV can usually play the https address too, but the home address keeps the video inside your
-  network, so set it anyway.
+  Without it, the TV is sent the `ts.net` address and can't play. The same goes for your own domain (4a).
 
 ## 5. Optional: Hardware transcoding
 
@@ -264,10 +270,9 @@ After a restore, sign in with the accounts and passwords from the backup.
 - **Can't sign in:** the admin account is created on the very first start. If you changed
   `ANYCAST_ADMIN_*` afterwards, reset with `docker compose down`, `docker volume rm anycast_anycast-data`,
   `docker compose up -d` (this deletes AnyCast's own data, not anything at your provider).
-- **Own domain doesn't load from outside:** check in order: `nslookup tv.<your-domain>` prints your
-  home IP; the NPM certificate was issued (NPM › SSL Certificates); ports 80 and 443 are forwarded to
-  the server; you're not behind CGNAT (4a step 0). Testing from inside your home network can fail
-  on some routers even when it works from outside, so test on mobile data.
+- **Own domain doesn't load:** check in order: Tailscale is on on that device; `nslookup tv.<your-domain>`
+  prints the server's `100.x` address (if not, see "If the name doesn't resolve" in 4a); the NPM
+  certificate was issued (NPM › SSL Certificates); `tailscale serve` is off (4a step 2).
 - **Port 8787 is taken:** change the left side of `"8787:8787"` in `docker-compose.yml`, e.g. `"8790:8787"`.
 - **Provider check:** `docker compose exec anycast node_modules/.bin/tsx src/doctor/cli.ts` runs the
   doctor inside the container (FFmpeg is included there, so you also get stream formats).
