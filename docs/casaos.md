@@ -122,11 +122,29 @@ where it is. Cloudflare emails you when it's active (minutes to a few hours).
 template **Edit zone DNS** › Zone Resources: *Include, Specific zone,* your domain › Continue ›
 Create Token. Copy it (shown once).
 
-**6. Install Nginx Proxy Manager** from the CasaOS App Store. NPM wants host ports 80, 81 and 443,
-and the CasaOS dashboard already uses 80. With the DNS challenge, NPM doesn't need port 80, so leave
-CasaOS alone: in the install dialog (or later via the app's `…` › Settings), change the host port
-for NPM's container port **80** to a free one, e.g. `8081`. Keep **443** on 443 and **81** on 81.
+**6. Install Nginx Proxy Manager** (NPM). Pick the right app: the CasaOS stores also list plain
+"nginx", which has no admin page. Installing it from the terminal is the surest way. The CasaOS
+dashboard keeps port 80; NPM doesn't need it with the DNS challenge, so its port 80 goes to 8081.
 (Don't move the CasaOS dashboard port instead; that can stop the dashboard from starting.)
+
+```sh
+sudo mkdir -p /DATA/AppData/npm && cd /DATA/AppData/npm
+sudo tee docker-compose.yml >/dev/null <<'EOF'
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+      - "443:443"
+      - "81:81"
+    volumes:
+      - ./data:/data
+      - ./letsencrypt:/etc/letsencrypt
+EOF
+sudo docker compose up -d
+```
 
 **7. Sign in to NPM** at `http://<server-ip>:81` (first sign-in: `admin@example.com` / `changeme`,
 it asks you to change both).
