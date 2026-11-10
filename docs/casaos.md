@@ -126,8 +126,8 @@ A **new .com/.net domain is locked until you confirm the owner's email address**
 sends a verification email right after the purchase. While it's unconfirmed the domain points at
 `registrant-verification.com` and nameserver changes don't go through, so click that link first.
 If the registrar shows no "registered until" date yet, the registration itself is still being
-processed and the nameserver change waits for it; if nothing changes within a day, ask the
-registrar's support.
+processed. A nameserver change saved before that may be dropped: once the date appears, open the
+nameserver page again and press save once more.
 
 **4. Add the DNS record** in Cloudflare › your domain › DNS › Records › Add record:
 
