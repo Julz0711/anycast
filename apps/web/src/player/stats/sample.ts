@@ -164,3 +164,14 @@ export function pictureFix(info: Pick<PlaybackInfo, 'pipeline' | 'diagnostics'>)
   // only codecs the server can leave out of this device's list (see player/caps.ts)
   return codec === 'hevc' || codec === 'h264' ? { kind: 'convert', codec, label: codecLabel(codec) } : null;
 }
+
+/**
+ * The server converts this video only because this device was set to (the Stats panel's "Convert
+ * … on this device", kept in convertedCodecs): the codec to offer playing directly again. The
+ * server can't tell, so its reason then reads as if the device couldn't play the codec at all.
+ */
+export function convertedByChoice(info: Pick<PlaybackInfo, 'pipeline' | 'diagnostics'>, converted: string[]): { codec: string; label: string } | null {
+  if (info.pipeline !== 'transcode') return null;
+  const codec = info.diagnostics?.probe.video?.codec;
+  return codec && converted.includes(codec) ? { codec, label: codecLabel(codec) } : null;
+}

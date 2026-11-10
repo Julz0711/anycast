@@ -6,8 +6,9 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import type { PlaybackInfo } from '@anycast/shared';
 import type { EngineKind } from '../engine';
 import { IconClose } from '../../components/Icons';
+import { convertedCodecs } from '../caps';
 import {
-  audioLine, bufferAhead, decodedBytes, ENGINE_LABEL, fmtBitrate, fmtSeconds, frameCounts, pictureFix, pipelineLine, RateMeter, SOURCE_LABEL, sourceOf,
+  audioLine, bufferAhead, convertedByChoice, decodedBytes, ENGINE_LABEL, fmtBitrate, fmtSeconds, frameCounts, pictureFix, pipelineLine, RateMeter, SOURCE_LABEL, sourceOf,
   streamBytes, videoLine, type FrameCounts,
 } from './sample';
 import '../../theme/player-extras.css';
@@ -23,6 +24,8 @@ export interface StatsPanelProps {
   onClose: () => void;
   /** the picture looks wrong: convert this codec on this device from now on, and play again */
   onConvert?: (codec: string) => void;
+  /** undoes onConvert: this device plays the codec itself again, and the stream comes again */
+  onPlayDirect?: (codec: string) => void;
 }
 
 interface Live {
@@ -78,6 +81,7 @@ function Row({ name, stat, children }: { name: string; stat: string; children: R
 export default function StatsPanel(p: StatsPanelProps) {
   const live = useSampler(p.video, p.info?.url);
   const d = p.info?.diagnostics;
+  const forced = p.info ? convertedByChoice(p.info, convertedCodecs()) : null;
   const isLive = p.routeKind === 'live';
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'GoBack') {
@@ -101,10 +105,22 @@ export default function StatsPanel(p: StatsPanelProps) {
         <dl className="pl-stats-list tabnum">
           <Row name="Source" stat="source">{SOURCE_LABEL[sourceOf(p.info, p.routeKind)]}</Row>
           <Row name="Pipeline" stat="pipeline">{pipelineLine(p.info)}</Row>
-          {d && (
-            <dd className="pl-stats-why" data-stat="reason">
-              {d.reason}
+          {forced ? (
+            <dd className="pl-stats-why pl-stats-fix" data-stat="reason">
+              The server converts the {forced.label} video because this device was set to always convert {forced.label} (from this panel). It plays {forced.label} itself, and
+              converting in real time costs the server a lot, which can make sound drop out or drift.{' '}
+              {p.onPlayDirect && (
+                <button type="button" className="btn" onClick={() => p.onPlayDirect!(forced.codec)}>
+                  Play {forced.label} directly again
+                </button>
+              )}
             </dd>
+          ) : (
+            d && (
+              <dd className="pl-stats-why" data-stat="reason">
+                {d.reason}
+              </dd>
+            )
           )}
           <Row name="Engine" stat="engine">{p.engine ? ENGINE_LABEL[p.engine] : '—'}</Row>
           <Row name="Container" stat="container">{d?.probe.container?.toUpperCase() ?? '—'}</Row>

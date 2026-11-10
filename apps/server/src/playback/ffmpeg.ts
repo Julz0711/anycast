@@ -86,6 +86,9 @@ export interface HlsArgs {
   video?: VideoEncoder;
 }
 
+/** Live audio filter: keeps the audio on its timestamps (fills holes, trims overlaps, stretches up to 1000 samples/s of drift). */
+export const LIVE_AUDIO_RESYNC = 'aresample=async=1000';
+
 export const runPlaylist = (run: number) => `r${run}.m3u8`;
 export const runInit = (run: number) => `init_r${run}.mp4`;
 export const runSegment = (run: number, n: number) => `r${run}_${n}.m4s`;
@@ -108,7 +111,14 @@ export function buildHlsArgs(o: HlsArgs): string[] {
   } else {
     args.push('-c:v', 'copy');
   }
-  if (o.pipeline === 'remux') {
+  if (o.mode !== 'vod') {
+    // Live streams from IPTV providers often have holes and jumps in the audio timestamps. Copied
+    // as they are, phones (Safari's HLS player, Android) play every hole as silence and drift
+    // further out of sync with the picture. Re-encoding the audio (cheap, unlike video) lets
+    // aresample put each sample back on its timestamp: holes are filled, overlaps trimmed, and
+    // slow drift stretched away, so audio and video stay together.
+    args.push('-c:a', 'aac', '-ac', '2', '-b:a', '192k', '-af', LIVE_AUDIO_RESYNC);
+  } else if (o.pipeline === 'remux') {
     args.push('-c:a', 'copy');
     // ADTS AAC (MPEG-TS) cannot go into fMP4 as is; the filter passes AAC that is already in ASC form
     if (o.audioCodec === 'aac') args.push('-bsf:a', 'aac_adtstoasc');

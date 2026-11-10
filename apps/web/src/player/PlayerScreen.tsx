@@ -408,6 +408,16 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     },
     [isLive, load],
   );
+  /** undoes convertCodec: this device plays the codec itself again, from the same spot */
+  const playDirect = useCallback(
+    (codec: string) => {
+      setConvertCodec(codec, false);
+      const s = streamRef.current;
+      const audio = s?.info.tracks?.audioIndex ?? 0;
+      void load(isLive && s && !s.liveEdge ? positionRef.current : null, isLive ? { audio } : { audio, position: videoRef.current?.currentTime ?? 0 });
+    },
+    [isLive, load],
+  );
 
   /* ---------------- one connection: taken over, take over, release ---------------- */
   useEffect(() => {
@@ -1356,7 +1366,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             </span>
           )}
         </div>
-        {stats.open && <StatsOverlay video={video} info={info} routeKind={kind} engine={engineRef.current?.kind ?? null} behindLiveMs={isLive && info ? rawBehind : null} onClose={stats.close} onConvert={casting ? undefined : convertCodec} />}
+        {stats.open && <StatsOverlay video={video} info={info} routeKind={kind} engine={engineRef.current?.kind ?? null} behindLiveMs={isLive && info ? rawBehind : null} onClose={stats.close} onConvert={casting ? undefined : convertCodec} onPlayDirect={casting ? undefined : playDirect} />}
         {ripple && (
           <div key={ripple.key} className="pl-ripple" data-side={ripple.side} aria-hidden="true">
             {ripple.text}

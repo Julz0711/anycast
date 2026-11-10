@@ -81,6 +81,14 @@ export function hlsLiveConfig(buffer: number) {
   };
 }
 
+/**
+ * hls.js on a movie or episode: keep a minute ahead (hls.js stops at 30 s by default), so a slow
+ * stretch of Wi-Fi or mobile data, or a server converting the video, doesn't reach the playhead.
+ * maxBufferSize still caps the memory it takes (60 MB, about a minute at 8 Mbit/s), and only 30 s
+ * behind the playhead is kept (a phone has little memory for media; seeking back loads it again).
+ */
+export const HLS_VOD_CONFIG = { maxBufferLength: 60, maxBufferSize: 60 * 1000 * 1000 };
+
 /* ---------- native element text tracks (native HLS: the master playlist's subtitle renditions) ---------- */
 function nativeText(video: HTMLVideoElement): TextTrack[] {
   return Array.from(video.textTracks).filter((t) => t.kind === 'subtitles' || t.kind === 'captions');
@@ -108,7 +116,7 @@ export async function createEngine(
   if (kind === 'hls.js') {
     const { default: Hls } = await import('hls.js');
     if (!Hls.isSupported()) throw new PlaybackFailure('unsupported', "This browser can't play HLS streams.");
-    const hls = new Hls({ enableWorker: true, backBufferLength: 120, ...hlsLiveConfig(buffer), liveDurationInfinity: false, // Retry fragments on 409 too (the server restarted ffmpeg after a seek elsewhere), not just 5xx/timeouts.
+    const hls = new Hls({ enableWorker: true, backBufferLength: hooks.live ? 120 : 30, ...(hooks.live ? hlsLiveConfig(buffer) : HLS_VOD_CONFIG), liveDurationInfinity: false, // Retry fragments on 409 too (the server restarted ffmpeg after a seek elsewhere), not just 5xx/timeouts.
       fragLoadPolicy: {
         default: {
           maxTimeToFirstByteMs: 10_000,

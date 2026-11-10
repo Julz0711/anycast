@@ -1,3 +1,4 @@
+import type { LiveStreamMode } from '@anycast/shared';
 import { airPlayApi } from './cast/airplay';
 import { readJson, writeLocal } from '../lib/storage';
 import { isAppleWebKit } from './engine';
@@ -10,6 +11,8 @@ export interface Caps {
   hls: boolean;
   mse: boolean;
   codecs: string[];
+  /** live TV as HLS even with MSE (see liveHls) */
+  liveHls?: boolean;
 }
 
 /** Codec names reported to the server, each with the MIME strings we probe. */
@@ -99,6 +102,34 @@ export function withoutConverted(caps: Caps, converted: string[]): Caps {
   if (!converted.length) return caps;
   const drop = new Set(converted.flatMap((c) => CODEC_FAMILIES[c] ?? [c]));
   return { ...caps, codecs: caps.codecs.filter((c) => !drop.has(c)) };
+}
+
+/** Phones and tablets (Android, iPhone, iPad): touch-first devices with a mobile browser. */
+export function isMobileDevice(nav: { userAgent: string; maxTouchPoints?: number; userAgentData?: { mobile?: boolean } } = navigator): boolean {
+  if (nav.userAgentData?.mobile) return true;
+  if (/Android|iPhone|iPad|iPod|Mobi/i.test(nav.userAgent)) return true;
+  // iPadOS asks for desktop sites: a "Macintosh" that has a touch screen
+  return /Macintosh/.test(nav.userAgent) && (nav.maxTouchPoints ?? 0) > 1;
+}
+
+/**
+ * Settings > Player > Live stream. Raw MPEG-TS through mpegts.js keeps live TV closest to live,
+ * but phones play the provider's audio timestamp holes as silence and drift out of sync, and hold
+ * only the few seconds of the Live buffer. HLS from the server re-times the audio and buffers whole
+ * segments, so phones (auto) and anyone who picks Steady get that instead.
+ */
+export function liveHls(mode: LiveStreamMode, mobile: boolean): boolean {
+  return mode === 'steady' || (mode === 'auto' && mobile);
+}
+
+/** The caps header with the Live stream choice added. */
+export function withLiveStream(header: string | null, mode: LiveStreamMode, mobile = isMobileDevice()): string | null {
+  if (!header || !liveHls(mode, mobile)) return header;
+  try {
+    return JSON.stringify({ ...(JSON.parse(header) as Caps), liveHls: true });
+  } catch {
+    return header;
+  }
 }
 
 let memo: string | null = null;

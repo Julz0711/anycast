@@ -82,6 +82,8 @@ export function normalizeHiddenTabs(hidden: unknown, order: readonly TabId[]): T
 
 export const LIVE_BUFFER_CHOICES = [2, 4, 8, 15, 30] as const;
 export type LiveBufferSeconds = (typeof LIVE_BUFFER_CHOICES)[number];
+export const LIVE_STREAM_CHOICES = ['auto', 'direct', 'steady'] as const;
+export type LiveStreamMode = (typeof LIVE_STREAM_CHOICES)[number];
 /** Seconds without mouse, touch or key activity before the player's controls fade out while playing. */
 export const CONTROLS_HIDE_CHOICES = [1, 2, 3, 5, 8] as const;
 export type ControlsHideSeconds = (typeof CONTROLS_HIDE_CHOICES)[number];
@@ -129,6 +131,12 @@ export interface Preferences {
      * much behind live.
      */
     liveBuffer: LiveBufferSeconds;
+    /**
+     * Live TV stream format. direct: the provider's MPEG-TS as it is (lowest delay, desktop
+     * browsers); steady: HLS from the server, which buffers more and keeps the audio in sync, at a
+     * few seconds more delay; auto: steady on phones and tablets, direct elsewhere.
+     */
+    liveStream: LiveStreamMode;
     /** seconds of no activity before the player's controls hide while it plays */
     controlsHide: ControlsHideSeconds;
     /**
@@ -201,6 +209,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     upNextSeconds: 30,
     miniPlayer: true,
     liveBuffer: 4,
+    liveStream: 'auto',
     controlsHide: 2,
     subtitlesDefault: 'off',
     preferredAudioLanguage: 'en',
@@ -258,6 +267,7 @@ export function mergePreferences(partial: unknown): Preferences {
   if (![6, 12, 24].includes(home.rowLimit)) home.rowLimit = DEFAULT_PREFERENCES.home.rowLimit;
   if (![0, 15, 30, 45, 60, 90].includes(prefs.player.upNextSeconds)) prefs.player.upNextSeconds = DEFAULT_PREFERENCES.player.upNextSeconds;
   if (!LIVE_BUFFER_CHOICES.includes(prefs.player.liveBuffer)) prefs.player.liveBuffer = DEFAULT_PREFERENCES.player.liveBuffer;
+  if (!LIVE_STREAM_CHOICES.includes(prefs.player.liveStream)) prefs.player.liveStream = DEFAULT_PREFERENCES.player.liveStream;
   if (!CONTROLS_HIDE_CHOICES.includes(prefs.player.controlsHide)) prefs.player.controlsHide = DEFAULT_PREFERENCES.player.controlsHide;
   const pinned = prefs.categories.pinned;
   prefs.categories.pinned = Array.isArray(pinned) ? [...new Set(pinned.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 200) : [];

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { PlaybackInfo } from '@anycast/shared';
-import { audioLine, bufferAhead, fmtBitrate, frameCounts, pictureFix, pipelineLine, RateMeter, sourceOf, streamBytes, videoLine } from './sample';
+import { audioLine, bufferAhead, convertedByChoice, fmtBitrate, frameCounts, pictureFix, pipelineLine, RateMeter, sourceOf, streamBytes, videoLine } from './sample';
 
 const ranges = (...r: [number, number][]) => ({ length: r.length, start: (i: number) => r[i]![0], end: (i: number) => r[i]![1] }) as TimeRanges;
 
@@ -71,6 +71,15 @@ describe('stats sampling', () => {
     expect(pictureFix({ pipeline: 'transcode', diagnostics: { ...d('hevc'), videoEncoder: { active: 'h264_vaapi', method: 'vaapi', label: 'VAAPI' } } })).toEqual({ kind: 'hardware', label: 'VAAPI' });
     expect(pictureFix({ pipeline: 'transcode', diagnostics: { ...d('hevc'), videoEncoder: { active: 'libx264', method: 'software', label: 'Software' } } })).toBeNull();
     expect(videoLine(video('hevc'))).toBe('HEVC · 10-bit · 1920×1080 · 24 fps');
+  });
+
+  test('a conversion this device asked for is named, so it can be undone', () => {
+    const video = (codec: string) => ({ codec, width: 1920, height: 1080, fps: 24, bitDepth: 8 });
+    const d = (codec: string) => ({ source: 'episode' as const, reason: '', assumed: false, probe: { container: 'mkv', duration: 60, video: video(codec), audio: [], subtitles: [] } });
+    expect(convertedByChoice({ pipeline: 'transcode', diagnostics: d('h264') }, ['h264'])).toEqual({ codec: 'h264', label: 'H.264' });
+    expect(convertedByChoice({ pipeline: 'transcode', diagnostics: d('hevc') }, ['h264'])).toBeNull();
+    expect(convertedByChoice({ pipeline: 'remux', diagnostics: d('h264') }, ['h264'])).toBeNull();
+    expect(convertedByChoice({ pipeline: 'transcode', diagnostics: d('h264') }, [])).toBeNull();
   });
 
   test('the pipeline line names the encoder of a full transcode', () => {

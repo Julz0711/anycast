@@ -37,7 +37,8 @@ const WAIT_MS = 45_000;
 const LOOKAHEAD = 4;
 const PAUSE_AHEAD = 12;
 const RESUME_AHEAD = 6;
-const KEEP_BEHIND = 10;
+/** segments kept behind the last request: the player asks up to a minute (10 slots) ahead, so a skip back still finds its segment */
+const KEEP_BEHIND = 20;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

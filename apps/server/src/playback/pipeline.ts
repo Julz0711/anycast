@@ -10,6 +10,7 @@ export interface PipelineChoice {
 /**
  * Picks the cheapest way to get a stream playing on this client:
  * - passthrough: MP4 H.264/AAC VOD as a progressive file; live TS H.264/AAC as raw TS when the client has MSE (mpegts.js)
+ *   and didn't ask for live HLS (caps.liveHls: phones, where raw TS drifts out of sync)
  * - remux: everything else whose codecs the client decodes -> HLS (fMP4) with stream copy
  * - transcode-audio: video playable, audio not -> copy video, AAC audio
  * - transcode: video not playable -> H.264 + AAC
@@ -33,7 +34,7 @@ export function choosePipeline(
   const direct = (audioIndex === 0 || probe.audio.length <= 1) && !tracks.subtitles;
   const plainAvc = direct && video === 'h264' && (audio === null || audio === 'aac') && audioOk;
   if (plainAvc && mode === 'vod' && probe.container === 'mp4') return { pipeline: 'passthrough', type: 'file' };
-  if (plainAvc && mode === 'live' && probe.container === 'ts' && caps.mse) return { pipeline: 'passthrough', type: 'mpegts' };
+  if (plainAvc && mode === 'live' && probe.container === 'ts' && caps.mse && !caps.liveHls) return { pipeline: 'passthrough', type: 'mpegts' };
   if (!audioOk) return { pipeline: 'transcode-audio', type: 'hls' };
   return { pipeline: 'remux', type: 'hls' };
 }
@@ -76,10 +77,12 @@ export function explainPipeline(probe: ProbeResult, caps: ClientCaps, mode: 'vod
             : `${codecs} plays here, so the recorded segments are sent as they are.`;
       break;
     default:
-      if (mode === 'live' && !caps.mse) reason = `${codecs} plays here; without Media Source Extensions it is repackaged as HLS (nothing is re-encoded).`;
+      if (mode === 'live' && caps.liveHls && caps.mse) reason = `${codecs} plays here; for steady playback it is repackaged as HLS and the audio re-timed so it stays in sync (the video isn't re-encoded).`;
+      else if (mode === 'live' && !caps.mse) reason = `${codecs} plays here; without Media Source Extensions it is repackaged as HLS and the audio re-timed so it stays in sync (the video isn't re-encoded).`;
       else if (mode === 'vod' && probe.container && probe.container !== 'mp4') {
         reason = `${codecs} plays here but the ${probe.container.toUpperCase()} container doesn't, so it is repackaged as HLS (nothing is re-encoded).`;
       } else if (mode === 'vod') reason = `${codecs} plays here; it is repackaged as HLS for the chosen audio track or subtitles (nothing is re-encoded).`;
+      else if (mode === 'live') reason = `${codecs} plays here; it is repackaged as HLS and the audio re-timed so it stays in sync (the video isn't re-encoded).`;
       else reason = `${codecs} plays here; it is repackaged as HLS (nothing is re-encoded).`;
   }
   return assumed ? `${reason} The source couldn't be probed, so typical codecs were assumed.` : reason;

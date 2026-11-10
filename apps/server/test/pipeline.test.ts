@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_CAPS, parseCaps } from '../src/playback/caps';
-import { buildHlsArgs, completedSegments } from '../src/playback/ffmpeg';
+import { buildHlsArgs, completedSegments, LIVE_AUDIO_RESYNC } from '../src/playback/ffmpeg';
 import { choosePipeline, explainPipeline } from '../src/playback/pipeline';
 import { parseBitDepth, parseFfprobe, ProbeCache, type ProbeResult } from '../src/playback/probe';
 
@@ -13,6 +13,7 @@ const probe = (container: string, video: string | null, audio: string | null): P
 const chrome = { hls: false, mse: true, codecs: ['avc1', 'mp4a', 'opus', 'vp09'] };
 const safari = { hls: true, mse: true, codecs: ['avc1', 'hvc1', 'mp4a', 'ac-3', 'ec-3'] };
 const noMse = { hls: true, mse: false, codecs: ['avc1', 'mp4a'] };
+const phone = { ...chrome, liveHls: true };
 
 describe('choosePipeline', () => {
   test.each([
@@ -24,6 +25,8 @@ describe('choosePipeline', () => {
     ['mkv h264/eac3 on chrome -> transcode-audio', probe('mkv', 'h264', 'eac3'), chrome, 'vod', 'transcode-audio', 'hls'],
     ['mp4 hevc/aac on safari -> remux (not file)', probe('mp4', 'hevc', 'aac'), safari, 'vod', 'remux', 'hls'],
     ['live ts h264/aac with mse -> mpegts', probe('ts', 'h264', 'aac'), chrome, 'live', 'passthrough', 'mpegts'],
+    ['live ts h264/aac on a phone (liveHls) -> remux', probe('ts', 'h264', 'aac'), phone, 'live', 'remux', 'hls'],
+    ['mp4 h264/aac vod on a phone stays a file', probe('mp4', 'h264', 'aac'), phone, 'vod', 'passthrough', 'file'],
     ['live ts h264/aac without mse -> remux', probe('ts', 'h264', 'aac'), noMse, 'live', 'remux', 'hls'],
     ['live ts h264/ac3 on chrome -> transcode-audio', probe('ts', 'h264', 'ac3'), chrome, 'live', 'transcode-audio', 'hls'],
     ['live ts hevc on chrome -> transcode', probe('ts', 'hevc', 'aac'), chrome, 'live', 'transcode', 'hls'],
@@ -79,6 +82,11 @@ describe('10-bit video', () => {
 describe('parseCaps', () => {
   test('header JSON, codec strings normalized', () => {
     expect(parseCaps('{"hls":true,"mse":false,"codecs":["avc1.640028","HVC1","mp4a.40.2"]}')).toEqual({ hls: true, mse: false, codecs: ['avc1', 'hvc1', 'mp4a'] });
+  });
+  test('liveHls is kept only when true', () => {
+    expect(parseCaps('{"hls":false,"mse":true,"codecs":["avc1"],"liveHls":true}')).toEqual({ hls: false, mse: true, codecs: ['avc1'], liveHls: true });
+    expect(parseCaps('{"hls":false,"mse":true,"codecs":["avc1"],"liveHls":false}')).toEqual({ hls: false, mse: true, codecs: ['avc1'] });
+    expect(parseCaps('{"hls":false,"mse":true,"codecs":["avc1"],"liveHls":"yes"}')).toEqual({ hls: false, mse: true, codecs: ['avc1'] });
   });
   test('garbage falls back to defaults', () => {
     expect(parseCaps('nope')).toEqual(DEFAULT_CAPS);
@@ -170,13 +178,25 @@ test('hls args: vod seek keeps timestamps, transcode forces keyframes from the s
   const live = buildHlsArgs({ input: 'pipe:0', pipeline: 'remux', dir: '/d', run: 0, segmentSeconds: 4, mode: 'live' });
   expect(live.join(' ')).toContain('-f mpegts -i pipe:0');
   expect(live.join(' ')).toContain('-c:v copy');
-  expect(live.join(' ')).toContain('-c:a copy');
   expect(live).not.toContain('-copyts');
   expect(live).not.toContain('aac_adtstoasc');
 });
 
+test('hls args: live and timeshift runs re-time the audio so it stays in sync, the video is still copied', () => {
+  for (const mode of ['live', 'event'] as const) {
+    for (const pipeline of ['remux', 'transcode-audio'] as const) {
+      const args = buildHlsArgs({ input: 'pipe:0', pipeline, dir: '/d', run: 0, segmentSeconds: 4, mode, audioCodec: 'aac' }).join(' ');
+      expect(args).toContain('-c:v copy');
+      expect(args).toContain(`-c:a aac -ac 2 -b:a 192k -af ${LIVE_AUDIO_RESYNC}`);
+      expect(args).not.toContain('-c:a copy');
+    }
+  }
+  const vod = buildHlsArgs({ input: 'http://x/m.mkv', pipeline: 'transcode-audio', dir: '/d', run: 0, segmentSeconds: 6, mode: 'vod' });
+  expect(vod).not.toContain(LIVE_AUDIO_RESYNC);
+});
+
 test('hls args: remuxed AAC gets ADTS -> ASC so it fits fMP4; other copied audio does not', () => {
-  const base = { input: 'pipe:0', pipeline: 'remux', dir: '/d', run: 0, segmentSeconds: 4, mode: 'live' } as const;
+  const base = { input: 'http://x/m.ts', pipeline: 'remux', dir: '/d', run: 0, segmentSeconds: 6, mode: 'vod' } as const;
   expect(buildHlsArgs({ ...base, audioCodec: 'aac' }).join(' ')).toContain('-c:a copy -bsf:a aac_adtstoasc');
   expect(buildHlsArgs({ ...base, audioCodec: 'ac3' })).not.toContain('aac_adtstoasc');
   expect(buildHlsArgs({ ...base, pipeline: 'transcode-audio', audioCodec: 'aac' })).not.toContain('aac_adtstoasc');
