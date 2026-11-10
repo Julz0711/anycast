@@ -202,6 +202,31 @@ sudo docker compose up -d
 dashboard's editor can't handle, and saving there breaks its volumes and ports.) Without it AnyCast sees every visitor as the proxy, so the sign-in limit
 (10 tries a minute) would apply to everyone at once, and sign-in cookies aren't marked https-only.
 
+**11. Keep plain http off the CasaOS dashboard.** Phones often open a typed address over http
+(port 80) first, and on the server port 80 is the CasaOS dashboard. Send port 80 from the tailnet
+to NPM instead, which redirects it to https (CasaOS stays on port 80 in your home network):
+
+```sh
+sudo tee /etc/systemd/system/tailnet-http-to-npm.service >/dev/null <<'EOF'
+[Unit]
+Description=Send tailnet port 80 to Nginx Proxy Manager
+After=tailscaled.service docker.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/iptables -t nat -I PREROUTING -i tailscale0 -p tcp --dport 80 -j REDIRECT --to-ports 8081
+ExecStop=/usr/sbin/iptables -t nat -D PREROUTING -i tailscale0 -p tcp --dport 80 -j REDIRECT --to-ports 8081
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload && sudo systemctl enable --now tailnet-http-to-npm
+```
+
+(`ip a show tailscale0` must list the Tailscale address; with Tailscale in userspace mode this
+doesn't apply.) Also turn on **HSTS Enabled** in the proxy host's SSL tab, so browsers remember to
+use https. Over Tailscale, the CasaOS dashboard is then no longer at `http://<tailscale-address>`;
+at home it stays at `http://<server-ip>`. Undo with `sudo systemctl disable --now tailnet-http-to-npm`.
+
 Open `https://tv.example.com` on a device with Tailscale switched on and use "Add to Home Screen".
 The certificate renews itself.
 
