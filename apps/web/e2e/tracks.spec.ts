@@ -18,6 +18,13 @@ const showing = (page: Page) =>
     return { track: t ? t.language || t.label : null, text: cue?.text ?? null, start: cue?.startTime ?? null, now: v.currentTime };
   });
 
+/** Wake the auto-hiding control bar. Hidden, it lets clicks through to the video, and Playwright's
+ *  click only moves the mouse after its hit test, so the bar would never come back by itself. */
+async function showControls(page: Page) {
+  await page.mouse.move(400, 300);
+  await page.mouse.move(420, 320);
+}
+
 test('a live channel keeps the audio track picked: through the archive, a failed seek and Try again, and zapping away and back', async ({ profile }) => {
   test.setTimeout(120_000);
   const page = await profile.device();
@@ -35,6 +42,7 @@ test('a live channel keeps the audio track picked: through the archive, a failed
   expect(streams.at(-1)).toBe(`/api/stream/live/${id}.ts`);
 
   const button = page.getByRole('button', { name: 'Audio & subtitles' });
+  await showControls(page);
   await button.click();
   const menu = page.getByRole('dialog', { name: 'Audio and subtitles' });
   const audio = menu.getByRole('radiogroup', { name: 'Audio' });
@@ -78,6 +86,7 @@ test('a live channel keeps the audio track picked: through the archive, a failed
   await expect(page).toHaveURL(new RegExp(`/play/live/${id}$`));
   await expect.poll(() => streams.at(-1)).toBe(`/api/stream/live/${id}/remux/a1/index.m3u8`);
   await expectPlaying(page);
+  await showControls(page);
   await button.click();
   await expect(audio.getByRole('radio', { name: /German/ })).toHaveAttribute('aria-checked', 'true');
 });
@@ -95,6 +104,7 @@ test('switch the audio track and turn subtitles on with the keyboard; the choice
   expect(streams.at(-1)).toMatch(/\/a1\/master\.m3u8$/);
 
   const button = page.getByRole('button', { name: 'Audio & subtitles' });
+  await showControls(page);
   await button.click();
   const menu = page.getByRole('dialog', { name: 'Audio and subtitles' });
   const audio = menu.getByRole('radiogroup', { name: 'Audio' });
@@ -147,6 +157,7 @@ test('switch the audio track and turn subtitles on with the keyboard; the choice
   await page.goto(`/play/movie/${fx.tracksMovie.id}`);
   await expectPlaying(page);
   expect(streams.at(-1)).toMatch(/\/transcode-audio\/master\.m3u8$/);
+  await showControls(page);
   await button.click();
   await expect(audio.getByRole('radio', { name: /German/ })).toHaveAttribute('aria-checked', 'true');
   await expect(subs.getByRole('radio', { name: /English/ })).toHaveAttribute('aria-checked', 'true');
