@@ -103,7 +103,7 @@ needs a DNS provider with an API, which most registrars don't offer.
 server's row shows an address like `100.101.102.103`. In its `…` menu choose **Disable key expiry**,
 otherwise the server drops off the tailnet after 180 days.
 
-**2. Stop `tailscale serve`** if you set it up in step 4, because it occupies port 443:
+**2. Stop `tailscale serve`** if you set it up in step 4, because it occupies port 443 (do this right before step 6, so the `ts.net` address keeps working until then):
 `sudo tailscale serve reset`. (Without a `tailscale` command on the host: CasaOS dashboard ›
 Tailscale app › terminal, same command.)
 
@@ -122,11 +122,14 @@ where it is. Cloudflare emails you when it's active (minutes to a few hours).
 template **Edit zone DNS** › Zone Resources: *Include, Specific zone,* your domain › Continue ›
 Create Token. Copy it (shown once).
 
-**6. Free ports 80 and 443 on the server.** The CasaOS dashboard uses port 80. Move it: CasaOS
-dashboard › Settings (gear) › WebUI port, e.g. `8080`. The dashboard is then at `http://<server-ip>:8080`.
+**6. Install Nginx Proxy Manager** from the CasaOS App Store. NPM wants host ports 80, 81 and 443,
+and the CasaOS dashboard already uses 80. With the DNS challenge, NPM doesn't need port 80, so leave
+CasaOS alone: in the install dialog (or later via the app's `…` › Settings), change the host port
+for NPM's container port **80** to a free one, e.g. `8081`. Keep **443** on 443 and **81** on 81.
+(Don't move the CasaOS dashboard port instead; that can stop the dashboard from starting.)
 
-**7. Install Nginx Proxy Manager** from the CasaOS App Store. Its admin page is at
-`http://<server-ip>:81` (first sign-in: `admin@example.com` / `changeme`, it asks you to change both).
+**7. Sign in to NPM** at `http://<server-ip>:81` (first sign-in: `admin@example.com` / `changeme`,
+it asks you to change both).
 
 **8. Get the certificate:** NPM › SSL Certificates › Add SSL Certificate › Let's Encrypt.
 Domain Names `tv.example.com`, turn on **Use a DNS Challenge**, DNS Provider **Cloudflare**, and in
