@@ -18,6 +18,7 @@ import { isTypingTarget } from '../lib/misc';
 import { fmtBehind, fmtClock, fmtDay, fmtDuration, fmtRange } from '../lib/time';
 import { parseMediaTime, parseTimeInput } from '../lib/timeParse';
 import { createEngine, PlaybackFailure, type Engine } from './engine';
+import { elapsedText, loadStepText, type LoadStep } from './loadStatus';
 import { LiveBufferGate } from './liveBuffer';
 import { setConvertCodec } from './caps';
 import { fromApiError, fromPlaybackFailure, type PlayerErr } from './errors';
@@ -111,6 +112,17 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const [error, setError] = useState<PlayerErr | null>(null);
   const [waiting, setWaiting] = useState(true);
   const [slow, setSlow] = useState(false);
+  /** what a start waits on, shown after a moment so a slow start says why */
+  const [step, setStep] = useState<LoadStep | null>(null);
+  /** how long the player has waited so far, ticking each second while it waits */
+  const [waitedMs, setWaitedMs] = useState(0);
+  useEffect(() => {
+    if (!waiting) return void setWaitedMs(0);
+    const since = Date.now();
+    setWaitedMs(0);
+    const t = window.setInterval(() => setWaitedMs(Date.now() - since), 1000);
+    return () => window.clearInterval(t);
+  }, [waiting]);
   const [paused, setPaused] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
   // scrub thumbnails (movies and episodes); a skip shows the preview where it landed
@@ -258,6 +270,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       if (useApp.getState().playbackStopped) useApp.setState({ playbackStopped: null });
       setError(null);
       setWaiting(true);
+      setStep({ stage: 'connecting' });
       setCountdown(null);
       setUpNext(null);
       setEnded(false);
@@ -338,12 +351,13 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             : pi.resumeAt;
       streamRef.current = { info: pi, liveEdge: at === null, seekTo, seq };
       setInfo(pi);
+      setStep({ stage: 'preparing', pipeline: pi.pipeline });
       setSubIdx(pi.tracks?.subtitleIndex ?? null);
       playing.current = { item, tracks: playingTracks(pi.tracks, pi.tracks?.subtitleIndex ?? null) };
       const video = videoRef.current!;
       try {
         const liveBuffer = useApp.getState().prefs.player.liveBuffer;
-        const engine = await createEngine(video, pi, { live: isLive, liveBuffer, onFatal, onTracks: () => setTracksVer((x) => x + 1) });
+        const engine = await createEngine(video, pi, { live: isLive, liveBuffer, onFatal, onTracks: () => setTracksVer((x) => x + 1), onStep: (st) => seq === loadSeq.current && setStep((prev) => (prev || st.stage === 'retrying' ? st : null)) });
         if (seq !== loadSeq.current) return engine.destroy();
         engineRef.current = engine;
         if (isLive && !airplayRef.current) {
@@ -970,6 +984,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     setEnded(false);
     setWaiting(false);
     setSlow(false);
+    setStep(null);
     setPaused(false);
     window.clearTimeout(slowTimer.current);
   };
@@ -1377,12 +1392,17 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             <IconPlay />
           </button>
         )}
-        {slow && waiting && !error && (
-          <div className="pl-slow" role="status">
-            Still loading. The provider may be slow.{' '}
-            <button type="button" className="link-btn" onClick={() => void load(isLive && !atLive ? position : null)}>
-              Try again
-            </button>
+        {waiting && !error && !casting && (step ? waitedMs >= 2_000 : slow) && (
+          <div className="pl-slow" role="status" data-testid="load-status">
+            {step ? `${loadStepText(step)} · ${elapsedText(waitedMs)}` : 'Still loading. The provider may be slow.'}
+            {(slow || waitedMs >= 15_000) && (
+              <>
+                {' '}
+                <button type="button" className="link-btn" onClick={() => void load(isLive && !atLive ? position : null)}>
+                  Try again
+                </button>
+              </>
+            )}
           </div>
         )}
         {moved && (
