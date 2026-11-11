@@ -17,7 +17,7 @@ import { fmtClock, fmtRelativeAgo } from '../lib/time';
 import { toneFor } from '../lib/misc';
 import { Art, ChannelRow, ContinueCard, PosterCard, timeLeft, UpNextCard } from '../components/cards';
 import { Empty, LogoTile, ProgressBar, Skeleton } from '../components/ui';
-import { IconClose, IconPlay } from '../components/Icons';
+import { IconCheck, IconClose, IconPencil, IconPlay } from '../components/Icons';
 import { HOME_SECTIONS, HomeEditor } from '../components/HomeEditor';
 import { prefetchPlayer } from '../player/prefetch';
 import { NewEpisodeCards, useNewEpisodes } from '../components/NewEpisodes';
@@ -352,9 +352,15 @@ export function HomeScreen() {
           </h1>
         </div>
         <PhoneHeadActions profile>
-          <button type="button" className="btn" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>
-            {editing ? 'Done' : 'Customize'}
-          </button>
+          {form === 'phone' ? (
+            <button type="button" className={`icon-btn${editing ? ' on' : ''}`} aria-expanded={editing} aria-label={editing ? 'Done' : 'Customize'} title={editing ? 'Done' : 'Customize Home'} onClick={() => setEditing((v) => !v)}>
+              {editing ? <IconCheck /> : <IconPencil />}
+            </button>
+          ) : (
+            <button type="button" className="btn" aria-expanded={editing} onClick={() => setEditing((v) => !v)}>
+              {editing ? 'Done' : 'Customize'}
+            </button>
+          )}
         </PhoneHeadActions>
       </div>
 

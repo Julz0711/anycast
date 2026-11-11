@@ -39,7 +39,6 @@ html[data-form="phone"] .row-title button { display: inline-flex; align-items: c
 html[data-form="phone"] .home-sec:first-of-type .row-title { margin-top: var(--section-gap); }
 
 /* ---------- touch targets (44 px) without changing what you see ---------- */
-html[data-form="phone"] .head-profile { padding: 0.625rem; margin: -0.625rem -0.625rem -0.625rem -0.375rem; }
 html[data-form="phone"] .link-btn { min-height: 2.75rem; display: inline-flex; align-items: center; }
 html[data-form="phone"] .back-link { min-height: 2.75rem; margin-top: 0.25rem; margin-bottom: 0.5rem; padding: 0 0.75rem 0 0; font-size: 0.9375rem; }
 html[data-form="phone"] .back-link .ico { width: 1.125rem; height: 1.125rem; }
@@ -96,3 +95,16 @@ html[data-form="phone"] .card-menu button { min-height: 2.75rem; }
 
 /* Swipe: the card height leaves room for the head and filters above (2.25rem filter row, up from 2rem) */
 html[data-form="phone"] .swipe-screen { --card-h: calc(100dvh - var(--tabbar-h) - var(--safe-b) - var(--safe-t) - 17.75rem); }
+
+/* Page head actions (Search, profile, Customize, New list): plain icons on the page, no filled
+   circles, so the title row stays light. The 44 px hit area is kept. */
+html[data-form="phone"] .head-actions { gap: 0.125rem; margin-right: -0.625rem; }
+html[data-form="phone"] .head-actions .icon-btn { background: transparent; color: var(--text-2); }
+html[data-form="phone"] .head-actions .icon-btn:active { background: var(--surface); }
+html[data-form="phone"] .head-actions .icon-btn.on { color: var(--accent); }
+html[data-form="phone"] .head-actions .icon-btn .ico { width: 1.375rem; height: 1.375rem; }
+html[data-form="phone"] .head-profile { margin: 0; padding: 0.375rem; }
+html[data-form="phone"] .head-profile .pic { width: 2rem; height: 2rem; border-radius: 0.625rem; }
+html[data-form="phone"] .home .page-head { row-gap: 0.5rem; }
+/* the recap section is already inset by the gutter; its title shouldn't be inset twice */
+html[data-form="phone"] .home-sec-recap .row-title { margin-left: 0; margin-right: 0; }
