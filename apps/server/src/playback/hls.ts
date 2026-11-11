@@ -42,6 +42,27 @@ const KEEP_BEHIND = 20;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * What went wrong, in words for the player, from FFmpeg's stderr: the provider's HTTP answer or a
+ * network failure on the way to it, else the fallback.
+ */
+export function ffmpegFailure(stderr: string, fallback: string): string {
+  const http = /Server returned (\d{3})(?: ([^\r\n]*))?/i.exec(stderr) ?? /HTTP error (\d{3})(?: ([^\r\n]*))?/i.exec(stderr);
+  if (http) {
+    const code = Number(http[1]);
+    const what = `HTTP ${code}${http[2] ? ` ${http[2].trim()}` : ''}`;
+    if (code === 401 || code === 403 || code === 429 || code === 458 || code === 509) {
+      return `The provider refused the stream (${what}). Another device or app may be using your connection.`;
+    }
+    if (code === 404) return `The provider does not have this video (${what}).`;
+    return `The provider answered with an error (${what}).`;
+  }
+  if (/timed out|Connection refused|Network is unreachable|No route to host|Name or service not known|Temporary failure in name resolution/i.test(stderr)) {
+    return 'The server could not reach the provider.';
+  }
+  return fallback;
+}
+
 export class HlsError extends Error {
   constructor(
     readonly statusCode: number,
@@ -442,7 +463,10 @@ export class VodHlsSession extends Session {
 
   async init(): Promise<string[]> {
     this.touch();
-    let run = this.run ?? this.startRun(this.runStartFor(this.lastRequested));
+    let run = this.run;
+    // a run that failed before writing anything (the provider refused or dropped it, say) is not the
+    // answer for good: every request for the init starts it once more, so a retry can succeed
+    if (!run || (run.exited && run.exitCode !== 0 && !run.completed.size)) run = this.startRun(this.runStartFor(run ? run.start : this.lastRequested));
     const deadline = Date.now() + WAIT_MS;
     for (;;) {
       await this.refresh(run);
@@ -453,7 +477,7 @@ export class VodHlsSession extends Session {
         run = retry;
         continue;
       }
-      if (run.exited) throw new HlsError(502, 'The video could not be prepared');
+      if (run.exited) throw new HlsError(502, ffmpegFailure(run.error, 'The video could not be prepared'));
       if (Date.now() > deadline) throw new HlsError(504, 'The video took too long to prepare');
       await sleep(150);
     }
@@ -487,7 +511,7 @@ export class VodHlsSession extends Session {
         return tail.map(([, f]) => path.join(this.dir, f));
       }
       if (run.exited && !run.completed.has(n)) {
-        throw new HlsError(run.exitCode === 0 ? 404 : 502, run.exitCode === 0 ? 'Segment not available' : 'The video could not be prepared');
+        throw new HlsError(run.exitCode === 0 ? 404 : 502, run.exitCode === 0 ? 'Segment not available' : ffmpegFailure(run.error, 'The video could not be prepared'));
       }
       if (Date.now() > deadline) throw new HlsError(504, 'The video took too long to prepare');
       await sleep(150);

@@ -6,6 +6,7 @@
  * hls.js and mpegts.js are dynamic imports, so they are separate chunks loaded only when needed.
  */
 import type { PlaybackInfo } from '@anycast/shared';
+import type { LoadStep } from './loadStatus';
 
 export type EngineKind = 'hls.js' | 'native-hls' | 'mpegts' | 'native';
 
@@ -34,6 +35,26 @@ export class PlaybackFailure extends Error {
     public status?: number,
   ) {
     super(message);
+  }
+}
+
+/**
+ * Why a stream file failed, in words: the server's own reason (the JSON body of an AnyCast error),
+ * or, when the answer did not come from AnyCast (an HTML page from a reverse proxy, say), that the
+ * proxy in front of it could not reach it. Null when the file cannot be fetched again.
+ */
+export async function failureReason(url: string, status: number, fetcher: typeof fetch = fetch): Promise<string | null> {
+  try {
+    const res = await fetcher(url, { credentials: 'include' });
+    if (res.ok) return null;
+    if ((res.headers.get('content-type') ?? '').includes('application/json')) {
+      const body = (await res.json()) as { message?: unknown };
+      if (typeof body.message === 'string' && body.message) return body.message;
+    }
+    if (status === 502 || status === 504) return 'The reverse proxy in front of AnyCast could not reach the server. Check that the AnyCast container is running.';
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -107,6 +128,8 @@ export async function createEngine(
     liveBuffer?: number;
     onFatal: (e: PlaybackFailure) => void;
     onTracks: Listener;
+    /** what a start is waiting on (hls.js only): the first data, or a retry after an error */
+    onStep?: (s: LoadStep) => void;
   },
 ): Promise<Engine> {
   const buffer = hooks.liveBuffer ?? DEFAULT_LIVE_BUFFER;
@@ -139,12 +162,26 @@ export async function createEngine(
       } });
     let netRetries = 0;
     let mediaRetries = 0;
+    let attempts = 0;
+    hls.on(Hls.Events.FRAG_LOADED, () => hooks.onStep?.({ stage: 'buffering' }));
     hls.on(Hls.Events.ERROR, (_e, d) => {
-      if (!d.fatal) return;
       const status = (d.response as { code?: number } | undefined)?.code;
+      if (!d.fatal) {
+        // hls.js retries this file itself: say so, with the server's answer
+        if (d.type === Hls.ErrorTypes.NETWORK_ERROR) hooks.onStep?.({ stage: 'retrying', attempt: ++attempts, ...(status ? { status } : {}) });
+        return;
+      }
       if (d.type === Hls.ErrorTypes.NETWORK_ERROR) {
         // 409: a seek elsewhere restarted the server's ffmpeg for this VOD; 5xx: transient. Retry those.
-        if (netRetries++ < 3 && (!status || status >= 500 || status === 409)) return void setTimeout(() => hls.startLoad(), 1000 * netRetries);
+        if (netRetries++ < 3 && (!status || status >= 500 || status === 409)) {
+          hooks.onStep?.({ stage: 'retrying', attempt: ++attempts, ...(status ? { status } : {}) });
+          return void setTimeout(() => hls.startLoad(), 1000 * netRetries);
+        }
+        const url = d.frag?.url ?? d.context?.url ?? d.url;
+        if (status && status >= 500 && status < 600 && url) {
+          // hls.js only knows the status: ask once more for the server's reason, so the error says what went wrong
+          return void failureReason(url, status).then((why) => hooks.onFatal(new PlaybackFailure('server', why ?? d.details, status)));
+        }
         hooks.onFatal(new PlaybackFailure(status && status < 600 ? 'server' : 'network', d.details, status));
       } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
         if (mediaRetries === 0) return void (mediaRetries++, hls.recoverMediaError());
