@@ -9,10 +9,13 @@ function subscribeResize(cb: () => void) {
   window.addEventListener('resize', cb);
   return () => window.removeEventListener('resize', cb);
 }
+// read once: whether touch is the only pointer, and the device screen's short side (neither changes while the app runs)
+const TOUCH_ONLY = typeof matchMedia === 'function' && matchMedia('(hover: none) and (pointer: coarse)').matches;
+const SCREEN_SHORT = typeof screen === 'object' && screen.width ? Math.min(screen.width, screen.height) : undefined;
 export function useFormFactor(): FormFactor {
   const override = useApp((s) => s.deviceOverride);
   const width = useSyncExternalStore(subscribeResize, () => window.innerWidth, () => 1280);
-  return detectFormFactor({ ua: navigator.userAgent, search: location.search, width, override });
+  return detectFormFactor({ ua: navigator.userAgent, search: location.search, width, screenShort: SCREEN_SHORT, touch: TOUCH_ONLY, override });
 }
 export function useViewportWidth() {
   return useSyncExternalStore(subscribeResize, () => window.innerWidth, () => 1280);

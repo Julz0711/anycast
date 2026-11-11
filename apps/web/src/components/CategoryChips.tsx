@@ -97,8 +97,11 @@ function CategorySheet(props: { kind: MediaKind; title: string; categories: Chip
   const all = useAsync(() => cachedGet('GET /api/categories', { query: { kind: props.kind, all: '1' } }, 300_000), [props.kind]);
   const hiddenHere = (all.data ?? []).filter((c) => rules.categoryIds.includes(c.id) && (!terms.length || matches(c.name)));
 
+  const sheet = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    input.current?.focus();
+    // phones: don't open the keyboard over the list straight away, the filter is one tap away
+    if (document.documentElement.dataset.form === 'phone') sheet.current?.focus({ preventScroll: true });
+    else input.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -156,7 +159,7 @@ function CategorySheet(props: { kind: MediaKind; title: string; categories: Chip
   const rest = list.filter((c) => terms.length || !pinned.includes(c.id));
   return (
     <div className="sheet-backdrop" onClick={props.onClose}>
-      <div className="sheet" role="dialog" aria-modal="true" aria-label={props.title} data-nav-trap="" onClick={(e) => e.stopPropagation()}>
+      <div ref={sheet} tabIndex={-1} className="sheet" role="dialog" aria-modal="true" aria-label={props.title} data-nav-trap="" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head">
           <h2 className="h2">{props.title}</h2>
           <button type="button" className="icon-btn" onClick={props.onClose} aria-label="Close">

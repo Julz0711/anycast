@@ -17,4 +17,14 @@ describe('form factor', () => {
     expect(detectFormFactor({ ...base, search: '?tv=1', override: 'desktop' })).toBe('large');
     expect(detectFormFactor({ ...base, override: 'phone' })).toBe('phone');
   });
+  it('keeps the phone layout on a phone turned sideways, not on tablets or desktops', () => {
+    const base = { ua: 'Mozilla/5.0 (iPhone)', search: '', override: 'auto' as const };
+    expect(detectFormFactor({ ...base, width: 844, screenShort: 390, touch: true })).toBe('phone');
+    expect(detectFormFactor({ ...base, width: 932, screenShort: 430, touch: true })).toBe('phone');
+    // iPad mini in landscape, a laptop window of the same size, an iPad in portrait
+    expect(detectFormFactor({ ...base, width: 1133, screenShort: 744, touch: true })).toBe('large');
+    expect(detectFormFactor({ ...base, width: 844, screenShort: 390, touch: false })).toBe('large');
+    expect(detectFormFactor({ ...base, width: 820, screenShort: 820, touch: true })).toBe('large');
+    expect(detectFormFactor({ ...base, width: 844, screenShort: 390, touch: true, override: 'desktop' })).toBe('large');
+  });
 });

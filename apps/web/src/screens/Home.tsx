@@ -344,7 +344,7 @@ export function HomeScreen() {
       <div className="page-head">
         <div className="home-hello">
           <div className="label tabnum">
-            {new Date(now).toLocaleDateString(undefined, { weekday: 'long' })} · {fmtClock(now)}
+            {new Date(now).toLocaleDateString(undefined, { weekday: form === 'phone' ? 'short' : 'long' })} · {fmtClock(now)}
           </div>
           <h1 className="h1">
             {greeting(now)}
