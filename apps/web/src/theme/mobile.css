@@ -75,10 +75,25 @@ html[data-form="phone"] .card-menu button { min-height: 2.75rem; }
 
 /* ---------- landscape phones ---------- */
 @media (orientation: landscape) {
-  /* a slimmer bar with icon and label side by side, so the content keeps its height */
-  html[data-form="phone"] { --tabbar-own: 3.25rem; --head-top: 1rem; }
-  html[data-form="phone"] .tab { flex-direction: row; gap: 0.5rem; font-size: 0.8125rem; }
-  html[data-form="phone"] .tab .ico { width: 1.25rem; height: 1.25rem; }
+  /*
+   * The tabs become a rail down the left side, where the notch usually is, instead of a bar
+   * along the bottom: a sideways phone is short, and the content keeps all of its height.
+   * --rail-x is the room the rail takes, safe area included.
+   */
+  html[data-form="phone"] { --tabbar-own: 0rem; --rail-w: 4.75rem; --rail-x: calc(var(--rail-w) + var(--safe-l)); --head-top: 1rem; }
+  html[data-form="phone"] .tabbar {
+    top: 0; right: auto; width: var(--rail-x); height: auto; flex-direction: column; justify-content: center; gap: 0.25rem;
+    padding: calc(0.5rem + var(--safe-t)) 0.375rem calc(0.5rem + var(--safe-b)) calc(0.375rem + var(--safe-l));
+    border-top: 0; border-right: 1px solid var(--line); background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  html[data-form="phone"][data-kb="open"] .tabbar { display: flex; }
+  html[data-form="phone"] .tab { flex: 0 1 3.75rem; min-height: 2.75rem; gap: 0.25rem; font-size: 0.6875rem; }
+  /* the current tab: a pill behind its icon */
+  html[data-form="phone"] .tab .ico { width: 1.25rem; height: 1.25rem; padding: 0.25rem 0.875rem; border-radius: 1rem; box-sizing: content-box; transition: background var(--dur); }
+  html[data-form="phone"] .tab[aria-current="page"] .ico { background: var(--accent-tint); }
+  html[data-form="phone"] .main,
+  html[data-form="phone"] .main.full { padding-left: var(--rail-x); }
+  html[data-form="phone"] .live-top { padding-left: 0; }
   html[data-form="phone"] .page-head { min-height: 0; }
   /* the video fills the screen; the details are a scroll away */
   html[data-form="phone"] .player:not([data-mode="mini"]):not([data-mode="overlay"]) .pl-stage { aspect-ratio: auto; height: 100dvh; margin-top: 0; }
@@ -141,9 +156,13 @@ html[data-form="phone"] .now-bar .mini-progress { position: absolute; left: 1rem
 /* narrow phones: channel up and down stay in the player */
 @media (max-width: 374px) { html[data-form="phone"] .now-zap { display: none; } }
 @media (orientation: landscape) {
-  /* the now bar shares the tab bar's row: tabs on the left half, what is playing on the right */
-  html[data-form="phone"][data-nowbar] { --nowbar-h: 0rem; }
-  html[data-form="phone"][data-nowbar] .tabbar { padding-right: calc(50% + 0.25rem); }
+  /* the now bar is the foot of the content column, beside the rail; its border fills the home indicator's strip */
+  html[data-form="phone"][data-nowbar] { --nowbar-h: 3.25rem; }
   html[data-form="phone"][data-nowbar] .tabbar::before { display: none; }
-  html[data-form="phone"] .mini-frame[data-dock="bar"] { left: 50%; bottom: calc(var(--safe-b) + 0.25rem); height: calc(var(--tabbar-own) - 0.5rem); border-radius: 0.75rem; }
+  /* the rail runs the full height (the rule above sizes the portrait bar) */
+  html[data-form="phone"] .tabbar { height: auto; }
+  html[data-form="phone"] .mini-frame[data-dock="bar"] {
+    left: calc(var(--rail-x) + 0.75rem); right: calc(0.75rem + var(--safe-r)); bottom: 0;
+    height: calc(var(--nowbar-h) + var(--safe-b)); border-bottom: var(--safe-b) solid var(--surface-2); box-sizing: border-box;
+  }
 }

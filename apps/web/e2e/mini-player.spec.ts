@@ -166,6 +166,31 @@ test('phone: the mini player is a now bar on the tab bar; it zaps, and a tap or 
   await expect.poll(() => page.locator('#main').evaluate((m) => Math.round(m.getBoundingClientRect().bottom))).toBe(Math.round(tabs.y));
 });
 
+test('sideways phone: the tabs are a rail on the left, the now bar the foot of the content', async ({ profile }) => {
+  const page = await profile.device();
+  await page.addInitScript(() => localStorage.setItem('anycast.device', 'phone'));
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto(`/play/live/${fx.archiveChannel.id}`);
+  await expectPlaying(page);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page).toHaveURL(/\/live$/);
+  const rail = (await page.getByRole('navigation', { name: 'Main' }).boundingBox())!;
+  // full height down the left edge, not a row along the bottom
+  expect(rail.x).toBe(0);
+  expect(rail.height).toBe(390);
+  expect(rail.width).toBeLessThan(100);
+  const bar = page.getByRole('region', { name: 'Now playing' });
+  await expect(bar).toBeVisible();
+  // (once its slide-in has finished)
+  await expect.poll(async () => Math.round((await bar.boundingBox())!.y + (await bar.boundingBox())!.height)).toBe(390);
+  expect((await bar.boundingBox())!.x).toBeGreaterThanOrEqual(rail.x + rail.width);
+  // the page starts beside the rail
+  expect(await page.locator('.page-head, .live-top').first().evaluate((el) => el.getBoundingClientRect().left)).toBeGreaterThanOrEqual(rail.width);
+  if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: 'screenshots/mini-phone-landscape.png' });
+  await bar.getByRole('button', { name: /^Now playing: / }).click();
+  await expect(page).toHaveURL(new RegExp(`/play/live/${fx.archiveChannel.id}$`));
+});
+
 test('phone: Movies and Series share the Watch tab, which reopens the one used last', async ({ profile }) => {
   const page = await profile.device();
   await page.setViewportSize({ width: 390, height: 844 });
