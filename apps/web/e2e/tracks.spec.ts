@@ -95,6 +95,9 @@ test('switch the audio track and turn subtitles on with the keyboard; the choice
   expect(streams.at(-1)).toMatch(/\/a1\/master\.m3u8$/);
 
   const button = page.getByRole('button', { name: 'Audio & subtitles' });
+  // the controls fade out 2 s after playback starts (and the stream check above can take longer):
+  // move the mouse over the video first, as a viewer would, so they show again
+  await page.locator('.pl-stage').hover();
   await button.click();
   const menu = page.getByRole('dialog', { name: 'Audio and subtitles' });
   const audio = menu.getByRole('radiogroup', { name: 'Audio' });
@@ -147,6 +150,7 @@ test('switch the audio track and turn subtitles on with the keyboard; the choice
   await page.goto(`/play/movie/${fx.tracksMovie.id}`);
   await expectPlaying(page);
   expect(streams.at(-1)).toMatch(/\/transcode-audio\/master\.m3u8$/);
+  await page.locator('.pl-stage').hover();
   await button.click();
   await expect(audio.getByRole('radio', { name: /German/ })).toHaveAttribute('aria-checked', 'true');
   await expect(subs.getByRole('radio', { name: /English/ })).toHaveAttribute('aria-checked', 'true');

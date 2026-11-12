@@ -2,7 +2,7 @@
  * Test fixtures: every test gets its own profile (so favorites, preferences and filters never leak
  * between tests running in parallel) and opens "devices" (browser contexts) signed in to it.
  */
-import { expect, request, test as base, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
+import { expect, request, test as base, type APIRequestContext, type BrowserContext, type BrowserContextOptions, type Page } from '@playwright/test';
 import type { Preferences } from '@anycast/shared';
 import type { E2EFixtures } from './env';
 
@@ -21,8 +21,8 @@ export interface TestProfile {
   id: string;
   /** API calls as this profile */
   api: APIRequestContext;
-  /** A new browser context ("device") signed in and switched to this profile */
-  device: () => Promise<Page>;
+  /** A new browser context ("device") signed in and switched to this profile (options: e.g. a phone in the hand) */
+  device: (options?: BrowserContextOptions) => Promise<Page>;
 }
 
 export const test = base.extend<{ profileOptions: ProfileOptions; profile: TestProfile }>({
@@ -43,8 +43,8 @@ export const test = base.extend<{ profileOptions: ProfileOptions; profile: TestP
     }
 
     const contexts: BrowserContext[] = [];
-    const device = async () => {
-      const ctx = await browser.newContext({ baseURL, storageState, serviceWorkers: 'block', viewport: { width: 1280, height: 800 } });
+    const device = async (options?: BrowserContextOptions) => {
+      const ctx = await browser.newContext({ baseURL, storageState, serviceWorkers: 'block', viewport: { width: 1280, height: 800 }, ...options });
       await ctx.addInitScript(([key, value]) => {
         window.localStorage.setItem(key, value);
         // open straight into the test's profile, not the Who's watching picker

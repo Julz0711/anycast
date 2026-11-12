@@ -33,7 +33,7 @@ import { RewindTip } from './RewindTip';
 import { useVolume, VolumeControl, VOLUME_STEP } from './volume';
 import { useVariants, useVersionFallback, VersionsMenu, versionLabel } from './variants';
 import { IconFullscreenExit, IconNext, IconSkip } from './barIcons';
-import { IconBack, IconClose, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock, IconTheater, IconResize, IconShrink } from '../components/Icons';
+import { IconBack, IconClose, IconDown, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock, IconTheater, IconResize, IconShrink, IconUp } from '../components/Icons';
 import { MINI_SIZE_LABEL, nextMiniSize, setMiniSize, useMiniSize } from './miniSize';
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
@@ -45,9 +45,12 @@ import { CastButton } from './cast/CastButton';
 import { castConnected, castLoad, castPause, castPlay, castPlayPause, castSeek, castStopMedia, endChromecast, playerMounted, useChromecast } from './cast/chromecast';
 import { IconAirPlay, IconCast } from './cast/icons';
 import { castMediaFor, castUrl, unreachableFromTv } from './cast/media';
+import { isHandheld, lockOrientation, useSideways } from '../lib/orientation';
 import '../theme/player.css';
 import '../theme/cast.css';
 
+/** a phone in the hand: full screen turns it sideways */
+const HANDHELD = isHandheld();
 /** Within this of the live edge counts as live. */
 const LIVE_SLACK_MS = 6_000;
 /** how long a channel plays before it shows up in Home › Jump back in */
@@ -660,15 +663,37 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
 
   /* ---------------- fullscreen & chrome ---------------- */
   useEffect(() => {
-    const on = () => setFullscreen(!!document.fullscreenElement);
+    const on = () => {
+      setFullscreen(!!document.fullscreenElement);
+      // out of full screen the player turns freely again (when it was left for the app, the app holds its own lock)
+      if (!document.fullscreenElement && HANDHELD && location.pathname.startsWith('/play/')) lockOrientation(null);
+    };
     document.addEventListener('fullscreenchange', on);
     return () => document.removeEventListener('fullscreenchange', on);
   }, []);
+  // Phones: sideways the player already fills the screen; where the browser allows it without a
+  // tap, also go truly full screen (hides the status bar), and turning upright leaves it again
+  const sideways = useSideways();
+  const wasSideways = useRef(sideways);
+  useEffect(() => {
+    const turned = sideways !== wasSideways.current;
+    wasSideways.current = sideways;
+    if (!turned || !HANDHELD || mini) return;
+    if (sideways && !document.fullscreenElement) void rootRef.current?.requestFullscreen?.().catch(() => undefined);
+    else if (!sideways && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+  }, [sideways, mini]);
   const toggleFullscreen = useCallback(() => {
     const el = rootRef.current;
     const v = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
     if (document.fullscreenElement) void document.exitFullscreen();
-    else if (el?.requestFullscreen) void el.requestFullscreen().catch(() => v?.webkitEnterFullscreen?.());
+    else if (el?.requestFullscreen)
+      void el
+        .requestFullscreen()
+        // on a phone, full screen turns a wide picture sideways (where the browser can lock the screen)
+        .then(() => {
+          if (HANDHELD && (!v?.videoWidth || v.videoWidth > v.videoHeight)) lockOrientation('landscape');
+        })
+        .catch(() => v?.webkitEnterFullscreen?.());
     else v?.webkitEnterFullscreen?.();
   }, []);
 
@@ -1566,6 +1591,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             paused={shownPaused}
             progress={!isLive && duration > 0 ? ct / duration : null}
             problem={moved ? 'Playback moved to another device' : error ? error.title : null}
+            dock={form === 'phone'}
+            onZap={isLive ? (dir) => void zap(dir) : null}
             onPlay={togglePlay}
             onExpand={expand}
             onClose={() => {
@@ -1754,7 +1781,10 @@ function Earlier(props: { timeline: TimelineInfo; now: number; position: number;
   );
 }
 
-/** The mini player's controls: what is playing, play/pause, expand, close. */
+/**
+ * The mini player's controls: what is playing, play/pause, expand, close. Docked (phones) it is
+ * the now bar: the title opens the player, and live TV gets channel up and down.
+ */
 function MiniBar(props: {
   title: string;
   sub: string | null;
@@ -1763,10 +1793,60 @@ function MiniBar(props: {
   paused: boolean;
   progress: number | null;
   problem: string | null;
+  dock: boolean;
+  onZap: ((dir: -1 | 1) => void) | null;
   onPlay: () => void;
   onExpand: () => void;
   onClose: () => void;
 }) {
+  return props.dock ? <NowBar {...props} /> : <MiniCorner {...props} />;
+}
+
+function NowBar(props: Parameters<typeof MiniBar>[0]) {
+  const what = props.problem ?? props.title;
+  // a channel without a guide is titled by its name: don't say it twice
+  const sub = props.sub !== props.title ? props.sub : null;
+  return (
+    <div className="mini-bar now-bar">
+      <button type="button" className="now-open" onClick={props.onExpand} aria-label={`Now playing: ${props.title}${sub ? `, ${sub}` : ''}. Open the player`}>
+        <span className="mini-title ellipsis" role={props.problem ? 'status' : undefined}>
+          {what}
+        </span>
+        {(sub || props.live) && (
+          <span className="mini-sub ellipsis">
+            {props.live && <span className={`mini-live${props.atLive ? ' on' : ''}`}>{props.atLive ? 'LIVE' : 'Rewound'}</span>}
+            {sub}
+          </span>
+        )}
+      </button>
+      {props.onZap && (
+        <>
+          <button type="button" className="mini-btn now-zap" onClick={() => props.onZap!(-1)} aria-label="Previous channel">
+            <IconUp />
+          </button>
+          <button type="button" className="mini-btn now-zap" onClick={() => props.onZap!(1)} aria-label="Next channel">
+            <IconDown />
+          </button>
+        </>
+      )}
+      {!props.problem && (
+        <button type="button" className="mini-btn" onClick={props.onPlay} aria-label={props.paused ? 'Play' : 'Pause'}>
+          {props.paused ? <IconPlay /> : <IconPause />}
+        </button>
+      )}
+      <button type="button" className="mini-btn" onClick={props.onClose} aria-label="Close player">
+        <IconClose />
+      </button>
+      {props.progress !== null && (
+        <div className="mini-progress" aria-hidden="true">
+          <i style={{ width: `${Math.min(100, Math.max(0, props.progress * 100)).toFixed(2)}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MiniCorner(props: Parameters<typeof MiniBar>[0]) {
   const size = useMiniSize();
   const next = nextMiniSize(size);
   return (

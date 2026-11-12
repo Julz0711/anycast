@@ -32,6 +32,11 @@ describe('themeVars', () => {
     expect(themeVars(DEFAULT_PREFERENCES, { ...env, reducedMotion: true })['--dur']).toBe('60ms');
     expect(themeVars(DEFAULT_PREFERENCES, env)['--dur']).toBe('180ms');
   });
+  it('maps the headline font, falling back to the UI font', () => {
+    expect(themeVars(DEFAULT_PREFERENCES, env)['--font-display']).toMatch(/^'Bricolage Grotesque', 'Inter Tight'/);
+    expect(themeVars(mergePreferences({ appearance: { headlineFont: 'mono' } }), env)['--font-display']).toMatch(/^'JetBrains Mono'/);
+    expect(mergePreferences({ appearance: { headlineFont: 'comic' } }).appearance.headlineFont).toBe('bricolage');
+  });
   it('scales type on TV', () => {
     expect(themeVars(DEFAULT_PREFERENCES, { ...env, form: 'tv' })['--root-size']).toMatch(/vw/);
   });
@@ -52,5 +57,16 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--accent')).toBe(ACCENTS.mint.hex);
     expect(root.dataset.theme).toBe('dim');
     expect(root.dataset.form).toBe('large');
+  });
+  it('loads the headline font (not on TV) and swaps it when the choice changes', () => {
+    applyTheme(DEFAULT_PREFERENCES, { ...env, form: 'phone' });
+    expect(document.getElementById('headline-font')?.getAttribute('href')).toContain('Bricolage+Grotesque');
+    applyTheme(mergePreferences({ appearance: { headlineFont: 'serif' } }), env);
+    expect(document.querySelectorAll('#headline-font')).toHaveLength(1);
+    expect(document.getElementById('headline-font')?.getAttribute('href')).toContain('Fraunces');
+    applyTheme(mergePreferences({ appearance: { headlineFont: 'plain' } }), env);
+    expect(document.getElementById('headline-font')).toBeNull();
+    applyTheme(DEFAULT_PREFERENCES, { ...env, form: 'tv' });
+    expect(document.getElementById('headline-font')).toBeNull();
   });
 });

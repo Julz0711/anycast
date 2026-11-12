@@ -14,6 +14,7 @@ import { CategoryChips } from '../components/CategoryChips';
 import { SearchButton } from '../components/PageHead';
 import { IconSearch, IconSwipe } from '../components/Icons';
 import { catLabel } from './Live';
+import { WATCH_KEY, sharesWatchTab, visibleTabs } from '../layout/tabs';
 
 type Kind = 'movie' | 'series';
 /** "home" is the overview of rows (the id predates its label); "all" is every category in one grid */
@@ -77,6 +78,10 @@ export function viewQuery(v: GridView): Pick<VodQuery, 'sort' | 'yearFrom' | 'ye
 export function VodBrowse(props: { kind: Kind; title: string; continueRow: ReactNode; extraRows?: ReactNode }) {
   const { kind } = props;
   const form = useFormFactor();
+  const shared = useApp((s) => sharesWatchTab(visibleTabs(s.prefs.start.tabOrder, s.prefs.start.hiddenTabs))) && form === 'phone';
+  useEffect(() => {
+    if (shared) writeLocal(WATCH_KEY, kind === 'series' ? 'series' : null);
+  }, [shared, kind]);
   const rules = useApp((s) => s.hideRules);
   const version = useApp((s) => s.catalogVersion);
   const favIds = useApp((s) => s.favorites.filter((f) => f.kind === kind).sort((a, b) => b.addedAt - a.addedAt).map((f) => f.id).join(','));
@@ -105,7 +110,22 @@ export function VodBrowse(props: { kind: Kind; title: string; continueRow: React
   return (
     <div>
       <div className="page-head">
-        <h1 className="h1">{props.title}</h1>
+        {shared ? (
+          /* phones: Movies and Series are one tab, and the title switches between them */
+          <>
+            <h1 className="sr-only">{props.title}</h1>
+            <nav className="h1 watch-switch" aria-label="Watch">
+              <Link to="/movies" aria-current={kind === 'movie' ? 'page' : undefined}>
+                Movies
+              </Link>
+              <Link to="/series" aria-current={kind === 'series' ? 'page' : undefined}>
+                Series
+              </Link>
+            </nav>
+          </>
+        ) : (
+          <h1 className="h1">{props.title}</h1>
+        )}
         <div className="head-actions">
           {form === 'phone' ? (
             <Link to={`/swipe?kind=${kind}`} className="icon-btn" aria-label={`Swipe through ${NOUN[kind]}`}>

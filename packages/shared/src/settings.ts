@@ -88,14 +88,24 @@ export type LiveStreamMode = (typeof LIVE_STREAM_CHOICES)[number];
 export const CONTROLS_HIDE_CHOICES = [1, 2, 3, 5, 8] as const;
 export type ControlsHideSeconds = (typeof CONTROLS_HIDE_CHOICES)[number];
 
+/**
+ * The second typeface, for titles, section heads and the clock (phones). 'plain' keeps the UI font.
+ * The web app maps each id to a font family (theme.ts HEADLINE_FONTS).
+ */
+export const HEADLINE_FONT_CHOICES = ['bricolage', 'grotesk', 'serif', 'mono', 'plain'] as const;
+export type HeadlineFontId = (typeof HEADLINE_FONT_CHOICES)[number];
+
 export interface Preferences {
   appearance: {
     accent: AccentId;
+    headlineFont: HeadlineFontId;
     theme: 'dark' | 'black' | 'dim';
     textSize: 'small' | 'medium' | 'large' | 'xlarge';
     density: 'comfortable' | 'compact';
     showArtwork: boolean;
     animations: 'full' | 'reduced' | 'off';
+    /** Phones: false keeps the app upright and only lets the player turn sideways (like the YouTube app) */
+    rotateApp: boolean;
   };
   live: {
     /** Simple = channel list with now/next; Extended = EPG guide grid */
@@ -182,11 +192,13 @@ export interface Preferences {
 export const DEFAULT_PREFERENCES: Preferences = {
   appearance: {
     accent: 'amber',
+    headlineFont: 'bricolage',
     theme: 'dark',
     textSize: 'medium',
     density: 'comfortable',
     showArtwork: true,
     animations: 'full',
+    rotateApp: false,
   },
   live: {
     layoutPhone: 'simple',
@@ -269,6 +281,7 @@ export function mergePreferences(partial: unknown): Preferences {
   if (!LIVE_BUFFER_CHOICES.includes(prefs.player.liveBuffer)) prefs.player.liveBuffer = DEFAULT_PREFERENCES.player.liveBuffer;
   if (!LIVE_STREAM_CHOICES.includes(prefs.player.liveStream)) prefs.player.liveStream = DEFAULT_PREFERENCES.player.liveStream;
   if (!CONTROLS_HIDE_CHOICES.includes(prefs.player.controlsHide)) prefs.player.controlsHide = DEFAULT_PREFERENCES.player.controlsHide;
+  if (!HEADLINE_FONT_CHOICES.includes(prefs.appearance.headlineFont)) prefs.appearance.headlineFont = DEFAULT_PREFERENCES.appearance.headlineFont;
   const pinned = prefs.categories.pinned;
   prefs.categories.pinned = Array.isArray(pinned) ? [...new Set(pinned.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 200) : [];
   return prefs;

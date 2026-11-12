@@ -1,0 +1,186 @@
+/*
+ * Phone polish (mobile browsers and the installed PWA). Every rule here is scoped to
+ * html[data-form="phone"], so the desktop, tablet and TV layouts are untouched. The extra `html`
+ * keeps these ahead of the same selectors in the lazily loaded screen styles.
+ *
+ * Rhythm on phones: one screen gutter (--gutter), section gaps of 1.75rem, 0.75rem inside cards,
+ * touch targets of at least 2.75rem (44 px), and three text levels: page title, section title,
+ * secondary text in --muted.
+ */
+
+/* ---------- foundations ---------- */
+html[data-form="phone"] {
+  /* --gutter stays 1.25rem (global.css): the virtualized poster grid in Vod.tsx measures with it */
+  --tabbar-own: 4rem; --nowbar-h: 0rem; --tabbar-h: calc(var(--tabbar-own) + var(--nowbar-h)); --section-gap: 1.75rem;
+  --head-top: 2.25rem;
+}
+/* landscape: the notch and the rounded corners are at the sides */
+html[data-form="phone"] .main { padding-left: var(--safe-l); padding-right: var(--safe-r); }
+
+/* ---------- page heads: the same distance from the status bar on every tab ---------- */
+html[data-form="phone"] .page-head { padding-top: var(--head-top); min-height: calc(var(--head-top) + 3.5rem); }
+html[data-form="phone"] .h1 { line-height: 1.1; }
+/* Live TV is a full-height page without the main padding: give it the status bar inset itself */
+html[data-form="phone"] .live-top { padding-top: calc(0.75rem + var(--safe-t)); padding-left: var(--safe-l); padding-right: var(--safe-r); }
+html[data-form="phone"] .page-head--tools .head-tools { flex-wrap: wrap; row-gap: 0.5rem; }
+html[data-form="phone"] .page-head--tools .head-actions { margin-left: auto; }
+
+/* Home: date and actions on the first line, the greeting on its own line underneath */
+html[data-form="phone"] .home .page-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 0.75rem; row-gap: 0.25rem; }
+html[data-form="phone"] .home-hello { display: contents; }
+html[data-form="phone"] .home-clock { grid-row: 1; grid-column: 1; min-width: 0; }
+html[data-form="phone"] .home-greet { grid-row: 2; grid-column: 1 / -1; }
+html[data-form="phone"] .home .page-head > .head-actions { grid-row: 1; grid-column: 2; }
+
+/* ---------- section titles: a clear second level under the page title ---------- */
+html[data-form="phone"] .row-title { margin-top: var(--section-gap); align-items: center; font-size: 1.125rem; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+html[data-form="phone"] .row-title a,
+html[data-form="phone"] .row-title button { display: inline-flex; align-items: center; min-height: 2.75rem; margin: -0.75rem 0; padding: 0 0 0 0.75rem; font-size: 0.875rem; }
+html[data-form="phone"] .home-sec:first-of-type .row-title { margin-top: var(--section-gap); }
+
+/* ---------- touch targets (44 px) without changing what you see ---------- */
+html[data-form="phone"] .link-btn { min-height: 2.75rem; display: inline-flex; align-items: center; }
+html[data-form="phone"] .back-link { min-height: 2.75rem; margin-top: 0.25rem; margin-bottom: 0.5rem; padding: 0 0.75rem 0 0; font-size: 0.9375rem; }
+html[data-form="phone"] .back-link .ico { width: 1.125rem; height: 1.125rem; }
+html[data-form="phone"] .toggle::before { content: ''; position: absolute; inset: -0.5rem -0.25rem; }
+html[data-form="phone"] .seg button { min-height: 2.25rem; }
+html[data-form="phone"] .seg.lg button { min-height: 2.5rem; }
+html[data-form="phone"] .btn { height: 2.75rem; }
+html[data-form="phone"] .btn-lg { height: 3.125rem; }
+
+/* ---------- detail pages (movie, series): one wide primary action, the rest in an even grid ---------- */
+html[data-form="phone"] .detail .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: 0.625rem; }
+html[data-form="phone"] .detail .actions > .btn-primary { grid-column: 1 / -1; }
+html[data-form="phone"] .detail .actions > .btn { width: 100%; min-width: 0; padding: 0 0.875rem; font-size: 0.9375rem; }
+html[data-form="phone"] .detail .actions > .btn-primary { font-size: 1rem; }
+html[data-form="phone"] .detail-plot { font-size: 0.9375rem; }
+
+/* ---------- tab bar ---------- */
+html[data-form="phone"] .tabbar { padding-left: calc(0.5rem + var(--safe-l)); padding-right: calc(0.5rem + var(--safe-r)); background: color-mix(in srgb, var(--bg) 92%, transparent); -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4); }
+html[data-form="phone"] .tab { transition: color var(--dur); }
+html[data-form="phone"] .tab:active { color: var(--text-2); }
+html[data-form="phone"] .tab[aria-current="page"] { font-weight: 700; }
+/* while typing, the keyboard owns the bottom of the screen */
+html[data-form="phone"][data-kb="open"] .tabbar { display: none; }
+
+/* ---------- sheets and dialogs: above the keyboard, scroll inside, never under the status bar ---------- */
+html[data-form="phone"] .sheet-backdrop { padding: calc(var(--safe-t) + 0.5rem) var(--safe-r) var(--kb, 0px) var(--safe-l); }
+html[data-form="phone"] .sheet { max-height: min(85dvh, calc(100dvh - var(--kb, 0px) - var(--safe-t) - 0.5rem)); padding: 1rem var(--gutter) calc(1rem + var(--safe-b)); overscroll-behavior: contain; }
+html[data-form="phone"][data-kb="open"] .sheet { padding-bottom: 1rem; }
+html[data-form="phone"] .sheet-list { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+html[data-form="phone"] .sheet-row .icon-btn { width: 2.75rem; height: 2.75rem; }
+html[data-form="phone"] .sheet-item { padding: 0.75rem; }
+html[data-form="phone"] .sheet:focus { outline: none; }
+html[data-form="phone"] .card-menu button { min-height: 2.75rem; }
+
+/* ---------- landscape phones ---------- */
+@media (orientation: landscape) {
+  /*
+   * The tabs become a rail down the left side, where the notch usually is, instead of a bar
+   * along the bottom: a sideways phone is short, and the content keeps all of its height.
+   * --rail-x is the room the rail takes, safe area included.
+   */
+  html[data-form="phone"] { --tabbar-own: 0rem; --rail-w: 4.75rem; --rail-x: calc(var(--rail-w) + var(--safe-l)); --head-top: 1rem; }
+  html[data-form="phone"] .tabbar {
+    top: 0; right: auto; width: var(--rail-x); height: auto; flex-direction: column; justify-content: center; gap: 0.25rem;
+    padding: calc(0.5rem + var(--safe-t)) 0.375rem calc(0.5rem + var(--safe-b)) calc(0.375rem + var(--safe-l));
+    border-top: 0; border-right: 1px solid var(--line); background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  html[data-form="phone"][data-kb="open"] .tabbar { display: flex; }
+  html[data-form="phone"] .tab { flex: 0 1 3.75rem; min-height: 2.75rem; gap: 0.25rem; font-size: 0.6875rem; }
+  /* the current tab: a pill behind its icon */
+  html[data-form="phone"] .tab .ico { width: 1.25rem; height: 1.25rem; padding: 0.25rem 0.875rem; border-radius: 1rem; box-sizing: content-box; transition: background var(--dur); }
+  html[data-form="phone"] .tab[aria-current="page"] .ico { background: var(--accent-tint); }
+  html[data-form="phone"] .main,
+  html[data-form="phone"] .main.full { padding-left: var(--rail-x); }
+  html[data-form="phone"] .live-top { padding-left: 0; }
+  html[data-form="phone"] .page-head { min-height: 0; }
+  /* the video fills the screen; the details are a scroll away */
+  html[data-form="phone"] .player:not([data-mode="mini"]):not([data-mode="overlay"]) .pl-stage { aspect-ratio: auto; height: 100dvh; margin-top: 0; }
+  html[data-form="phone"] .player[data-bar]:not([data-theater]):not([data-mode="mini"]):not([data-mode="overlay"]) .pl-stage { height: 100dvh; }
+  html[data-form="phone"] .player[data-bar] .pl-bar { padding-bottom: calc(0.25rem + var(--safe-b)); padding-left: calc(0.5rem + var(--safe-l)); padding-right: calc(0.5rem + var(--safe-r)); }
+  html[data-form="phone"] .pl-top { padding-right: calc(0.75rem + var(--safe-r)); }
+  html[data-form="phone"] .fav-bar .seg { max-width: 30rem; }
+  html[data-form="phone"] .home-hero { grid-template-columns: minmax(0, 20rem) minmax(0, 1fr); }
+  html[data-form="phone"] .detail { grid-template-columns: 9rem minmax(0, 1fr); gap: 1.5rem; }
+  html[data-form="phone"] .detail .poster-art,
+  html[data-form="phone"] .detail-poster { max-width: none; }
+  html[data-form="phone"] .poster-grid { grid-template-columns: repeat(auto-fill, minmax(var(--poster-w), 1fr)); }
+}
+
+/* Swipe: the card height leaves room for the head and filters above (2.25rem filter row, up from 2rem) */
+html[data-form="phone"] .swipe-screen { --card-h: calc(100dvh - var(--tabbar-h) - var(--safe-b) - var(--safe-t) - 17.75rem); }
+
+/* Page head actions (Search, profile, Customize, New list): plain icons on the page, no filled
+   circles, so the title row stays light. The 44 px hit area is kept. */
+html[data-form="phone"] .head-actions { gap: 0.125rem; margin-right: -0.625rem; }
+html[data-form="phone"] .head-actions .icon-btn { background: transparent; color: var(--text-2); }
+html[data-form="phone"] .head-actions .icon-btn:active { background: var(--surface); }
+html[data-form="phone"] .head-actions .icon-btn.on { color: var(--accent); }
+html[data-form="phone"] .head-actions .icon-btn .ico { width: 1.375rem; height: 1.375rem; }
+html[data-form="phone"] .head-profile { margin: 0; padding: 0.375rem; }
+html[data-form="phone"] .head-profile .pic { width: 2rem; height: 2rem; border-radius: 0.625rem; }
+html[data-form="phone"] .home .page-head { row-gap: 0.5rem; }
+/* the recap section is already inset by the gutter; its title shouldn't be inset twice */
+html[data-form="phone"] .home-sec-recap .row-title { margin-left: 0; margin-right: 0; }
+
+/*
+ * The now bar: on phones the mini player is a strip docked on the tab bar instead of a picture
+ * in a corner (player/PlayerHost.tsx sets html[data-nowbar] while it shows). --tabbar-h is the
+ * room the bottom chrome takes, so everything that clears the tab bar clears the bar as well.
+ */
+html[data-form="phone"][data-nowbar] { --nowbar-h: 3.5rem; }
+html[data-form="phone"] .tabbar { height: calc(var(--tabbar-own) + var(--safe-b)); }
+/* the page must not show through beside the bar's rounded top */
+html[data-form="phone"][data-nowbar] .tabbar::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--nowbar-h); background: var(--bg); }
+html[data-form="phone"] .mini-frame[data-dock="bar"] {
+  left: calc(0.5rem + var(--safe-l)); right: calc(0.5rem + var(--safe-r)); top: auto; bottom: calc(var(--tabbar-own) + var(--safe-b));
+  width: auto; height: 3.5rem; aspect-ratio: auto; border-radius: 1rem 1rem 0 0; background: var(--surface-2); box-shadow: none; animation: nowbar-in var(--dur) ease-out;
+}
+@keyframes nowbar-in { from { opacity: 0; transform: translateY(0.5rem); } }
+html[data-form="phone"][data-kb="open"] .mini-frame[data-dock="bar"] { visibility: hidden; }
+html[data-form="phone"] .mini-frame[data-dock="bar"] .player[data-mode="mini"],
+html[data-form="phone"] .mini-frame[data-dock="bar"] .player[data-mode="mini"] .pl-stage { background: transparent; }
+/* the picture is a thumbnail at the start of the bar */
+html[data-form="phone"] .mini-frame[data-dock="bar"] .pl-video { inset: 50% auto auto 0.625rem; width: 4rem; height: 2.25rem; margin-top: -1.125rem; border-radius: 0.5rem; object-fit: cover; }
+html[data-form="phone"] .mini-frame[data-dock="bar"] .pl-loading { left: 1rem; right: 1rem; top: auto; bottom: 0; height: 2px; }
+html[data-form="phone"] .now-bar { flex-direction: row; align-items: center; justify-content: flex-start; gap: 0; padding: 0 0.25rem 0 5.25rem; background: none; color: var(--text); }
+html[data-form="phone"] .now-open { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; padding: 0 0.5rem 0 0.625rem; text-align: left; }
+html[data-form="phone"] .now-bar .mini-title { font-size: 0.875rem; }
+html[data-form="phone"] .now-bar .mini-sub { font-size: 0.75rem; color: var(--muted); }
+html[data-form="phone"] .now-bar .mini-live.on { color: var(--text); }
+html[data-form="phone"] .now-bar .mini-btn { width: 2.5rem; height: 2.75rem; border-radius: 0.75rem; color: var(--text-2); }
+html[data-form="phone"] .now-bar .mini-btn:active { background: var(--track); }
+html[data-form="phone"] .now-bar .mini-btn .ico { width: 1.25rem; height: 1.25rem; }
+html[data-form="phone"] .now-bar .mini-progress { position: absolute; left: 1rem; right: 1rem; bottom: 0; height: 2px; background: var(--border); }
+/* narrow phones: channel up and down stay in the player */
+@media (max-width: 374px) { html[data-form="phone"] .now-zap { display: none; } }
+@media (orientation: landscape) {
+  /* the now bar is the foot of the content column, beside the rail; its border fills the home indicator's strip */
+  html[data-form="phone"][data-nowbar] { --nowbar-h: 3.25rem; }
+  html[data-form="phone"][data-nowbar] .tabbar::before { display: none; }
+  /* the rail runs the full height (the rule above sizes the portrait bar) */
+  html[data-form="phone"] .tabbar { height: auto; }
+  html[data-form="phone"] .mini-frame[data-dock="bar"] {
+    left: calc(var(--rail-x) + 0.75rem); right: calc(0.75rem + var(--safe-r)); bottom: 0;
+    height: calc(var(--nowbar-h) + var(--safe-b)); border-bottom: var(--safe-b) solid var(--surface-2); box-sizing: border-box;
+  }
+}
+
+/* ---------- held sideways: only the player turns (components/Upright.tsx) ---------- */
+html[data-form="phone"] .upright {
+  position: fixed; inset: 0; z-index: 95; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.625rem;
+  padding: calc(1rem + var(--safe-t)) calc(2rem + var(--safe-r)) calc(1rem + var(--safe-b)) calc(2rem + var(--safe-l));
+  background: var(--bg); text-align: center; animation: upright-in var(--dur) ease-out;
+}
+html[data-form="phone"] .upright-phone { width: 4rem; height: 4rem; color: var(--text); margin-bottom: 0.25rem; }
+html[data-form="phone"] .upright-turn { transform-box: view-box; transform-origin: 24px 24px; animation: upright-turn 2.8s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+html[data-form="phone"] .upright-title { margin: 0; font-family: var(--font-display); letter-spacing: var(--display-tracking, 0); font-size: 1.5rem; line-height: 1.15; font-weight: 700; }
+html[data-form="phone"] .upright-text { margin: 0; max-width: 26rem; color: var(--muted); font-size: 0.875rem; line-height: 1.45; }
+html[data-form="phone"] .upright .btn { margin-top: 0.75rem; height: 2.75rem; padding: 0 1.25rem; }
+@keyframes upright-in { from { opacity: 0; } }
+/* the phone starts sideways, turns upright, rests, and goes back */
+@keyframes upright-turn { 0%, 12% { transform: rotate(-90deg); } 45%, 88% { transform: rotate(0deg); } 100% { transform: rotate(-90deg); } }
+@media (prefers-reduced-motion: reduce) {
+  html[data-form="phone"] .upright-turn { animation: none; }
+}

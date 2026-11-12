@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { DEFAULT_PREFERENCES, mergePreferences, normalizeTabOrder } from '@anycast/shared';
-import { visibleTabs } from './tabs';
+import { phoneTabs, visibleTabs, watchMatches } from './tabs';
 
 const DEFAULT = ['home', 'search', 'live', 'movies', 'series', 'library'];
 
@@ -70,5 +70,24 @@ describe('Home', () => {
     expect(p.home.hiddenSections).toEqual(['favorites', 'watchLater']);
     expect(p.home.rowLimit).toBe(12);
     expect(mergePreferences({}).home).toEqual(DEFAULT_PREFERENCES.home);
+  });
+});
+
+describe('phone tab bar', () => {
+  test('Movies and Series become Watch, where the first of them was; Search and Settings are not tabs', () => {
+    expect(phoneTabs(['home', 'search', 'live', 'movies', 'series', 'library', 'settings'])).toEqual(['home', 'live', 'watch', 'library']);
+    expect(phoneTabs(['series', 'home', 'movies', 'live'])).toEqual(['watch', 'home', 'live']);
+  });
+
+  test('a lone Movies or Series tab stays as it is', () => {
+    expect(phoneTabs(['home', 'live', 'movies', 'library', 'settings'])).toEqual(['home', 'live', 'movies', 'library']);
+    expect(phoneTabs(['live', 'series'])).toEqual(['live', 'series']);
+  });
+
+  test('Watch is current on movie and series pages', () => {
+    expect(watchMatches('/movies')).toBe(true);
+    expect(watchMatches('/series/s1')).toBe(true);
+    expect(watchMatches('/live')).toBe(false);
+    expect(watchMatches('/moviesque')).toBe(false);
   });
 });

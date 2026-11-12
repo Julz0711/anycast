@@ -20,7 +20,8 @@ test('home: continue watching, jump back in, up next, favorites and watch later;
   await expect(section('Continue watching').getByRole('link', { name: new RegExp(fx.movie.name) })).toBeVisible();
   await expect(section('Jump back in').getByRole('button', { name: new RegExp(`^${fx.noGuideChannel.name}`) })).toBeVisible();
   await expect(section('Up next').getByRole('link', { name: new RegExp(`^${fx.series.name}, Next · S\\d+ · E\\d+`) })).toBeVisible();
-  await expect(section('Favorite channels').getByRole('button', { name: new RegExp(`^\\d+ ${fx.archiveChannel.name}`) })).toBeVisible();
+  // favorite channels are the "On now" timeline (Customize still lists them as Favorite channels)
+  await expect(section('On now').getByRole('button', { name: new RegExp(`^\\d+ ${fx.archiveChannel.name}`) })).toBeVisible();
   await expect(section('Watch Later').getByRole('link', { name: new RegExp(`^${fx.hlsMovie.name}`) })).toBeVisible();
   // the pick up card shows the newest thing: the channel, watched after the progress was saved
   await expect(section('Pick up where you left off').getByRole('heading', { name: fx.noGuideChannel.name })).toBeVisible();
@@ -28,7 +29,7 @@ test('home: continue watching, jump back in, up next, favorites and watch later;
   // customize: hide Favorite channels and move Watch Later to the top; it syncs to the profile
   await page.getByRole('button', { name: 'Customize' }).click();
   await page.getByRole('switch', { name: 'Show Favorite channels' }).click();
-  await expect(section('Favorite channels')).toHaveCount(0);
+  await expect(section('On now')).toHaveCount(0);
   for (let i = 0; i < 6; i++) await page.getByRole('button', { name: 'Move Watch Later up' }).click();
   await expect(page.getByRole('button', { name: 'Move Watch Later up' })).toBeDisabled();
   await expect

@@ -19,3 +19,21 @@ export function visibleTabs(order: TabId[], hidden: TabId[]): TabId[] {
 /** Library holds Favorites and Lists: its tab is current on their pages too. */
 export const tabMatches = (id: TabId | 'settings', pathname: string) =>
   id === 'library' ? /^\/(library|favorites|lists)(\/|$)/.test(pathname) : pathname === TABS[id].path || pathname.startsWith(`${TABS[id].path}/`);
+
+/**
+ * Phones: Movies and Series share one tab, Watch, when both are shown (four places fit a thumb
+ * better than five). It reopens whichever of the two was used last on this device; the big
+ * Movies | Series title on those screens switches between them.
+ */
+export const WATCH_KEY = 'anycast.watchTab';
+export type PhoneTab = Exclude<TabId, 'search'> | 'watch';
+export const sharesWatchTab = (tabs: readonly (TabId | 'settings')[]) => tabs.includes('movies') && tabs.includes('series');
+
+export function phoneTabs(tabs: readonly (TabId | 'settings')[]): PhoneTab[] {
+  const own = tabs.filter((id): id is Exclude<TabId, 'search'> => id !== 'settings' && id !== 'search');
+  if (!sharesWatchTab(own)) return own;
+  const first = own.find((id) => id === 'movies' || id === 'series');
+  return own.flatMap<PhoneTab>((id) => (id === first ? ['watch'] : id === 'movies' || id === 'series' ? [] : [id]));
+}
+
+export const watchMatches = (pathname: string) => /^\/(movies|series)(\/|$)/.test(pathname);
