@@ -22,6 +22,7 @@ import { HOME_SECTIONS, HomeEditor } from '../components/HomeEditor';
 import { prefetchPlayer } from '../player/prefetch';
 import { NewEpisodeCards, useNewEpisodes } from '../components/NewEpisodes';
 import { PhoneHeadActions } from '../components/PageHead';
+import { OnNow } from '../components/OnNow';
 import '../theme/home.css';
 import '../theme/recap.css';
 
@@ -32,10 +33,11 @@ type ContItem = { kind: 'movie'; m: ContMovie } | { kind: 'episode'; e: ContEpis
 const epLabel = (e: Episode) => `S${e.season} · E${e.episode}`;
 const updated = (x: ContItem) => (x.kind === 'movie' ? x.m.progress.updatedAt : x.e.progress.updatedAt);
 
-function greeting(now: number) {
+const dayPart = (now: number) => {
   const h = new Date(now).getHours();
-  return h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-}
+  return h < 5 ? 'night' : h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening';
+};
+const greeting = (now: number) => `Good ${dayPart(now)}`;
 
 export function HomeScreen() {
   const form = useFormFactor();
@@ -288,18 +290,20 @@ export function HomeScreen() {
       case 'favorites':
         if (!favKey || (favs.data && favRows.length === 0)) return null;
         return (
-          <Section key={id} id={id} title={title} action={seeAll(favRows.length, '/favorites/live') ?? <Link to="/favorites/live">Favorites</Link>}>
+          <Section key={id} id={id} title={form === 'tv' ? title : 'On now'} action={seeAll(favRows.length, '/favorites/live') ?? <Link to="/favorites/live">Favorites</Link>}>
             {!favs.data ? (
               <div className="fav-live home-favs" aria-hidden="true">
                 {Array.from({ length: Math.min(4, favKey.split(',').length) }, (_, i) => (
-                  <Skeleton key={i} h="4.5rem" r="0.875rem" />
+                  <Skeleton key={i} h={form === 'tv' ? '4.5rem' : '3.25rem'} r="0.875rem" />
                 ))}
               </div>
+            ) : form !== 'tv' ? (
+              <OnNow rows={favRows.slice(0, limit)} now={now} wide={form === 'large'} onOpen={(cid) => openChannel(cid, favRows)} />
             ) : (
               <ul className="fav-live home-favs" aria-label="Favorite channels">
                 {favRows.slice(0, limit).map((ch) => (
                   <li key={ch.id} className="fav-live-item" data-nav-row={`home-fav-${ch.id}`}>
-                    <ChannelRow ch={ch} now={now} onOpen={(cid) => openChannel(cid, favRows)} showNext={form !== 'phone'} noFavMark />
+                    <ChannelRow ch={ch} now={now} onOpen={(cid) => openChannel(cid, favRows)} showNext noFavMark />
                   </li>
                 ))}
               </ul>
@@ -342,15 +346,28 @@ export function HomeScreen() {
   return (
     <div className="home">
       <div className="page-head">
-        <div className="home-hello">
-          <div className="label tabnum">
-            {new Date(now).toLocaleDateString(undefined, { weekday: form === 'phone' ? 'short' : 'long' })} · {fmtClock(now)}
+        {form === 'tv' ? (
+          <div className="home-hello">
+            <div className="label tabnum">
+              {new Date(now).toLocaleDateString(undefined, { weekday: 'long' })} · {fmtClock(now)}
+            </div>
+            <h1 className="h1">
+              {greeting(now)}
+              {name ? `, ${name}` : ''}
+            </h1>
           </div>
-          <h1 className="h1">
-            {greeting(now)}
-            {name ? `, ${name}` : ''}
-          </h1>
-        </div>
+        ) : (
+          /* Signal: the time is the headline, the greeting a line under it */
+          <div className="home-hello home-signal">
+            <p className="home-clock">
+              <time dateTime={new Date(now).toISOString()}>{fmtClock(now)}</time>
+            </p>
+            <h1 className="home-greet">
+              {new Date(now).toLocaleDateString(undefined, { weekday: 'long' })} {dayPart(now)}
+              {name ? `, ${name}` : ''}
+            </h1>
+          </div>
+        )}
         <PhoneHeadActions profile>
           {form === 'phone' ? (
             <button type="button" className={`icon-btn${editing ? ' on' : ''}`} aria-expanded={editing} aria-label={editing ? 'Done' : 'Customize'} title={editing ? 'Done' : 'Customize Home'} onClick={() => setEditing((v) => !v)}>

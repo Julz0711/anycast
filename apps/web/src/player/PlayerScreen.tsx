@@ -32,7 +32,7 @@ import { RewindTip } from './RewindTip';
 import { useVolume, VolumeControl, VOLUME_STEP } from './volume';
 import { useVariants, useVersionFallback, VersionsMenu, versionLabel } from './variants';
 import { IconFullscreenExit, IconNext, IconSkip } from './barIcons';
-import { IconBack, IconClose, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock, IconTheater, IconResize, IconShrink } from '../components/Icons';
+import { IconBack, IconClose, IconDown, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock, IconTheater, IconResize, IconShrink, IconUp } from '../components/Icons';
 import { MINI_SIZE_LABEL, nextMiniSize, setMiniSize, useMiniSize } from './miniSize';
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
@@ -1546,6 +1546,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             paused={shownPaused}
             progress={!isLive && duration > 0 ? ct / duration : null}
             problem={moved ? 'Playback moved to another device' : error ? error.title : null}
+            dock={form === 'phone'}
+            onZap={isLive ? (dir) => void zap(dir) : null}
             onPlay={togglePlay}
             onExpand={expand}
             onClose={() => {
@@ -1734,7 +1736,10 @@ function Earlier(props: { timeline: TimelineInfo; now: number; position: number;
   );
 }
 
-/** The mini player's controls: what is playing, play/pause, expand, close. */
+/**
+ * The mini player's controls: what is playing, play/pause, expand, close. Docked (phones) it is
+ * the now bar: the title opens the player, and live TV gets channel up and down.
+ */
 function MiniBar(props: {
   title: string;
   sub: string | null;
@@ -1743,10 +1748,60 @@ function MiniBar(props: {
   paused: boolean;
   progress: number | null;
   problem: string | null;
+  dock: boolean;
+  onZap: ((dir: -1 | 1) => void) | null;
   onPlay: () => void;
   onExpand: () => void;
   onClose: () => void;
 }) {
+  return props.dock ? <NowBar {...props} /> : <MiniCorner {...props} />;
+}
+
+function NowBar(props: Parameters<typeof MiniBar>[0]) {
+  const what = props.problem ?? props.title;
+  // a channel without a guide is titled by its name: don't say it twice
+  const sub = props.sub !== props.title ? props.sub : null;
+  return (
+    <div className="mini-bar now-bar">
+      <button type="button" className="now-open" onClick={props.onExpand} aria-label={`Now playing: ${props.title}${sub ? `, ${sub}` : ''}. Open the player`}>
+        <span className="mini-title ellipsis" role={props.problem ? 'status' : undefined}>
+          {what}
+        </span>
+        {(sub || props.live) && (
+          <span className="mini-sub ellipsis">
+            {props.live && <span className={`mini-live${props.atLive ? ' on' : ''}`}>{props.atLive ? 'LIVE' : 'Rewound'}</span>}
+            {sub}
+          </span>
+        )}
+      </button>
+      {props.onZap && (
+        <>
+          <button type="button" className="mini-btn now-zap" onClick={() => props.onZap!(-1)} aria-label="Previous channel">
+            <IconUp />
+          </button>
+          <button type="button" className="mini-btn now-zap" onClick={() => props.onZap!(1)} aria-label="Next channel">
+            <IconDown />
+          </button>
+        </>
+      )}
+      {!props.problem && (
+        <button type="button" className="mini-btn" onClick={props.onPlay} aria-label={props.paused ? 'Play' : 'Pause'}>
+          {props.paused ? <IconPlay /> : <IconPause />}
+        </button>
+      )}
+      <button type="button" className="mini-btn" onClick={props.onClose} aria-label="Close player">
+        <IconClose />
+      </button>
+      {props.progress !== null && (
+        <div className="mini-progress" aria-hidden="true">
+          <i style={{ width: `${Math.min(100, Math.max(0, props.progress * 100)).toFixed(2)}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MiniCorner(props: Parameters<typeof MiniBar>[0]) {
   const size = useMiniSize();
   const next = nextMiniSize(size);
   return (

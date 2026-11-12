@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './theme/global.css';
 import './theme/mobile.css';
+import './theme/signal.css';
 import { App } from './App';
 import { configureClient } from './api/client';
 import { capsHeader, withLiveStream } from './player/caps';

@@ -1,0 +1,88 @@
+/*
+ * Signal: the look phones and desktops share. The TV keeps the plain one (html[data-form="tv"]),
+ * so every rule here is scoped away from it.
+ *
+ * Three things carry it: a second typeface for titles and the clock (--font-display, chosen in
+ * Settings > Appearance), the time as Home's headline, and "On now", favorite channels cut from
+ * one window of time with the now-line running through them.
+ */
+
+/* ---------- the headline font ---------- */
+html:not([data-form="tv"]) .h1,
+html:not([data-form="tv"]) .brand,
+html:not([data-form="tv"]) .row-title h2,
+html:not([data-form="tv"]) .home-hero-title,
+html:not([data-form="tv"]) .hero-title,
+html:not([data-form="tv"]) .pl-title,
+html:not([data-form="tv"]) .swipe-name,
+html:not([data-form="tv"]) .recap-teaser-title,
+html:not([data-form="tv"]) .empty h2 { font-family: var(--font-display, var(--font)); letter-spacing: var(--display-tracking, -0.02em); }
+
+/* section titles read as titles on desktop too (phones: theme/mobile.css) */
+html[data-form="large"] .row-title { align-items: baseline; margin-top: 2.25rem; font-size: 1.1875rem; font-weight: 700; color: var(--text); }
+html[data-form="large"] .home-sec:first-of-type .row-title { margin-top: 2rem; }
+
+/* ---------- Home: the time is the headline ---------- */
+/* phones lay the clock, the greeting and the head actions out on one grid (theme/mobile.css) */
+html[data-form="large"] .home-signal { display: flex; flex-direction: column; gap: 0.625rem; min-width: 0; }
+html:not([data-form="tv"]) .home-clock { margin: 0; font-family: var(--font-display, var(--font)); font-size: 3.75rem; font-weight: 600; letter-spacing: var(--display-tracking, -0.02em); line-height: 0.9; font-variant-numeric: tabular-nums; }
+html:not([data-form="tv"]) .home-greet { margin: 0; font-size: 1.0625rem; font-weight: 500; color: var(--muted); line-height: 1.3; }
+html[data-form="phone"] .home-clock { font-size: min(2.875rem, 14vw); }
+html[data-form="phone"] .home-greet { font-size: 0.9375rem; }
+
+/* ---------- On now ---------- */
+.on-now { --on-lead: 13rem; --on-gap: 0.875rem; --on-pad: 0px; --on-cut: 0.25rem; position: relative; padding-left: var(--on-pad); }
+html[data-form="phone"] .on-now { --on-lead: 2.5rem; --on-gap: 0.625rem; --on-pad: var(--gutter); }
+.on-ticks, .on-row { display: flex; align-items: center; gap: var(--on-gap); width: 100%; }
+.on-lead { flex: none; width: var(--on-lead); min-width: 0; display: flex; align-items: center; gap: 0.75rem; }
+.on-lead .logo-tile { flex: none; width: 2.5rem; height: 2.5rem; border-radius: 0.6875rem; font-size: 0.75rem; }
+.on-name { min-width: 0; font-size: 0.9375rem; font-weight: 600; color: var(--text-2); transition: color var(--dur); }
+html[data-form="phone"] .on-name { display: none; }
+.on-track { position: relative; flex: 1; min-width: 0; height: 2.75rem; overflow: hidden; }
+
+.on-ticks { height: 1.375rem; margin-bottom: 0.25rem; font-size: 0.6875rem; font-weight: 500; color: var(--muted); }
+.on-ticks .on-track { height: 100%; }
+.on-tick { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; padding-left: 0.375rem; border-left: 1px solid var(--track); white-space: nowrap; }
+
+.on-rows { position: relative; z-index: 1; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.375rem; }
+.on-row { height: 3rem; text-align: left; border-radius: 0.75rem; -webkit-tap-highlight-color: transparent; }
+.on-block { position: absolute; top: 0; bottom: 0; min-width: 0; padding-right: var(--on-cut); box-sizing: border-box; }
+.on-cell { height: 100%; min-width: 0; padding: 0 0.625rem; border-radius: 0.5rem; display: flex; flex-direction: column; justify-content: center; overflow: hidden; background: var(--surface); transition: background var(--dur), box-shadow var(--dur); }
+.on-title { font-size: 0.8125rem; font-weight: 600; line-height: 1.3; }
+.on-left { font-size: 0.6875rem; font-weight: 500; line-height: 1.3; color: var(--accent); }
+/* where the now-line crosses a cell (--on-done: how far through the block, 0 to 1) */
+.on-cell { --on-x: calc(var(--on-done, 0) * (100% + var(--on-cut))); }
+/* with room after the line, the text starts there and keeps clear of it */
+.on-cell.on-ahead { padding-left: calc(var(--on-x) + 0.5rem); }
+/* what is on: tinted, filled as far as it has run, with the now-line drawn where it stands */
+.on-cur .on-cell {
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--accent) 26%, var(--surface)) calc(var(--on-x) - 1px),
+    var(--accent) calc(var(--on-x) - 1px), var(--accent) calc(var(--on-x) + 1px),
+    color-mix(in srgb, var(--accent) 11%, var(--surface)) calc(var(--on-x) + 1px));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+/* a short block has the text across the line: only the fill marks where it stands */
+.on-cur .on-cell.on-cross { background: linear-gradient(to right, color-mix(in srgb, var(--accent) 26%, var(--surface)) var(--on-x), color-mix(in srgb, var(--accent) 11%, var(--surface)) var(--on-x)); }
+.on-next .on-title { font-weight: 500; color: var(--muted); }
+.on-none .on-cell { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+.on-none .on-title { color: var(--text-2); }
+.on-none .on-left { color: var(--muted); }
+@media (hover: hover) {
+  .on-row:hover .on-name { color: var(--text); }
+  .on-row:hover .on-next .on-cell { background: var(--surface-2); }
+  .on-row:hover .on-cur .on-cell { box-shadow: inset 0 0 0 1px var(--accent); }
+  .on-row:hover .on-none .on-cell { box-shadow: inset 0 0 0 1px var(--border); }
+}
+.on-row:active .on-cell { background-color: var(--surface-2); }
+/* the now-line: behind the rows, so it shows in the gaps and each tinted block redraws it */
+.on-line {
+  position: absolute; z-index: 0; top: 0.5rem; bottom: -0.375rem; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--accent); pointer-events: none;
+  left: calc(var(--on-pad) + var(--on-lead) + var(--on-gap) + (100% - var(--on-pad) - var(--on-lead) - var(--on-gap)) * var(--on-at));
+}
+.on-line::before { content: ''; position: absolute; top: -0.25rem; left: -0.1875rem; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--accent); }
+
+/* ---------- phones: Movies | Series as the title of the shared Watch tab ---------- */
+html[data-form="phone"] .watch-switch { display: flex; align-items: baseline; gap: 0.5em; min-width: 0; font-size: min(1.875rem, 7.2vw); }
+html[data-form="phone"] .watch-switch a { display: inline-flex; align-items: center; min-height: 2.75rem; color: color-mix(in srgb, var(--muted) 62%, var(--bg)); transition: color var(--dur); }
+html[data-form="phone"] .watch-switch a[aria-current="page"] { color: var(--text); }

@@ -11,7 +11,7 @@
 /* ---------- foundations ---------- */
 html[data-form="phone"] {
   /* --gutter stays 1.25rem (global.css): the virtualized poster grid in Vod.tsx measures with it */
-  --section-gap: 1.75rem;
+  --tabbar-own: 4rem; --nowbar-h: 0rem; --tabbar-h: calc(var(--tabbar-own) + var(--nowbar-h)); --section-gap: 1.75rem;
   --head-top: 2.25rem;
 }
 /* landscape: the notch and the rounded corners are at the sides */
@@ -28,8 +28,8 @@ html[data-form="phone"] .page-head--tools .head-actions { margin-left: auto; }
 /* Home: date and actions on the first line, the greeting on its own line underneath */
 html[data-form="phone"] .home .page-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 0.75rem; row-gap: 0.25rem; }
 html[data-form="phone"] .home-hello { display: contents; }
-html[data-form="phone"] .home-hello .label { grid-row: 1; grid-column: 1; margin: 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-html[data-form="phone"] .home-hello .h1 { grid-row: 2; grid-column: 1 / -1; }
+html[data-form="phone"] .home-clock { grid-row: 1; grid-column: 1; min-width: 0; }
+html[data-form="phone"] .home-greet { grid-row: 2; grid-column: 1 / -1; }
 html[data-form="phone"] .home .page-head > .head-actions { grid-row: 1; grid-column: 2; }
 
 /* ---------- section titles: a clear second level under the page title ---------- */
@@ -76,7 +76,7 @@ html[data-form="phone"] .card-menu button { min-height: 2.75rem; }
 /* ---------- landscape phones ---------- */
 @media (orientation: landscape) {
   /* a slimmer bar with icon and label side by side, so the content keeps its height */
-  html[data-form="phone"] { --tabbar-h: 3.25rem; --head-top: 1rem; }
+  html[data-form="phone"] { --tabbar-own: 3.25rem; --head-top: 1rem; }
   html[data-form="phone"] .tab { flex-direction: row; gap: 0.5rem; font-size: 0.8125rem; }
   html[data-form="phone"] .tab .ico { width: 1.25rem; height: 1.25rem; }
   html[data-form="phone"] .page-head { min-height: 0; }
@@ -108,3 +108,42 @@ html[data-form="phone"] .head-profile .pic { width: 2rem; height: 2rem; border-r
 html[data-form="phone"] .home .page-head { row-gap: 0.5rem; }
 /* the recap section is already inset by the gutter; its title shouldn't be inset twice */
 html[data-form="phone"] .home-sec-recap .row-title { margin-left: 0; margin-right: 0; }
+
+/*
+ * The now bar: on phones the mini player is a strip docked on the tab bar instead of a picture
+ * in a corner (player/PlayerHost.tsx sets html[data-nowbar] while it shows). --tabbar-h is the
+ * room the bottom chrome takes, so everything that clears the tab bar clears the bar as well.
+ */
+html[data-form="phone"][data-nowbar] { --nowbar-h: 3.5rem; }
+html[data-form="phone"] .tabbar { height: calc(var(--tabbar-own) + var(--safe-b)); }
+/* the page must not show through beside the bar's rounded top */
+html[data-form="phone"][data-nowbar] .tabbar::before { content: ''; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--nowbar-h); background: var(--bg); }
+html[data-form="phone"] .mini-frame[data-dock="bar"] {
+  left: calc(0.5rem + var(--safe-l)); right: calc(0.5rem + var(--safe-r)); top: auto; bottom: calc(var(--tabbar-own) + var(--safe-b));
+  width: auto; height: 3.5rem; aspect-ratio: auto; border-radius: 1rem 1rem 0 0; background: var(--surface-2); box-shadow: none; animation: nowbar-in var(--dur) ease-out;
+}
+@keyframes nowbar-in { from { opacity: 0; transform: translateY(0.5rem); } }
+html[data-form="phone"][data-kb="open"] .mini-frame[data-dock="bar"] { visibility: hidden; }
+html[data-form="phone"] .mini-frame[data-dock="bar"] .player[data-mode="mini"],
+html[data-form="phone"] .mini-frame[data-dock="bar"] .player[data-mode="mini"] .pl-stage { background: transparent; }
+/* the picture is a thumbnail at the start of the bar */
+html[data-form="phone"] .mini-frame[data-dock="bar"] .pl-video { inset: 50% auto auto 0.625rem; width: 4rem; height: 2.25rem; margin-top: -1.125rem; border-radius: 0.5rem; object-fit: cover; }
+html[data-form="phone"] .mini-frame[data-dock="bar"] .pl-loading { left: 1rem; right: 1rem; top: auto; bottom: 0; height: 2px; }
+html[data-form="phone"] .now-bar { flex-direction: row; align-items: center; justify-content: flex-start; gap: 0; padding: 0 0.25rem 0 5.25rem; background: none; color: var(--text); }
+html[data-form="phone"] .now-open { flex: 1; min-width: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; padding: 0 0.5rem 0 0.625rem; text-align: left; }
+html[data-form="phone"] .now-bar .mini-title { font-size: 0.875rem; }
+html[data-form="phone"] .now-bar .mini-sub { font-size: 0.75rem; color: var(--muted); }
+html[data-form="phone"] .now-bar .mini-live.on { color: var(--text); }
+html[data-form="phone"] .now-bar .mini-btn { width: 2.5rem; height: 2.75rem; border-radius: 0.75rem; color: var(--text-2); }
+html[data-form="phone"] .now-bar .mini-btn:active { background: var(--track); }
+html[data-form="phone"] .now-bar .mini-btn .ico { width: 1.25rem; height: 1.25rem; }
+html[data-form="phone"] .now-bar .mini-progress { position: absolute; left: 1rem; right: 1rem; bottom: 0; height: 2px; background: var(--border); }
+/* narrow phones: channel up and down stay in the player */
+@media (max-width: 374px) { html[data-form="phone"] .now-zap { display: none; } }
+@media (orientation: landscape) {
+  /* the now bar shares the tab bar's row: tabs on the left half, what is playing on the right */
+  html[data-form="phone"][data-nowbar] { --nowbar-h: 0rem; }
+  html[data-form="phone"][data-nowbar] .tabbar { padding-right: calc(50% + 0.25rem); }
+  html[data-form="phone"][data-nowbar] .tabbar::before { display: none; }
+  html[data-form="phone"] .mini-frame[data-dock="bar"] { left: 50%; bottom: calc(var(--safe-b) + 0.25rem); height: calc(var(--tabbar-own) - 0.5rem); border-radius: 0.75rem; }
+}

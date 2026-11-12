@@ -183,6 +183,19 @@
 /* phones: clear of the tab bar */
 [data-form="phone"] .mini-frame[data-corner^="b"] { bottom: calc(var(--tabbar-h) + var(--safe-b) + var(--mini-m)); }
 @keyframes mini-in { from { opacity: 0; transform: translateY(0.75rem) scale(0.96); } }
+/* resize: a grip on the corner that points into the screen (not on phones, where it is the now bar) */
+.mini-grip { position: absolute; z-index: 2; width: 1.5rem; height: 1.5rem; opacity: 0; touch-action: none; transition: opacity var(--dur); }
+.mini-grip::before { content: ''; position: absolute; width: 0.625rem; height: 0.625rem; border: solid #fff; filter: drop-shadow(0 0 2px rgba(0,0,0,0.7)); }
+.mini-frame[data-corner="br"] .mini-grip { top: 0; left: 0; cursor: nwse-resize; }
+.mini-frame[data-corner="bl"] .mini-grip { top: 0; right: 0; cursor: nesw-resize; }
+.mini-frame[data-corner="tr"] .mini-grip { bottom: 0; left: 0; cursor: nesw-resize; width: 1rem; height: 1rem; }
+.mini-frame[data-corner="tl"] .mini-grip { bottom: 0; right: 0; cursor: nwse-resize; width: 1rem; height: 1rem; }
+.mini-frame[data-corner="br"] .mini-grip::before { top: 0.375rem; left: 0.375rem; border-width: 2px 0 0 2px; border-top-left-radius: 0.375rem; }
+.mini-frame[data-corner="bl"] .mini-grip::before { top: 0.375rem; right: 0.375rem; border-width: 2px 2px 0 0; border-top-right-radius: 0.375rem; }
+.mini-frame[data-corner="tr"] .mini-grip::before { bottom: 0.25rem; left: 0.25rem; border-width: 0 0 2px 2px; border-bottom-left-radius: 0.375rem; }
+.mini-frame[data-corner="tl"] .mini-grip::before { bottom: 0.25rem; right: 0.25rem; border-width: 0 2px 2px 0; border-bottom-right-radius: 0.375rem; }
+.mini-frame:hover .mini-grip, .mini-grip:focus-visible, .mini-frame[data-dragging] .mini-grip { opacity: 0.9; }
+@media (hover: none) { .mini-grip { opacity: 0.7; } }
 
 .player[data-mode="mini"] { min-height: 0; height: 100%; background: #000; }
 .player[data-mode="mini"] .pl-stage { position: absolute; inset: 0; height: auto; min-height: 0; margin: 0; aspect-ratio: auto; }

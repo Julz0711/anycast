@@ -3,7 +3,7 @@
  * Every change applies immediately (optimistic) and syncs to the profile's other devices.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ACCENTS, ALL_TABS, DEFAULT_PREFERENCES, normalizeTabOrder, PROFILES_MAX, type AccentId, type HideRules, type MediaKind, type Preferences, type TabId } from '@anycast/shared';
+import { ACCENTS, ALL_TABS, DEFAULT_PREFERENCES, HEADLINE_FONT_CHOICES, normalizeTabOrder, PROFILES_MAX, type AccentId, type HideRules, type MediaKind, type Preferences, type TabId } from '@anycast/shared';
 import { useApp } from '../store/app';
 import { askOnLaunch, clearWatchHistory, logout, patchPrefs, refreshMe, saveHideRules, setAskOnLaunch, setDeviceOverride, setPref, toast } from '../store/actions';
 import { useNavigate } from 'react-router-dom';
@@ -30,6 +30,7 @@ import { BackupSection } from './Backup';
 import { CastSettings } from './CastSettings';
 import { resetSwipeDecks } from './Swipe';
 import '../theme/settings.css';
+import { HEADLINE_FONTS } from '../theme/theme';
 
 type P = Preferences;
 const opts = <T extends string | number>(...pairs: [T, string][]) => pairs.map(([value, label]) => ({ value, label }));
@@ -177,6 +178,18 @@ function WatchHistory({ prefs }: { prefs: P }) {
 function Appearance({ prefs, all }: { prefs: P; all?: boolean }) {
   const a = prefs.appearance;
   const device = useApp((s) => s.deviceOverride);
+  const form = useFormFactor();
+  // the font picker shows each name in its own typeface: fetch just those letters of each family
+  useEffect(() => {
+    if (form === 'tv') return;
+    const text = encodeURIComponent([...new Set('Aa' + HEADLINE_FONT_CHOICES.map((id) => HEADLINE_FONTS[id].name).join(''))].join(''));
+    const families = HEADLINE_FONT_CHOICES.map((id) => HEADLINE_FONTS[id].css2).filter(Boolean).map((f) => `family=${f}`).join('&');
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?${families}&text=${text}&display=swap`;
+    document.head.appendChild(link);
+    return () => link.remove();
+  }, [form]);
   return (
     <>
       <Row label="Accent color" hint="Used for progress, focus and the timeline.">
@@ -196,6 +209,27 @@ function Appearance({ prefs, all }: { prefs: P; all?: boolean }) {
           ))}
         </div>
       </Row>
+      {form !== 'tv' && (
+        <Row stack label="Headline font" hint="The second typeface, for titles and the clock.">
+          <div className="font-picks" role="radiogroup" aria-label="Headline font" data-nav-row="headline-font">
+            {HEADLINE_FONT_CHOICES.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={a.headlineFont === id}
+                aria-label={HEADLINE_FONTS[id].name}
+                className="font-pick"
+                style={{ fontFamily: `${HEADLINE_FONTS[id].family}, 'Inter Tight', sans-serif` }}
+                onClick={() => setPref('appearance', { headlineFont: id })}
+              >
+                <span aria-hidden="true">Aa</span>
+                {HEADLINE_FONTS[id].name}
+              </button>
+            ))}
+          </div>
+        </Row>
+      )}
       {all && (
         <>
           <Row label="Theme" hint="Black uses true black for OLED screens.">
@@ -330,6 +364,7 @@ const SUBTITLE_HINT: Record<P['player']['subtitlesDefault'], string> = {
 
 function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
   const p = prefs.player;
+  const form = useFormFactor();
   const isAdmin = useApp((s) => s.me?.user.isAdmin ?? false);
   return (
     <>
@@ -397,7 +432,7 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
           onChange={(v) => setPref('player', { controlsHide: v })}
         />
       </Row>
-      <Row label="Mini player" hint={p.miniPlayer ? 'Leaving the player keeps it playing in a corner while you browse. Drag it to any corner.' : 'Off: leaving the player stops playback.'}>
+      <Row label="Mini player" hint={p.miniPlayer ? (form === 'phone' ? 'Leaving the player keeps it playing in a bar above the tabs while you browse. Tap the bar to go back.' : form === 'tv' ? 'Leaving the player keeps it playing in a corner while you browse. Drag it to any corner.' : 'Leaving the player keeps it playing in a corner while you browse. Drag it to any corner, drag its grip to resize it.') : 'Off: leaving the player stops playback.'}>
         <Toggle label="Mini player" checked={p.miniPlayer} onChange={(v) => setPref('player', { miniPlayer: v })} />
       </Row>
       {all && (

@@ -5,7 +5,9 @@ import { useApp } from '../store/app';
 import { useFormFactor } from '../lib/hooks';
 import { isTypingTarget } from '../lib/misc';
 import { BrandMark } from '../components/Icons';
-import { TABS, tabMatches, visibleTabs } from './tabs';
+import { TABS, WATCH_KEY, phoneTabs, tabMatches, visibleTabs, watchMatches } from './tabs';
+import { readLocal } from '../lib/storage';
+import { IconMovie } from '../components/Icons';
 import { LockNowButton } from '../components/Locks';
 import { ProfileMenuButton } from '../profiles/ProfileMenu';
 
@@ -32,17 +34,27 @@ export function Shell() {
   }, [form, tabs, navigate]);
 
   const fullBleed = /^\/live\/?$/.test(loc.pathname);
-  const phoneTabs = tabs.filter((id) => id !== 'settings' && id !== 'search');
 
   if (form === 'phone') {
+    const bar = phoneTabs(tabs);
     return (
       <div className="app">
         <main className={`main${fullBleed ? ' full' : ''}`} id="main">
           <Outlet />
         </main>
         {/* Search is a button on each page, the profile and Settings sit at the top of Home and Library */}
-        <nav className={`tabbar${phoneTabs.length > 5 ? ' many' : ''}`} aria-label="Main">
-          {phoneTabs.map((id) => {
+        <nav className={`tabbar${bar.length > 5 ? ' many' : ''}`} aria-label="Main">
+          {bar.map((id) => {
+            if (id === 'watch') {
+              // Movies and Series in one place: back to the one used last
+              const on = watchMatches(loc.pathname);
+              return (
+                <Link key={id} to={on ? loc.pathname.match(/^\/[a-z]+/)![0] : readLocal(WATCH_KEY) === 'series' ? '/series' : '/movies'} className="tab" aria-current={on ? 'page' : undefined}>
+                  <IconMovie />
+                  <span>Watch</span>
+                </Link>
+              );
+            }
             const t = TABS[id];
             return (
               <Link key={id} to={t.path} className="tab" aria-current={tabMatches(id, loc.pathname) ? 'page' : undefined}>
