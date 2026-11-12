@@ -1,5 +1,5 @@
 /** Responsive shell: left rail on desktop/tablet/TV, bottom tab bar on phones. */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../store/app';
 import { useFormFactor } from '../lib/hooks';
@@ -10,6 +10,11 @@ import { readLocal } from '../lib/storage';
 import { IconMovie } from '../components/Icons';
 import { LockNowButton } from '../components/Locks';
 import { ProfileMenuButton } from '../profiles/ProfileMenu';
+import { UprightNotice } from '../components/Upright';
+import { isHandheld, lockOrientation, useSideways } from '../lib/orientation';
+import { useOpenPlayer } from '../player/nowPlaying';
+
+const HANDHELD = isHandheld();
 
 export function Shell() {
   const form = useFormFactor();
@@ -35,15 +40,37 @@ export function Shell() {
 
   const fullBleed = /^\/live\/?$/.test(loc.pathname);
 
+  // Phones stay upright like a video app; only the player (its own route, outside this shell) turns
+  const rotateApp = useApp((s) => s.prefs.appearance.rotateApp);
+  const upright = form === 'phone' && HANDHELD && !rotateApp;
+  const sideways = useSideways();
+  useEffect(() => {
+    if (!upright) return;
+    lockOrientation('portrait');
+    return () => lockOrientation(null);
+  }, [upright]);
+  const turnBack = upright && sideways;
+  // turning the phone while something plays in the now bar opens the player, as video apps do.
+  // Only on the turn itself: arriving here already sideways (Back from the player) shows the notice.
+  const openPlayer = useOpenPlayer();
+  const wasSideways = useRef(sideways);
+  useEffect(() => {
+    const turned = sideways && !wasSideways.current;
+    wasSideways.current = sideways;
+    if (turned && upright && openPlayer) openPlayer();
+  }, [sideways, upright, openPlayer]);
+  // what is under the notice is out of reach (React 18 has no inert prop of its own)
+  const behind = turnBack ? ({ inert: '', 'aria-hidden': true } as object) : {};
+
   if (form === 'phone') {
     const bar = phoneTabs(tabs);
     return (
       <div className="app">
-        <main className={`main${fullBleed ? ' full' : ''}`} id="main">
+        <main className={`main${fullBleed ? ' full' : ''}`} id="main" {...behind}>
           <Outlet />
         </main>
         {/* Search is a button on each page, the profile and Settings sit at the top of Home and Library */}
-        <nav className={`tabbar${bar.length > 5 ? ' many' : ''}`} aria-label="Main">
+        <nav className={`tabbar${bar.length > 5 ? ' many' : ''}`} aria-label="Main" {...behind}>
           {bar.map((id) => {
             if (id === 'watch') {
               // Movies and Series in one place: back to the one used last
@@ -65,6 +92,7 @@ export function Shell() {
           })}
         </nav>
         <LockNowButton className="lock-now-fab lock-now" label="Lock" />
+        {turnBack && <UprightNotice />}
       </div>
     );
   }

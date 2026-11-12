@@ -230,6 +230,12 @@ function Appearance({ prefs, all }: { prefs: P; all?: boolean }) {
           </div>
         </Row>
       )}
+      {/* in both modes: the screen asking to turn the phone upright points here */}
+      {form === 'phone' && (
+        <Row label="Turn with the phone" hint="Off: the app stays upright and only the player goes sideways, like a video app. On: the whole app turns.">
+          <Toggle label="Turn the whole app sideways" checked={a.rotateApp} onChange={(v) => setPref('appearance', { rotateApp: v })} />
+        </Row>
+      )}
       {all && (
         <>
           <Row label="Theme" hint="Black uses true black for OLED screens.">

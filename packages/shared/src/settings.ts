@@ -104,6 +104,8 @@ export interface Preferences {
     density: 'comfortable' | 'compact';
     showArtwork: boolean;
     animations: 'full' | 'reduced' | 'off';
+    /** Phones: false keeps the app upright and only lets the player turn sideways (like the YouTube app) */
+    rotateApp: boolean;
   };
   live: {
     /** Simple = channel list with now/next; Extended = EPG guide grid */
@@ -196,6 +198,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     density: 'comfortable',
     showArtwork: true,
     animations: 'full',
+    rotateApp: false,
   },
   live: {
     layoutPhone: 'simple',

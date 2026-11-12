@@ -166,7 +166,8 @@ test('phone: the mini player is a now bar on the tab bar; it zaps, and a tap or 
   await expect.poll(() => page.locator('#main').evaluate((m) => Math.round(m.getBoundingClientRect().bottom))).toBe(Math.round(tabs.y));
 });
 
-test('sideways phone: the tabs are a rail on the left, the now bar the foot of the content', async ({ profile }) => {
+test('sideways phone, whole app turning: the tabs are a rail on the left, the now bar the foot of the content', async ({ profile }) => {
+  // a desktop browser set to the phone layout: not a phone in the hand, so the app turns (as with Settings › Appearance › Turn with the phone)
   const page = await profile.device();
   await page.addInitScript(() => localStorage.setItem('anycast.device', 'phone'));
   await page.setViewportSize({ width: 844, height: 390 });
@@ -189,6 +190,52 @@ test('sideways phone: the tabs are a rail on the left, the now bar the foot of t
   if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: 'screenshots/mini-phone-landscape.png' });
   await bar.getByRole('button', { name: /^Now playing: / }).click();
   await expect(page).toHaveURL(new RegExp(`/play/live/${fx.archiveChannel.id}$`));
+});
+
+test('phone in the hand: the app stays upright, only the player goes sideways', async ({ profile }) => {
+  const page = await profile.device({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await page.goto(`/play/live/${fx.archiveChannel.id}`);
+  await expectPlaying(page);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(page.getByRole('region', { name: 'Now playing' })).toBeVisible();
+  const notice = page.getByRole('dialog', { name: 'Turn your phone upright' });
+  await expect(notice).toHaveCount(0);
+
+  // turning the phone while the now bar plays opens the player, sideways and filling the screen
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(page).toHaveURL(new RegExp(`/play/live/${fx.archiveChannel.id}$`));
+  await expect(notice).toHaveCount(0);
+  await expectPlaying(page);
+  await expect.poll(async () => (await page.locator('.pl-stage').boundingBox())!.width).toBe(844);
+
+  // back to the app while still sideways: the app asks to be held upright, and offers the player again
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page).toHaveURL(/\/live$/);
+  await expect(notice).toBeVisible();
+  await expect(page.locator('#main')).toHaveAttribute('inert', '');
+  if (process.env.E2E_SCREENSHOTS) await page.screenshot({ path: 'screenshots/upright-notice.png' });
+  await notice.getByRole('button', { name: 'Watch sideways' }).click();
+  await expect(page).toHaveURL(new RegExp(`/play/live/${fx.archiveChannel.id}$`));
+
+  // upright again: back to normal
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(notice).toHaveCount(0);
+  await expect(page.locator('#main')).not.toHaveAttribute('inert', '');
+
+  // with nothing playing, turning shows the notice with nothing to offer
+  await page.getByRole('region', { name: 'Now playing' }).getByRole('button', { name: 'Close player' }).click();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(notice).toBeVisible();
+  await expect(notice.getByRole('button')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/live$/);
+
+  // the viewer can let the whole app turn (Settings › Appearance)
+  expect((await profile.api.put('/api/preferences', { data: { appearance: { rotateApp: true } } })).ok()).toBe(true);
+  await page.reload();
+  await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+  await expect(notice).toHaveCount(0);
 });
 
 test('phone: Movies and Series share the Watch tab, which reopens the one used last', async ({ profile }) => {

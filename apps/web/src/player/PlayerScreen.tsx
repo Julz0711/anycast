@@ -44,9 +44,12 @@ import { CastButton } from './cast/CastButton';
 import { castConnected, castLoad, castPause, castPlay, castPlayPause, castSeek, castStopMedia, endChromecast, playerMounted, useChromecast } from './cast/chromecast';
 import { IconAirPlay, IconCast } from './cast/icons';
 import { castMediaFor, castUrl, unreachableFromTv } from './cast/media';
+import { isHandheld, lockOrientation, useSideways } from '../lib/orientation';
 import '../theme/player.css';
 import '../theme/cast.css';
 
+/** a phone in the hand: full screen turns it sideways */
+const HANDHELD = isHandheld();
 /** Within this of the live edge counts as live. */
 const LIVE_SLACK_MS = 6_000;
 /** how long a channel plays before it shows up in Home › Jump back in */
@@ -646,15 +649,37 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
 
   /* ---------------- fullscreen & chrome ---------------- */
   useEffect(() => {
-    const on = () => setFullscreen(!!document.fullscreenElement);
+    const on = () => {
+      setFullscreen(!!document.fullscreenElement);
+      // out of full screen the player turns freely again (when it was left for the app, the app holds its own lock)
+      if (!document.fullscreenElement && HANDHELD && location.pathname.startsWith('/play/')) lockOrientation(null);
+    };
     document.addEventListener('fullscreenchange', on);
     return () => document.removeEventListener('fullscreenchange', on);
   }, []);
+  // Phones: sideways the player already fills the screen; where the browser allows it without a
+  // tap, also go truly full screen (hides the status bar), and turning upright leaves it again
+  const sideways = useSideways();
+  const wasSideways = useRef(sideways);
+  useEffect(() => {
+    const turned = sideways !== wasSideways.current;
+    wasSideways.current = sideways;
+    if (!turned || !HANDHELD || mini) return;
+    if (sideways && !document.fullscreenElement) void rootRef.current?.requestFullscreen?.().catch(() => undefined);
+    else if (!sideways && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+  }, [sideways, mini]);
   const toggleFullscreen = useCallback(() => {
     const el = rootRef.current;
     const v = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
     if (document.fullscreenElement) void document.exitFullscreen();
-    else if (el?.requestFullscreen) void el.requestFullscreen().catch(() => v?.webkitEnterFullscreen?.());
+    else if (el?.requestFullscreen)
+      void el
+        .requestFullscreen()
+        // on a phone, full screen turns a wide picture sideways (where the browser can lock the screen)
+        .then(() => {
+          if (HANDHELD && (!v?.videoWidth || v.videoWidth > v.videoHeight)) lockOrientation('landscape');
+        })
+        .catch(() => v?.webkitEnterFullscreen?.());
     else v?.webkitEnterFullscreen?.();
   }, []);
 

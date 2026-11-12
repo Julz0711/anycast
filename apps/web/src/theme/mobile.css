@@ -166,3 +166,21 @@ html[data-form="phone"] .now-bar .mini-progress { position: absolute; left: 1rem
     height: calc(var(--nowbar-h) + var(--safe-b)); border-bottom: var(--safe-b) solid var(--surface-2); box-sizing: border-box;
   }
 }
+
+/* ---------- held sideways: only the player turns (components/Upright.tsx) ---------- */
+html[data-form="phone"] .upright {
+  position: fixed; inset: 0; z-index: 95; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.625rem;
+  padding: calc(1rem + var(--safe-t)) calc(2rem + var(--safe-r)) calc(1rem + var(--safe-b)) calc(2rem + var(--safe-l));
+  background: var(--bg); text-align: center; animation: upright-in var(--dur) ease-out;
+}
+html[data-form="phone"] .upright-phone { width: 4rem; height: 4rem; color: var(--text); margin-bottom: 0.25rem; }
+html[data-form="phone"] .upright-turn { transform-box: view-box; transform-origin: 24px 24px; animation: upright-turn 2.8s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+html[data-form="phone"] .upright-title { margin: 0; font-family: var(--font-display); letter-spacing: var(--display-tracking, 0); font-size: 1.5rem; line-height: 1.15; font-weight: 700; }
+html[data-form="phone"] .upright-text { margin: 0; max-width: 26rem; color: var(--muted); font-size: 0.875rem; line-height: 1.45; }
+html[data-form="phone"] .upright .btn { margin-top: 0.75rem; height: 2.75rem; padding: 0 1.25rem; }
+@keyframes upright-in { from { opacity: 0; } }
+/* the phone starts sideways, turns upright, rests, and goes back */
+@keyframes upright-turn { 0%, 12% { transform: rotate(-90deg); } 45%, 88% { transform: rotate(0deg); } 100% { transform: rotate(-90deg); } }
+@media (prefers-reduced-motion: reduce) {
+  html[data-form="phone"] .upright-turn { animation: none; }
+}

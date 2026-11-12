@@ -14,6 +14,7 @@ import { useApp } from '../store/app';
 import { useFormFactor } from '../lib/hooks';
 import { readLocal, writeLocal } from '../lib/storage';
 import { clampMiniWidth, setMiniWidth, useMiniSize, useMiniWidth } from './miniSize';
+import { setOpenPlayer } from './nowPlaying';
 
 const PlayerScreen = lazy(() => import('./PlayerScreen'));
 
@@ -83,6 +84,11 @@ export function PlayerHost() {
     if (kept) navigate(sessionPath(kept));
   }, [kept, navigate]);
   const close = useCallback(() => setKept(null), []);
+  // the rest of the app may bring the mini player back up (the phone's "turn upright" screen does)
+  useEffect(() => {
+    setOpenPlayer(mini ? expand : null);
+    return () => setOpenPlayer(null);
+  }, [mini, expand]);
 
   if (!session) return null;
   return (
