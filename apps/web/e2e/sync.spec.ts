@@ -33,4 +33,24 @@ test.describe('realtime sync between devices', () => {
     await a.getByRole('radiogroup', { name: 'Accent color' }).getByRole('radio', { name: 'Rose' }).click();
     await expect.poll(accent, { timeout: 3_000 }).toBe(ACCENTS.rose.hex.toUpperCase());
   });
+
+  test('the headline font is a choice of the profile: titles and the clock on every device', async ({ profile }) => {
+    const a = await profile.device();
+    const b = await profile.device();
+    await a.goto('/settings');
+    const connected = waitForEvents(b);
+    await b.goto('/home');
+    await connected;
+    const display = () => b.evaluate(() => document.documentElement.style.getPropertyValue('--font-display'));
+    expect(await display()).toContain('Bricolage Grotesque');
+    // the clock is Home's headline, set in that font
+    const clock = b.locator('.home-clock');
+    await expect(clock).toHaveText(/^\d\d:\d\d$/);
+    expect(await clock.evaluate((el) => getComputedStyle(el).fontFamily)).toContain('Bricolage Grotesque');
+
+    await a.getByRole('radiogroup', { name: 'Headline font' }).getByRole('radio', { name: 'Serif' }).click();
+    await expect.poll(display, { timeout: 3_000 }).toContain('Fraunces');
+    expect(await clock.evaluate((el) => getComputedStyle(el).fontFamily)).toContain('Fraunces');
+    await expect(b.locator('link#headline-font')).toHaveAttribute('href', /family=Fraunces/);
+  });
 });

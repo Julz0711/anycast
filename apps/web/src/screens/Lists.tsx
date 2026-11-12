@@ -17,7 +17,7 @@ import { useAsync, useFormFactor, useNow } from '../lib/hooks';
 import { readLocal, writeLocal } from '../lib/storage';
 import { ChannelRow, PosterCard } from '../components/cards';
 import { Empty, Segmented, Skeleton } from '../components/ui';
-import { IconBookmark, IconClose, IconLive, IconMovie, IconSwipe } from '../components/Icons';
+import { IconBookmark, IconClose, IconLive, IconMovie, IconPlus, IconSwipe } from '../components/Icons';
 import { Sheet } from '../components/lists';
 import { ListEditorSheet } from '../components/ListEditor';
 import { PosterSkeleton } from './Vod';
@@ -90,9 +90,15 @@ function ListsShell(props: { tabs: Tab[]; current?: Tab }) {
     <div className="lists-screen">
       <LibraryHead
         actions={
-          <button type="button" className="btn" onClick={() => setCreating(true)}>
-            + New list
-          </button>
+          form === 'phone' ? (
+            <button type="button" className="icon-btn" onClick={() => setCreating(true)} aria-label="New list" title="New list">
+              <IconPlus />
+            </button>
+          ) : (
+            <button type="button" className="btn" onClick={() => setCreating(true)}>
+              + New list
+            </button>
+          )
         }
       />
       <div className="lt-tabs" role="tablist" aria-label="Your lists" data-nav-row="list-tabs">

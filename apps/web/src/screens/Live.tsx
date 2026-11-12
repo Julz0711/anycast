@@ -117,6 +117,12 @@ export function LiveScreen() {
       <div className="live-top">
         <div className="page-head page-head--tools">
           <h1 className="h1">Live TV</h1>
+          {/* phones: Search stays next to the title, the view tools get the row underneath to themselves */}
+          {form === 'phone' && (
+            <div className="head-actions">
+              <SearchButton />
+            </div>
+          )}
           <div className="head-tools">
             <Segmented
               label="Live TV layout"
@@ -136,7 +142,6 @@ export function LiveScreen() {
             >
               With guide
             </button>
-            {form === 'phone' && <SearchButton />}
           </div>
         </div>
         {layout === 'extended' && form !== 'phone' && <Hero source={source} favChannels={list ? [] : favChannels} onPlay={open} />}
