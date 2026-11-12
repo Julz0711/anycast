@@ -67,7 +67,24 @@ field), press **Test login**, then **Connect**. The password is stored encrypted
 
 The first sync of your ~195k items takes about a minute; the app is usable while it runs.
 
-The container also appears in the CasaOS dashboard, where you can start, stop and see its logs.
+AnyCast also shows up in the CasaOS dashboard as an app, with its icon and an Open button, where you
+can start, stop and see its logs. The `x-casaos` block at the end of `docker-compose.yml` does that:
+CasaOS reads it straight from this folder, so it updates with `git pull` like everything else. The
+Open button goes to `http://<the address you opened CasaOS at>:8787`. To make it open your HTTPS
+address instead, add to `.env` and run `docker compose up -d`:
+
+```sh
+ANYCAST_CASAOS_HOST=anycast.example.com
+ANYCAST_CASAOS_SCHEME=https
+ANYCAST_CASAOS_PORT=443
+```
+
+**Don't change AnyCast's settings in the CasaOS UI** (the app's "Settings"/"Edit" screen, or
+reinstalling it from there). CasaOS then rewrites the compose setup its own way, which has broken
+AnyCast's ports and volumes before. Start, stop, restart and logs in the dashboard are safe. Change
+everything else in `.env` or `docker-compose.yml` here and run `docker compose up -d`. If it happened
+anyway: `cd /DATA/AppData/anycast && git checkout docker-compose.yml && docker compose up -d --build`
+puts it back; your data stays in the volumes.
 
 **Your provider allows one connection.** Stop AnyCast on your PC (`pnpm dev`) once the server runs,
 or the two will compete for it.

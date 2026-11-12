@@ -12,6 +12,19 @@ services:
     volumes:
       - anycast-data:/data
       - anycast-buffer:/buffer
+    # Describes the service for the CasaOS dashboard (ignored by plain Docker).
+    x-casaos:
+      ports:
+        - container: "8787"
+          description:
+            en_us: Web app and API
+      volumes:
+        - container: /data
+          description:
+            en_us: Accounts, profiles, favorites, progress, settings and backups
+        - container: /buffer
+          description:
+            en_us: Rewind buffer for live TV
     # Hardware transcoding (optional, see docs/casaos.md). Without it, conversions use the CPU.
     # Intel/AMD: uncomment if `ls /dev/dri` on the server lists renderD128.
     # devices:
@@ -32,3 +45,31 @@ services:
 volumes:
   anycast-data:
   anycast-buffer:
+
+# Makes CasaOS show AnyCast as an app (name, icon, Open button) instead of a bare container.
+# Plain Docker ignores it. CasaOS reads this file from disk, so after a change `docker compose up -d`
+# is enough. Don't edit AnyCast's settings in the CasaOS UI: it rewrites the setup its own way
+# (see docs/casaos.md). The Open button goes to http://<the address you opened CasaOS at>:8787;
+# to open your HTTPS address instead, set ANYCAST_CASAOS_HOST (and _SCHEME, _PORT) in .env.
+x-casaos:
+  main: anycast
+  architectures:
+    - amd64
+    - arm64
+  author: Julz0711
+  developer: Julz0711
+  category: Media
+  title:
+    en_us: AnyCast
+  tagline:
+    en_us: Your IPTV on every screen
+  description:
+    en_us: Live TV, movies and series from your Xtream provider, with rewind, profiles and sync across devices.
+  icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iIzBFMEYxMSIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMCkgc2NhbGUoMSkiPjxyZWN0IHg9IjcyIiB5PSIxMDQiIHdpZHRoPSIzNjgiIGhlaWdodD0iMjQwIiByeD0iNjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0VDRURFRSIgc3Ryb2tlLXdpZHRoPSIzNiIvPjxyZWN0IHg9IjcyIiB5PSIzODgiIHdpZHRoPSIzNjgiIGhlaWdodD0iMjgiIHJ4PSIxNCIgZmlsbD0iIzRBNEU1NiIvPjxyZWN0IHg9IjcyIiB5PSIzODgiIHdpZHRoPSIyMzYiIGhlaWdodD0iMjgiIHJ4PSIxNCIgZmlsbD0iI0Y1QTUyNCIvPjwvZz48L3N2Zz4=
+  thumbnail: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iIzBFMEYxMSIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMCkgc2NhbGUoMSkiPjxyZWN0IHg9IjcyIiB5PSIxMDQiIHdpZHRoPSIzNjgiIGhlaWdodD0iMjQwIiByeD0iNjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0VDRURFRSIgc3Ryb2tlLXdpZHRoPSIzNiIvPjxyZWN0IHg9IjcyIiB5PSIzODgiIHdpZHRoPSIzNjgiIGhlaWdodD0iMjgiIHJ4PSIxNCIgZmlsbD0iIzRBNEU1NiIvPjxyZWN0IHg9IjcyIiB5PSIzODgiIHdpZHRoPSIyMzYiIGhlaWdodD0iMjgiIHJ4PSIxNCIgZmlsbD0iI0Y1QTUyNCIvPjwvZz48L3N2Zz4=
+  screenshot_link: []
+  tips: {}
+  hostname: ${ANYCAST_CASAOS_HOST:-}
+  scheme: ${ANYCAST_CASAOS_SCHEME:-http}
+  port_map: "${ANYCAST_CASAOS_PORT:-8787}"
+  index: /
