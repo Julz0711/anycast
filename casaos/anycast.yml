@@ -1,0 +1,88 @@
+# AnyCast for CasaOS: paste this into CasaOS > App Store > Custom Install > Import.
+# CasaOS then manages AnyCast like any other app, including its Settings/Edit screen.
+# Before pasting, fill in the four values marked FILL IN (see docs/casaos.md, "CasaOS app install").
+# The image is built by GitHub on every merge (.github/workflows/image.yml) and is private, so the
+# server needs `sudo docker login ghcr.io` once.
+name: anycast
+services:
+  anycast:
+    image: ghcr.io/julz0711/anycast:latest
+    container_name: anycast
+    restart: unless-stopped
+    environment:
+      # FILL IN: the ANYCAST_SECRET from your old .env. A different one makes the saved provider
+      # login unreadable, and everyone has to sign in again.
+      ANYCAST_SECRET: ""
+      # FILL IN: admin login, used only when there are no accounts yet (a fresh install)
+      ANYCAST_ADMIN_USER: admin
+      ANYCAST_ADMIN_PASSWORD: ""
+      # FILL IN: "true" behind Nginx Proxy Manager (https://anycast.your-domain), else "false"
+      TRUST_PROXY: "false"
+      ANYCAST_HWACCEL: auto
+      ANYCAST_BACKUP_KEEP: "7"
+      DATA_DIR: /data
+      BUFFER_DIR: /buffer
+    ports:
+      - target: 8787
+        published: "8787"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /DATA/AppData/anycast/data
+        target: /data
+      - type: bind
+        source: /DATA/AppData/anycast/buffer
+        target: /buffer
+    # Hardware encoding (Intel/AMD): add a device /dev/dri -> /dev/dri in the CasaOS Settings screen
+    # once `ls /dev/dri` on the server lists renderD128.
+    x-casaos:
+      envs:
+        - container: ANYCAST_SECRET
+          description:
+            en_us: Encrypts the saved provider login and signs sessions. Keep it; 16+ random characters.
+        - container: ANYCAST_ADMIN_USER
+          description:
+            en_us: First admin account, created only when AnyCast has no accounts yet
+        - container: ANYCAST_ADMIN_PASSWORD
+          description:
+            en_us: Password for that first admin account
+        - container: TRUST_PROXY
+          description:
+            en_us: true when AnyCast is reached through a reverse proxy (Nginx Proxy Manager)
+        - container: ANYCAST_HWACCEL
+          description:
+            en_us: "Hardware encoding: auto, off, vaapi, qsv or nvenc"
+        - container: ANYCAST_BACKUP_KEEP
+          description:
+            en_us: Daily backups to keep in /data/backups (0 = off)
+      ports:
+        - container: "8787"
+          description:
+            en_us: Web app and API
+      volumes:
+        - container: /data
+          description:
+            en_us: Accounts, profiles, favorites, progress, settings and backups
+        - container: /buffer
+          description:
+            en_us: Rewind buffer for live TV
+x-casaos:
+  main: anycast
+  architectures:
+    - amd64
+  author: Julz0711
+  developer: Julz0711
+  category: Media
+  title:
+    en_us: AnyCast
+  tagline:
+    en_us: Your IPTV on every screen
+  description:
+    en_us: Live TV, movies and series from your Xtream provider, with rewind, profiles and sync across devices.
+  icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iIzBFMEYxMSIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMCkgc2NhbGUoMSkiPjxyZWN0IHg9IjcyIiB5PSIxMDQiIHdpZHRoPSIzNjgiIGhlaWdodD0iMjQwIiByeD0iNjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0VDRURFRSIgc3Ryb2tlLXdpZHRoPSIzNiIvPjxyZWN0IHg9IjcyIiB5PSIzODgiIHdpZHRoPSIzNjgiIGhlaWdodD0iMjgiIHJ4PSIxNCIgZmlsbD0iIzRBNEU1NiIvPjxyZWN0IHg9IjcyIiB5PSIzODgiIHdpZHRoPSIyMzYiIGhlaWdodD0iMjgiIHJ4PSIxNCIgZmlsbD0iI0Y1QTUyNCIvPjwvZz48L3N2Zz4=
+  thumbnail: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iIzBFMEYxMSIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAgMCkgc2NhbGUoMSkiPjxyZWN0IHg9IjcyIiB5PSIxMDQiIHdpZHRoPSIzNjgiIGhlaWdodD0iMjQwIiByeD0iNjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0VDRURFRSIgc3Ryb2tlLXdpZHRoPSIzNiIvPjxyZWN0IHg9IjcyIiB5PSIzODgiIHdpZHRoPSIzNjgiIGhlaWdodD0iMjgiIHJ4PSIxNCIgZmlsbD0iIzRBNEU1NiIvPjxyZWN0IHg9IjcyIiB5PSIzODgiIHdpZHRoPSIyMzYiIGhlaWdodD0iMjgiIHJ4PSIxNCIgZmlsbD0iI0Y1QTUyNCIvPjwvZz48L3N2Zz4=
+  screenshot_link: []
+  tips: {}
+  scheme: http
+  port_map: "8787"
+  index: /
