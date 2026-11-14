@@ -44,6 +44,7 @@ export function userDataRoutes(app: FastifyInstance, s: Services): void {
   app.put('/api/progress', async (req, reply) => {
     const b = ProgressBody.safeParse(req.body);
     if (!b.success) return reply.code(400).send(bad('kind, id, position and duration are required'));
+    s.playback?.keepAlive(b.data.kind, b.data.id);
     const input = { ...b.data };
     if (input.kind === 'episode' && !input.seriesId) {
       const ep = getEpisode(s.db, input.id);

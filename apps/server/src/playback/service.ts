@@ -296,6 +296,14 @@ export class PlaybackService {
     return true;
   }
 
+  /**
+   * A movie or episode is playing (the player reports its progress every few seconds): keep its
+   * HLS sessions, which Safari's own player may not ask anything of while it plays from its buffer.
+   */
+  keepAlive(kind: VodKind, id: string): void {
+    this.sessions.touchWhere((k) => k.startsWith(`${kind}:${id}:`));
+  }
+
   /** The client closed its player: release its connection now. */
   stopClient(clientId: string): void {
     const prev = this.claims.delete(clientId);

@@ -33,6 +33,12 @@ import { cueKey, formatVtt, parseVtt, type Cue } from './webvtt';
 const SEGMENT_SECONDS = 6;
 const LIVE_SEGMENT_SECONDS = 4;
 const IDLE_MS = 60_000;
+/**
+ * Movies and episodes: Safari's own HLS player (iPhone, iPad) buffers minutes ahead and then asks
+ * for nothing for a while; a session reaped in that quiet has to start FFmpeg again, which costs a
+ * restart. Players that leave say so (/api/play/stop), and playing keeps it alive (keepAlive).
+ */
+const VOD_IDLE_MS = 5 * 60_000;
 const WAIT_MS = 45_000;
 const LOOKAHEAD = 4;
 const PAUSE_AHEAD = 12;
@@ -117,6 +123,8 @@ const SUB_LEAD = 1;
 abstract class Session {
   lastAccess = Date.now();
   closed = false;
+  /** how long without requests before the session is reaped */
+  readonly idleMs: number = IDLE_MS;
   constructor(readonly dir: string) {}
   touch(): void {
     this.lastAccess = Date.now();
@@ -225,9 +233,12 @@ export class StreamHlsSession extends Session {
 }
 
 export class VodHlsSession extends Session {
+  override readonly idleMs = VOD_IDLE_MS;
   private run: Run | null = null;
   private runCounter = 0;
   private lastRequested = 0;
+  /** the slot last handed out (a request for the next one is playback going on, not a seek) */
+  private lastServed = -1;
   private readonly count: number;
   private readonly throttle: NodeJS.Timeout;
   /** gathered subtitle cues per track, across runs */
@@ -339,7 +350,11 @@ export class VodHlsSession extends Session {
     return this.tracks.subtitles.length && !this.subsFailed ? Math.max(0, n - SUB_LEAD) : n;
   }
 
-  private startRun(start: number): Run {
+  /**
+   * @param seekAt where FFmpeg starts reading (s); default the slot's start. Stream-copied video
+   * can only start on a keyframe, so a run started at slot*6 begins at the keyframe before it.
+   */
+  private startRun(start: number, seekAt = start * SEGMENT_SECONDS): Run {
     this.stopRun();
     const lease = this.acquire();
     const id = ++this.runCounter;
@@ -347,7 +362,7 @@ export class VodHlsSession extends Session {
     const video = this.video;
     const args = buildHlsArgs({
       input: this.url(), pipeline: this.pipeline, dir: this.dir, run: id, segmentSeconds: SEGMENT_SECONDS,
-      mode: 'vod', seek: start * SEGMENT_SECONDS, startNumber: start, audioCodec: this.audioCodec,
+      mode: 'vod', seek: seekAt, startNumber: start, audioCodec: this.audioCodec,
       audioIndex: this.tracks.audio, subtitles: [...subs].map(([index, file]) => ({ index, file })), video,
     });
     const proc = spawnFfmpeg(args, (msg) => {
@@ -362,6 +377,27 @@ export class VodHlsSession extends Session {
     });
     this.run = run;
     return run;
+  }
+
+  /**
+   * Where a new run has to start so that it carries on seamlessly after slot `prev` of `run`
+   * (which the player already has), or null when that can't be told: then the run starts at the
+   * next slot as for a seek.
+   *
+   * Copied video is cut on keyframes, so slot `prev` really ends on the keyframe after its slot
+   * time, and a run started at the next slot's time would begin at the keyframe before it: up to
+   * a GOP of picture and sound the player already played. Safari's own HLS player (iPhone, iPad)
+   * plays that sound again, and from then on it lags the picture. Started at the exact end of
+   * `prev` (a keyframe), the new run's first segment begins where the last one stopped. Full
+   * transcodes put keyframes on the slot times themselves and splice cleanly already.
+   */
+  private async spliceAt(run: Run, prev: number): Promise<number | null> {
+    if (this.pipeline === 'transcode') return null;
+    const file = run.completed.get(prev);
+    if (!file || run.pruned.has(prev)) return null;
+    const end = await mediaEnd(path.join(this.dir, runInit(run.id)), path.join(this.dir, file));
+    // a hair past the end, so the input seek lands on that keyframe and not the one before
+    return end === null ? null : end + SPLICE_EPSILON;
   }
 
   private stopRun(): void {
@@ -493,13 +529,22 @@ export class VodHlsSession extends Session {
     if (run) await this.refresh(run);
     // a pruned slot is gone from this run: another viewer of the same title went far ahead of it
     const reachable = run && !run.exited && n >= run.start && !run.pruned.has(n) && n <= this.maxCompleted(run) + 1 + LOOKAHEAD;
-    if (!run || (!run.completed.has(n) && !reachable)) run = this.startRun(this.runStartFor(n));
+    if (!run || (!run.completed.has(n) && !reachable)) {
+      // playback going on into a new run (the old one was paused too long, or pruned): start it
+      // exactly where the slot before ended, or the player gets that stretch twice
+      const at = run && this.lastServed === n - 1 ? await this.spliceAt(run, n - 1) : null;
+      if (this.run !== run) throw new HlsError(409, 'Playback moved elsewhere');
+      run = at === null ? this.startRun(this.runStartFor(n)) : this.startRun(n, at);
+    }
     this.setPaused(run, false);
     const deadline = Date.now() + WAIT_MS;
     for (;;) {
       if (this.run !== run) throw new HlsError(409, 'Playback moved elsewhere');
       await this.refresh(run);
-      if (!last && run.completed.has(n)) return [path.join(this.dir, run.completed.get(n)!)];
+      if (!last && run.completed.has(n)) {
+        this.lastServed = n;
+        return [path.join(this.dir, run.completed.get(n)!)];
+      }
       const retry: Run | null = this.retryWithoutHw(run) ?? this.retryWithoutSubs(run);
       if (retry) {
         run = retry;
@@ -508,6 +553,7 @@ export class VodHlsSession extends Session {
       if (last && run.exited) {
         const tail = [...run.completed.entries()].filter(([k]) => k >= n).sort((a, b) => a[0] - b[0]);
         if (!tail.length) throw new HlsError(404, 'Segment not available');
+        this.lastServed = n;
         return tail.map(([, f]) => path.join(this.dir, f));
       }
       if (run.exited && !run.completed.has(n)) {
@@ -525,6 +571,38 @@ export class VodHlsSession extends Session {
     this.stopRun();
     void rm(this.dir, { recursive: true, force: true });
   }
+}
+
+/** Seconds added to a splice point: less than any GOP, more than timestamp rounding. */
+const SPLICE_EPSILON = 0.05;
+
+/** Parses ffprobe CSV packet lines ("pts,duration") into the time the last packet ends. */
+export function packetsEnd(csv: string): number | null {
+  let end: number | null = null;
+  for (const line of csv.split('\n')) {
+    if (!line.trim()) continue;
+    const [pts, dur] = line.split(',').map(Number);
+    if (pts === undefined || !Number.isFinite(pts)) continue;
+    const e = pts + (Number.isFinite(dur) ? dur! : 0);
+    if (end === null || e > end) end = e;
+  }
+  return end;
+}
+
+/** Media time where a fMP4 segment's video (or, without video, its audio) ends; null if unknown. */
+async function mediaEnd(init: string, segment: string): Promise<number | null> {
+  const probe = (stream: string) =>
+    new Promise<string>((resolve) => {
+      const proc = spawn('ffprobe', ['-v', 'error', '-select_streams', stream, '-show_entries', 'packet=pts_time,duration_time', '-of', 'csv=p=0', '-i', `concat:${init}|${segment}`], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      let out = '';
+      const timer = setTimeout(() => proc.kill('SIGKILL'), 10_000);
+      proc.stdout.on('data', (d: Buffer) => (out += d.toString()));
+      proc.on('error', () => resolve(''));
+      proc.on('close', () => (clearTimeout(timer), resolve(out)));
+    });
+  return packetsEnd(await probe('v:0')) ?? packetsEnd(await probe('a:0'));
 }
 
 /** Keyed registry with idle reaping. */
@@ -588,6 +666,11 @@ export class HlsSessions {
   }
 
   /** Closes every session whose key matches (e.g. all sessions of one provider connection), also ones still starting. */
+  /** Marks the sessions whose key matches as in use (a player that plays from its own buffer). */
+  touchWhere(match: (key: string) => boolean): void {
+    for (const [key, s] of this.sessions) if (match(key)) s.touch();
+  }
+
   closeWhere(match: (key: string) => boolean): void {
     for (const [key, s] of this.sessions) {
       if (!match(key)) continue;
@@ -600,7 +683,7 @@ export class HlsSessions {
   private reap(): void {
     const now = Date.now();
     for (const [key, s] of this.sessions) {
-      if (s.closed || now - s.lastAccess > IDLE_MS) {
+      if (s.closed || now - s.lastAccess > s.idleMs) {
         s.close();
         this.sessions.delete(key);
       }
