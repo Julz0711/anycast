@@ -213,7 +213,7 @@ export interface VodFixtureInput {
 }
 
 /** Bump when fixture encoding changes so stale cache files are not reused. */
-const FIXTURE_VERSION = 2;
+const FIXTURE_VERSION = 3;
 
 const pending = new Map<string, Promise<string>>();
 let running = 0;
@@ -258,9 +258,13 @@ export function ensureVodFixture(input: VodFixtureInput): Promise<string> {
       /* not generated yet */
     }
     await mkdir(join(input.cacheDir, 'vod'), { recursive: true });
-    const args = await vodArgs(input, `${file}.part`);
+    // a part file of its own: test files run in parallel workers, each with its own mock sharing
+    // the cache dir, and two FFmpegs writing one part file (faststart rewrites it) left a broken MP4
+    // in the cache for good
+    const part = `${file}.${process.pid}-${Math.random().toString(36).slice(2)}.part`;
+    const args = await vodArgs(input, part);
     await withSlot(() => runToCompletion(args));
-    await rename(`${file}.part`, file);
+    await rename(part, file);
     return file;
   })();
   pending.set(file, p);
