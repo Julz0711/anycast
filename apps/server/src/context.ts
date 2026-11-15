@@ -1,6 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import type { Users, UserRow } from './auth/users';
 import type { CastLinks } from './cast';
+import type { RemoteHub } from './remote';
 import type { AutoBackups } from './backup/auto';
 import type { CatalogSync } from './catalog/sync';
 import type { Config } from './config';
@@ -23,6 +24,7 @@ export interface Services {
   parental: Parental;
   backups: AutoBackups;
   cast: CastLinks;
+  remote: RemoteHub;
 }
 
 export interface AuthContext {

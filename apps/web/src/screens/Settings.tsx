@@ -27,6 +27,7 @@ import { DiagnosticsSection } from './Diagnostics';
 import { HwEncoding } from './HwEncoding';
 import { ProviderSection } from './Provider';
 import { BackupSection } from './Backup';
+import { RemoteSettings } from '../remote/RemoteSettings';
 import { CastSettings } from './CastSettings';
 import { resetSwipeDecks } from './Swipe';
 import '../theme/settings.css';
@@ -58,6 +59,7 @@ export default function SettingsScreen() {
         { id: 'lists', title: 'Channel lists', body: <ListsManager /> },
         { id: 'player', title: 'Player', body: <PlayerSettings prefs={prefs} all /> },
         { id: 'casting', title: 'Casting', body: <CastSettings Row={Row} /> },
+        { id: 'remote', title: 'Remote', body: <RemoteSettings Row={Row} /> },
         { id: 'tabs', title: 'Start & tabs', body: <StartTabs prefs={prefs} all /> },
         { id: 'home', title: 'Home', body: <HomeEditor compact /> },
         { id: 'history', title: 'Watch history', body: <WatchHistory prefs={prefs} /> },
@@ -80,6 +82,7 @@ export default function SettingsScreen() {
         { id: 'appearance', title: 'Appearance', body: <Appearance prefs={prefs} /> },
         { id: 'live', title: 'Live TV', body: <LiveSettings prefs={prefs} form={form} /> },
         { id: 'player', title: 'Player', body: <PlayerSettings prefs={prefs} /> },
+        { id: 'remote', title: 'Remote', body: <RemoteSettings Row={Row} /> },
         { id: 'tabs', title: 'Start', body: <StartTabs prefs={prefs} /> },
         { id: 'filters', title: 'Filters', body: <Filters /> },
         ...(isAdmin ? [{ id: 'provider', title: 'Provider', body: <ProviderSection /> }] : []),

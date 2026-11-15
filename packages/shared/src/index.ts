@@ -8,3 +8,4 @@ export * from './profiles';
 export * from './cast';
 export * from './recap';
 export * from './provider';
+export * from './remote';

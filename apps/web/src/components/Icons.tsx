@@ -155,3 +155,25 @@ export const IconResize = (p: SVGProps<SVGSVGElement>) => (
 export const IconShrink = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="2.5" y="4.5" width="19" height="15" rx="2" /><rect x="13" y="12.5" width="5.5" height="4" rx="0.75" fill="currentColor" stroke="none" /></svg>
 );
+/** a remote control */
+export const IconRemote = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="7" y="2.5" width="10" height="19" rx="3" /><circle cx="12" cy="8" r="1.75" /><path d="M10 13h4M10 16.5h4" /></svg>
+);
+export const IconVolume = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 9.5h3l4.5-4v13L7 14.5H4z" /><path d="M15.5 9a4 4 0 010 6M18 6.5a7.5 7.5 0 010 11" /></svg>
+);
+export const IconMuted = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 9.5h3l4.5-4v13L7 14.5H4z" /><path d="M16 9.5l5 5M21 9.5l-5 5" /></svg>
+);
+export const IconStop = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="6.5" y="6.5" width="11" height="11" rx="2" fill="currentColor" stroke="none" /></svg>
+);
+export const IconTv = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="2.5" y="5" width="19" height="12.5" rx="2" /><path d="M8 20.5h8" /></svg>
+);
+export const IconLaptop = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="4.5" y="5" width="15" height="10.5" rx="1.5" /><path d="M2.5 19h19" /></svg>
+);
+export const IconPhone = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="7" y="2.5" width="10" height="19" rx="2.5" /><path d="M11 18.5h2" /></svg>
+);

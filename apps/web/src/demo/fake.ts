@@ -6,7 +6,7 @@ import {
   ADULT_MODE_RANK, BACKUP_FORMAT, BACKUP_SCHEMA_VERSION, DEFAULT_PREFERENCES, FINISHED_THRESHOLD, LOCKED_NAME, mergePreferences, PIN_MAX_ATTEMPTS, summarizeBackup, PIN_WINDOW_MS,
   defaultAvatar, type AdultMode, type AdultStatus, type BackupFile, type Category, type RestoreMode, type UnlockMinutes,
   type Channel, type ChannelList, type Favorite, type MediaList, type HideRules, type LiveChannelWithNow, type Me, type Movie, type PlaybackInfo,
-  type Preferences, type Profile, type Progress, type Recap, type RecentChannel, RECENT_CHANNELS_MAX, type Series, type SourceStatus, type ProviderLogin, type ProviderSettings, type ProviderTestResult, type SyncEvent, type TagSummary, type TimelineInfo,
+  type Preferences, type Profile, type Progress, type Recap, type RecentChannel, RECENT_CHANNELS_MAX, type Series, type SourceStatus, type ProviderLogin, type ProviderSettings, type ProviderTestResult, type SyncEvent, type RemoteCommand, type RemoteDevice, type RemoteNowPlaying, type TagSummary, type TimelineInfo,
 } from '@anycast/shared';
 import { ApiError } from '../api/client';
 import { buildFixtures } from './fixtures';
@@ -243,6 +243,70 @@ function contains(hay: string, needle: string) {
 
 /* ---------- router ---------- */
 type Handler = (m: RegExpExecArray, q: URLSearchParams, body: unknown, st: ProfileState) => unknown;
+/* ---------- remote control: one made-up TV that obeys ---------- */
+function demoLive(ch: Channel): RemoteNowPlaying {
+  const now = Date.now();
+  const prog = fx.epgFor(ch).find((p) => p.start <= now && p.end > now) ?? null;
+  return {
+    kind: 'live', id: ch.id, title: prog?.title ?? ch.name, subtitle: ch.name, image: ch.logo, paused: false, waiting: false,
+    position: now, duration: 0, program: prog ? { start: prog.start, end: prog.end } : null, behindMs: 0, volume: 0.6, muted: false, canPrev: true, canNext: true,
+  };
+}
+const demoTv: RemoteDevice = {
+  clientId: 'c-demo-living-room', name: 'Living room TV', device: 'Chrome on Linux', form: 'tv', profileId: 'p1', profileName: 'Julz',
+  playing: null, ageMs: 0,
+};
+const demoLaptop: RemoteDevice = { clientId: 'c-demo-laptop', name: 'Edge on Windows', device: 'Edge on Windows', form: 'large', profileId: 'p1', profileName: 'Julz', playing: null, ageMs: 0 };
+let demoTvAt = Date.now();
+function demoDevices(): RemoteDevice[] {
+  if (!demoTv.playing) demoTv.playing = demoLive(fx.channels.find((c) => c.hasEpg && !isAdult(c.categoryId)) ?? fx.channels[0]!);
+  const p = demoTv.playing;
+  // the picture moved on since the last change
+  const moved = { ...p, position: p.paused ? p.position : p.position + (p.kind === 'live' ? Date.now() - demoTvAt : (Date.now() - demoTvAt) / 1000) };
+  return [{ ...demoTv, playing: moved, ageMs: 0 }, demoLaptop];
+}
+function demoCommand(c: RemoteCommand) {
+  const cur = demoDevices()[0]!.playing!;
+  let p: RemoteNowPlaying = { ...cur };
+  demoTvAt = Date.now();
+  switch (c.type) {
+    case 'toggle': p.paused = !p.paused; break;
+    case 'play': p.paused = false; break;
+    case 'pause': p.paused = true; break;
+    case 'seekBy':
+      if (p.kind === 'live') { p.behindMs = Math.max(0, (p.behindMs ?? 0) - c.seconds * 1000); p.position = Date.now() - p.behindMs; }
+      else p.position = Math.max(0, Math.min(p.duration, p.position + c.seconds));
+      break;
+    case 'seekTo': p.position = c.position; break;
+    case 'live': p.behindMs = 0; p.position = Date.now(); break;
+    case 'volume': p.volume = c.level; p.muted = false; break;
+    case 'volumeBy': p.volume = Math.max(0, Math.min(1, Math.round((p.volume + c.delta) * 100) / 100)); p.muted = false; break;
+    case 'mute': p.muted = c.muted; break;
+    case 'step': {
+      if (p.kind !== 'live') break;
+      const list = fx.channels.filter((x) => !isAdult(x.categoryId));
+      const i = list.findIndex((x) => x.id === p.id);
+      p = { ...demoLive(list[(i + c.dir + list.length) % list.length]!), volume: p.volume, muted: p.muted };
+      break;
+    }
+    case 'open': {
+      if (c.kind === 'live') p = { ...demoLive(findChannel(c.id)), volume: p.volume, muted: p.muted };
+      else if (c.kind === 'movie') {
+        const m = fx.movies.find((x) => x.id === c.id)!;
+        p = { kind: 'movie', id: m.id, title: m.name, subtitle: m.year ? String(m.year) : null, image: m.poster, paused: false, waiting: false, position: 0, duration: m.duration || 5400, volume: p.volume, muted: p.muted, canPrev: false, canNext: false };
+      } else {
+        const sr = fx.series.find((x) => x.id === c.seriesId);
+        const ep = sr && fx.seriesDetail(sr.id)?.seasons.flatMap((x) => x.episodes).find((e) => e.id === c.id);
+        if (sr && ep) p = { kind: 'episode', id: ep.id, seriesId: sr.id, title: ep.title, subtitle: `${sr.name} · S${ep.season} E${ep.episode}`, image: sr.poster, paused: false, waiting: false, position: 0, duration: ep.duration || 2700, volume: p.volume, muted: p.muted, canPrev: true, canNext: true };
+      }
+      break;
+    }
+    case 'stop': demoTv.playing = null; emit({ type: 'remote-devices', profileId: currentPid, devices: demoDevices() }); return;
+  }
+  demoTv.playing = p;
+  emit({ type: 'remote-devices', profileId: currentPid, devices: demoDevices() });
+}
+
 const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/health$/, () => ({ ok: true, version: 'demo' })],
   ['GET', /^\/api\/admin\/backup$/, () => demoBackup()],
@@ -506,6 +570,15 @@ const routes: [string, RegExp, Handler][] = [
   // the demo has no provider connections to share
   ['POST', /^\/api\/play\/takeover$/, () => ({ ok: true, stopped: false })],
   ['POST', /^\/api\/play\/stop$/, () => ({ ok: true })],
+  ['POST', /^\/api\/remote\/presence$/, () => ({ ok: true })],
+  ['DELETE', /^\/api\/remote\/presence$/, () => ({ ok: true })],
+  ['GET', /^\/api\/remote\/devices$/, () => demoDevices()],
+  ['POST', /^\/api\/remote\/command$/, (_m, _q, b) => {
+    const { clientId, command } = b as { clientId: string; command: RemoteCommand };
+    if (clientId !== demoTv.clientId) throw new ApiError(404, 'That device is no longer open');
+    demoCommand(command);
+    return { ok: true };
+  }],
   ['GET', /^\/api\/play\/movie\/([^/]+)$/, (m, _q, _b, st): PlaybackInfo => {
     const p = st.progress.get(`movie:${m[1]}`);
     return {
