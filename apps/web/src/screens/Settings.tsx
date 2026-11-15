@@ -441,6 +441,23 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
           onChange={(v) => setPref('player', { controlsHide: v })}
         />
       </Row>
+      {form === 'phone' && (
+        <Row
+          label="Sideways picture"
+          hint={
+            p.videoFit === 'fill'
+              ? 'Fill: held sideways, the picture fills the screen edge to edge, a little of the top and bottom is cut off. Pinch in the player to switch.'
+              : 'Fit: held sideways, you see the whole picture, with black bars at the sides. Pinch in the player to switch.'
+          }
+        >
+          <Segmented
+            label="Sideways picture"
+            value={p.videoFit}
+            options={opts<P['player']['videoFit']>(['fit', 'Fit'], ['fill', 'Fill'])}
+            onChange={(v) => setPref('player', { videoFit: v })}
+          />
+        </Row>
+      )}
       <Row label="Mini player" hint={p.miniPlayer ? (form === 'phone' ? 'Leaving the player keeps it playing in a bar above the tabs while you browse. Tap the bar to go back.' : form === 'tv' ? 'Leaving the player keeps it playing in a corner while you browse. Drag it to any corner.' : 'Leaving the player keeps it playing in a corner while you browse. Drag it to any corner, drag its grip to resize it.') : 'Off: leaving the player stops playback.'}>
         <Toggle label="Mini player" checked={p.miniPlayer} onChange={(v) => setPref('player', { miniPlayer: v })} />
       </Row>

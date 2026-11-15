@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import type { CastPlayResponse, Episode, PlaybackInfo, RemoteCommand, RemoteNowPlaying, TimelineInfo, TrackChoice } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
 import { useWatchTime } from './watchTime';
-import { recordRecentChannel, saveProgress, saveProgressOnUnload, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
+import { recordRecentChannel, saveProgress, saveProgressOnUnload, setPref, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
 import { cachedGet, call, clearApiCache } from '../api/client';
 import { lookup, resolveItems } from '../api/catalog';
 import { setBufferPin, useBufferPins } from '../api/buffer';
@@ -33,7 +33,7 @@ import { RewindTip } from './RewindTip';
 import { useVolume, VolumeControl, VOLUME_STEP } from './volume';
 import { useVariants, useVersionFallback, VersionsMenu, versionLabel } from './variants';
 import { IconFullscreenExit, IconNext, IconSkip } from './barIcons';
-import { IconBack, IconClose, IconDown, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock, IconTheater, IconResize, IconShrink, IconUp } from '../components/Icons';
+import { IconBack, IconClose, IconDown, IconExpand, IconFullscreen, IconListAdd, IconPause, IconPlay, IconStar, IconTracks, IconClock, IconTheater, IconResize, IconFill, IconFit, IconShrink, IconUp } from '../components/Icons';
 import { MINI_SIZE_LABEL, nextMiniSize, setMiniSize, useMiniSize } from './miniSize';
 import { openAddToList } from '../store/lists';
 import { Skeleton } from '../components/ui';
@@ -161,6 +161,13 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     [],
   );
   const [ripple, setRipple] = useState<{ side: 'l' | 'r' | 'c'; text: string; key: number } | null>(null);
+  // phone held sideways: the whole picture (fit) or zoomed to the screen's edges (fill), like YouTube's pinch
+  const fill = prefs.videoFit === 'fill';
+  const [fitHint, setFitHint] = useState<{ text: string; key: number } | null>(null);
+  const setFit = useCallback((next: 'fit' | 'fill') => {
+    setFitHint({ text: next === 'fill' ? 'Zoomed to fill' : 'Original', key: Date.now() });
+    if (useApp.getState().prefs.player.videoFit !== next) setPref('player', { videoFit: next });
+  }, []);
   const dragging = useRef(false);
   /** the volume slider is being dragged: keep the controls up */
   const holdChrome = useRef(false);
@@ -1067,10 +1074,48 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   const gesture = useRef<{ x: number; y: number; t: number } | null>(null);
   const lastTap = useRef<{ t: number; side: 'l' | 'r' | 'c' } | null>(null);
   const tapTimer = useRef<number>();
+  // two fingers: a pinch. Apart zooms the picture to fill, together shows all of it.
+  const touches = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ start: number; done: boolean } | null>(null);
+  const spread = () => {
+    const [a, b] = [...touches.current.values()];
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+  };
   const onGestureDown = (e: RPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') {
+      touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.current.size === 2) {
+        pinch.current = { start: spread(), done: false };
+        gesture.current = null; // not a tap or a swipe
+        window.clearTimeout(tapTimer.current);
+        return;
+      }
+    }
+    if (pinch.current) return;
     gesture.current = { x: e.clientX, y: e.clientY, t: Date.now() };
   };
+  const onGestureMove = (e: RPointerEvent<HTMLDivElement>) => {
+    if (!touches.current.has(e.pointerId)) return;
+    touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const p = pinch.current;
+    if (!p || p.done || touches.current.size < 2 || !p.start) return;
+    const ratio = spread() / p.start;
+    if (ratio > 1.15 || ratio < 0.87) {
+      p.done = true;
+      setFit(ratio > 1 ? 'fill' : 'fit');
+    }
+  };
+  const onGestureEnd = (e: RPointerEvent<HTMLDivElement>) => {
+    touches.current.delete(e.pointerId);
+    // the pinch is over once every finger is off the screen
+    if (pinch.current) {
+      if (touches.current.size === 0) pinch.current = null;
+      return true;
+    }
+    return false;
+  };
   const onGestureUp = (e: RPointerEvent<HTMLDivElement>) => {
+    if (onGestureEnd(e)) return;
     const g = gesture.current;
     gesture.current = null;
     if (!g) return;
@@ -1400,6 +1445,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       data-chrome={chrome ? 'on' : 'off'}
       data-theater={canTheater && theater && !mini && !overlay ? 'on' : undefined}
       data-bar={bar ? 'on' : undefined}
+      data-fit={fill && form === 'phone' && !mini ? 'fill' : undefined}
       onPointerMove={overlay && !bar ? activity : undefined}
     >
       <div
@@ -1433,7 +1479,9 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
         <div
           className="pl-gesture"
           onPointerDown={onGestureDown}
+          onPointerMove={onGestureMove}
           onPointerUp={onGestureUp}
+          onPointerCancel={onGestureEnd}
           onDoubleClick={bar ? (e) => (e.nativeEvent as PointerEvent).pointerType !== 'touch' && toggleFullscreen() : undefined}
           aria-hidden="true"
         />
@@ -1469,6 +1517,17 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           )}
           {form === 'phone' && (
             <span className="pl-top-end">
+              {/* only while held sideways (mobile.css): upright, the picture already fits the stage */}
+              <button
+                type="button"
+                className="pl-round pl-fit"
+                aria-pressed={fill}
+                aria-label={fill ? 'Show the whole picture' : 'Zoom to fill the screen'}
+                title={fill ? 'Show the whole picture (or pinch in)' : 'Zoom to fill (or pinch out)'}
+                onClick={() => setFit(fill ? 'fit' : 'fill')}
+              >
+                {fill ? <IconFit /> : <IconFill />}
+              </button>
               <button type="button" className="pl-round" aria-label={kind === 'episode' ? 'Add series to list' : 'Add to list'} onClick={addToList} disabled={kind === 'episode' && !seriesId}>
                 <IconListAdd />
               </button>
@@ -1479,6 +1538,11 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           )}
         </div>
         {stats.open && <StatsOverlay video={video} info={info} routeKind={kind} engine={engineRef.current?.kind ?? null} behindLiveMs={isLive && info ? rawBehind : null} onClose={stats.close} onConvert={casting ? undefined : convertCodec} onPlayDirect={casting ? undefined : playDirect} />}
+        {fitHint && (
+          <div key={fitHint.key} className="pl-fit-hint" role="status" onAnimationEnd={() => setFitHint(null)}>
+            {fitHint.text}
+          </div>
+        )}
         {ripple && (
           <div key={ripple.key} className="pl-ripple" data-side={ripple.side} aria-hidden="true">
             {ripple.text}
