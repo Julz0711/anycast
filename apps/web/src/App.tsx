@@ -26,10 +26,12 @@ import { Skeleton } from './components/ui';
 import { AddToListHost } from './components/lists';
 import { PinHost } from './components/Locks';
 import { PlayerHost } from './player/PlayerHost';
+import { RemoteReceiver } from './remote/Receiver';
 
 const SettingsScreen = lazy(() => import('./screens/Settings'));
 const ProfilePage = lazy(() => import('./profiles/ProfilePage'));
 const RecapScreen = lazy(() => import('./screens/Recap'));
+const RemoteScreen = lazy(() => import('./remote/RemoteScreen'));
 
 function subscribeMotion(cb: () => void) {
   const mq = matchMedia('(prefers-reduced-motion: reduce)');
@@ -134,6 +136,7 @@ function AuthedRoutes() {
           <Route path="/profiles" element={<ProfilePicker manage />} />
           <Route path="/profiles/:id" element={<ProfilePage />} />
           <Route path="/recap" element={<RecapScreen />} />
+          <Route path="/remote" element={<RemoteScreen />} />
           <Route element={<Shell />}>
             <Route path="/home" element={<HomeScreen />} />
             <Route path="/live" element={<LiveScreen />} />
@@ -156,6 +159,7 @@ function AuthedRoutes() {
       </Suspense>
       {/* outside the Suspense above, so a lazy screen loading never hides the mini player */}
       <PlayerHost />
+      <RemoteReceiver />
     </>
   );
 }

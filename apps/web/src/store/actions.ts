@@ -2,6 +2,8 @@
 import { mergePreferences, type Favorite, type HideRules, type Preferences, type Progress, type SyncEvent } from '@anycast/shared';
 import { call, clearApiCache, errorMessage, requestHeaders, buildPath } from '../api/client';
 import { connectEvents } from '../api/events';
+import { runRemoteCommand } from '../remote/receiver';
+import { setRemoteDevices } from '../remote/devices';
 import { readJson, readLocal, writeLocal } from '../lib/storage';
 import type { DeviceOverride } from '../lib/device';
 import { EMPTY_RULES, progressKey, useApp } from './app';
@@ -376,6 +378,12 @@ export function applyEvent(ev: SyncEvent) {
     case 'playback-stopped':
       // the profile may be open on several devices; only the stopped one reacts
       if (ev.clientId === clientId()) set({ playbackStopped: { by: ev.by, at: Date.now() } });
+      break;
+    case 'remote-command':
+      if (ev.clientId === clientId()) runRemoteCommand(ev.command);
+      break;
+    case 'remote-devices':
+      setRemoteDevices(ev.devices);
       break;
   }
 }

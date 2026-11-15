@@ -29,6 +29,8 @@ import { authRoutes, registerAuthHook } from './routes/auth';
 import { backupRoutes } from './routes/backup';
 import { bufferRoutes } from './routes/buffer';
 import { castRoutes } from './routes/cast';
+import { remoteRoutes } from './routes/remote';
+import { RemoteHub } from './remote';
 import { catalogRoutes } from './routes/catalog';
 import { diagnosticsRoutes } from './routes/diagnostics';
 import { eventRoutes } from './routes/events';
@@ -122,7 +124,9 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
       by: { profileName: by.profileName, ...(by.device ? { device: by.device } : {}) },
     });
   const backups = new AutoBackups(db, path.join(config.dataDir, 'backups'), config.backupKeep ?? DEFAULT_BACKUP_KEEP, (msg) => app.log.warn(msg));
-  const services: Services = { config, db, users, source, sync, bus, userData: new UserData(db, bus), playback, parental: new Parental(db, bus), backups, cast: new CastLinks(users, db) };
+  const services: Services = { config, db, users, source, sync, bus, userData: new UserData(db, bus), playback, parental: new Parental(db, bus), backups, cast: new CastLinks(users, db),
+    remote: new RemoteHub(bus, (userId) => users.profiles(userId).map((p) => p.id)),
+  };
 
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
@@ -157,6 +161,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   swipeRoutes(app, services);
   playbackRoutes(app, services);
   castRoutes(app, services);
+  remoteRoutes(app, services);
   bufferRoutes(app, services);
   diagnosticsRoutes(app, services, opts.runCommand);
   parentalRoutes(app, services);
@@ -175,6 +180,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
 
   app.addHook('onClose', async () => {
     backups.stop();
+    services.remote.close();
     await sync.stop();
     await playback.close();
     db.close();

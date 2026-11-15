@@ -13,7 +13,14 @@ export function Segmented<T extends string | number>(props: {
   autoFocus?: boolean;
 }) {
   return (
-    <div className={`seg${props.size ? ' ' + props.size : ''}`} role="radiogroup" aria-label={props.label} data-nav-row={`seg-${props.label}`}>
+    <div
+      className={`seg${props.size ? ' ' + props.size : ''}`}
+      role="radiogroup"
+      aria-label={props.label}
+      data-nav-row={`seg-${props.label}`}
+      // phones lay the options out in even columns: one row up to 5 options, else two rows
+      style={{ ['--seg-cols' as string]: props.options.length <= 5 ? props.options.length : Math.ceil(props.options.length / 2) }}
+    >
       {props.options.map((o) => (
         <button
           key={String(o.value)}

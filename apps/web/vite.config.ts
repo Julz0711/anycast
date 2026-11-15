@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         injectRegister: 'script-defer',
-        includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+        includeAssets: ['favicon.svg', 'apple-touch-icon.png', 'remote.webmanifest'],
         manifest: {
           name: 'AnyCast',
           short_name: 'AnyCast',
@@ -33,6 +33,8 @@ export default defineConfig(({ mode }) => {
             { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
             { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
           ],
+          // long-press the app icon (Android): straight to the remote. On iPhone, the remote page adds its own icon (remote.webmanifest).
+          shortcuts: [{ name: 'Remote', short_name: 'Remote', description: 'Steer AnyCast on your TV or computer', url: '/remote', icons: [{ src: '/remote-192.png', sizes: '192x192', type: 'image/png' }] }],
         },
         workbox: {
           // App shell only. Never cache the API or media streams.

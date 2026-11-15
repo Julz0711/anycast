@@ -13,6 +13,17 @@ const mark = (pad) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 
   </g>
 </svg>`;
 
+// the remote's own home screen icon (remote.webmanifest): the same strokes and amber, a remote standing up
+const remoteMark = (pad) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#0E0F11"/>
+  <g transform="translate(${pad} ${pad}) scale(${(512 - 2 * pad) / 512})">
+    <rect x="164" y="64" width="184" height="384" rx="64" fill="none" stroke="#ECEDEE" stroke-width="36"/>
+    <circle cx="256" cy="186" r="46" fill="#F5A524"/>
+    <rect x="212" y="292" width="88" height="26" rx="13" fill="#4A4E56"/>
+    <rect x="212" y="350" width="88" height="26" rx="13" fill="#4A4E56"/>
+  </g>
+</svg>`;
+
 writeFileSync('public/favicon.svg', mark(0).replace('<rect width="512" height="512" fill="#0E0F11"/>', '<rect width="512" height="512" rx="112" fill="#0E0F11"/>'));
 writeFileSync('public/icon.svg', mark(0));
 
@@ -21,6 +32,11 @@ const page = await browser.newPage();
 for (const [name, size, pad] of [['icon-192.png', 192, 0], ['icon-512.png', 512, 0], ['icon-maskable-512.png', 512, 72], ['apple-touch-icon.png', 180, 24]]) {
   await page.setViewportSize({ width: size, height: size });
   await page.setContent(`<html><body style="margin:0">${mark(pad).replace('<svg ', `<svg width="${size}" height="${size}" `)}</body></html>`);
+  await page.screenshot({ path: `public/${name}`, omitBackground: false });
+}
+for (const [name, size, pad] of [['remote-192.png', 192, 0], ['remote-512.png', 512, 0], ['remote-maskable-512.png', 512, 72], ['remote-touch-icon.png', 180, 24]]) {
+  await page.setViewportSize({ width: size, height: size });
+  await page.setContent(`<html><body style="margin:0">${remoteMark(pad).replace('<svg ', `<svg width="${size}" height="${size}" `)}</body></html>`);
   await page.screenshot({ path: `public/${name}`, omitBackground: false });
 }
 await browser.close();

@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { CastPlayResponse, Episode, PlaybackInfo, TimelineInfo, TrackChoice } from '@anycast/shared';
+import type { CastPlayResponse, Episode, PlaybackInfo, RemoteCommand, RemoteNowPlaying, TimelineInfo, TrackChoice } from '@anycast/shared';
 import { useApp, useIsFavorite } from '../store/app';
 import { useWatchTime } from './watchTime';
 import { recordRecentChannel, saveProgress, saveProgressOnUnload, setZapList, toggleFavorite, type ProgressBody } from '../store/actions';
@@ -46,6 +46,7 @@ import { castConnected, castLoad, castPause, castPlay, castPlayPause, castSeek, 
 import { IconAirPlay, IconCast } from './cast/icons';
 import { castMediaFor, castUrl, unreachableFromTv } from './cast/media';
 import { isHandheld, lockOrientation, useSideways } from '../lib/orientation';
+import { remotePosition, remoteStateChanged, setRemotePlayer, signature as remoteSignature } from '../remote/receiver';
 import '../theme/player.css';
 import '../theme/cast.css';
 
@@ -1225,6 +1226,77 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     },
     !isLive,
   );
+
+  /* ---------------- remote control (a phone steers this player, remote/receiver.ts) ---------------- */
+  const remoteNow = useRef<RemoteNowPlaying | null>(null);
+  remoteNow.current = {
+    kind,
+    id,
+    seriesId: kind === 'episode' ? (seriesId ?? null) : null,
+    title,
+    subtitle: isLive ? (ch?.name ?? null) : metaLine || null,
+    image: castMeta.current.image,
+    paused: shownPaused,
+    waiting: waiting && !needsTap,
+    needsTap: needsTap && !casting,
+    position: isLive ? position : ct,
+    duration: isLive ? 0 : duration || 0,
+    program: program ? { start: program.start, end: program.end } : null,
+    behindMs: isLive ? (atLive ? 0 : Math.round(behind)) : undefined,
+    volume: vol.level,
+    muted: vol.muted,
+    canPrev: isLive || !!prevEpisode,
+    canNext: isLive || !!nextEpisode,
+    casting,
+  };
+  const remoteRun = useRef<(c: RemoteCommand) => void>(() => undefined);
+  remoteRun.current = (c) => {
+    const v = videoRef.current;
+    switch (c.type) {
+      case 'toggle':
+        return togglePlay();
+      case 'play':
+        return castingRef.current ? castPlay() : play();
+      case 'pause':
+        return castingRef.current ? castPause() : v?.pause();
+      case 'seekBy':
+        return skip(c.seconds < 0 ? -1 : 1, Math.abs(c.seconds));
+      case 'seekTo':
+        if (!isLive) seekVod(Math.max(0, duration ? Math.min(duration - 0.5, c.position) : c.position));
+        return;
+      case 'live':
+        if (isLive) goLive();
+        return;
+      case 'volume':
+      case 'volumeBy':
+      case 'mute': {
+        if (c.type === 'volume') vol.set(c.level);
+        else if (c.type === 'volumeBy') vol.nudge(c.delta);
+        else if (vol.muted !== c.muted) vol.toggleMute();
+        const el = videoRef.current;
+        if (!mini) setRipple({ side: 'c', text: el?.muted ? 'Muted' : `${Math.round((el?.volume ?? 1) * 100)}%`, key: Date.now() });
+        return;
+      }
+      case 'step':
+        if (isLive) return void zap(c.dir);
+        if (c.dir > 0 && nextEpisode) return goNext();
+        if (c.dir < 0 && prevEpisode) go(`/play/episode/${prevEpisode.id}?series=${prevEpisode.seriesId}`);
+        return;
+      case 'stop':
+        close();
+        // not history back: that may be the channel or movie before this one
+        if (!mini) navigate(isLive ? '/live' : kind === 'episode' && seriesId ? `/series/${seriesId}` : '/movies', { replace: true });
+        return;
+      case 'open':
+        return;
+    }
+  };
+  useEffect(() => {
+    setRemotePlayer({ snapshot: () => remoteNow.current && { ...remoteNow.current, position: remotePosition(remoteNow.current, videoRef.current, castingRef.current) }, run: (c) => remoteRun.current(c) });
+    return () => setRemotePlayer(null);
+  }, []);
+  const remoteSig = remoteSignature(remoteNow.current);
+  useEffect(() => remoteStateChanged(), [remoteSig]);
 
   const seekEl = (
     isLive ? (

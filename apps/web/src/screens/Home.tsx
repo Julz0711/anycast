@@ -17,7 +17,8 @@ import { fmtClock, fmtRelativeAgo } from '../lib/time';
 import { toneFor } from '../lib/misc';
 import { Art, ChannelRow, ContinueCard, PosterCard, timeLeft, UpNextCard } from '../components/cards';
 import { Empty, LogoTile, ProgressBar, Skeleton } from '../components/ui';
-import { IconCheck, IconClose, IconPencil, IconPlay } from '../components/Icons';
+import { IconCheck, IconClose, IconPencil, IconPlay, IconRemote } from '../components/Icons';
+import { useRemoteButton } from '../remote/receiver';
 import { HOME_SECTIONS, HomeEditor } from '../components/HomeEditor';
 import { prefetchPlayer } from '../player/prefetch';
 import { NewEpisodeCards, useNewEpisodes } from '../components/NewEpisodes';
@@ -51,6 +52,7 @@ export function HomeScreen() {
   const recentIds = useApp((s) => s.recentChannels);
   const watchLater = useApp((s) => s.mediaLists.find((l) => l.builtin === 'watch-later'));
   const [editing, setEditing] = useState(false);
+  const showRemote = useRemoteButton();
   const now = useNow(30_000);
   // live rows refresh their now/next every couple of minutes
   const slot = Math.floor(now / 120_000);
@@ -369,6 +371,11 @@ export function HomeScreen() {
           </div>
         )}
         <PhoneHeadActions profile>
+          {form === 'phone' && showRemote && (
+            <Link to="/remote" className="icon-btn head-remote" aria-label="Remote" title="Control AnyCast on your TV or computer">
+              <IconRemote />
+            </Link>
+          )}
           {form === 'phone' ? (
             <button type="button" className={`icon-btn${editing ? ' on' : ''}`} aria-expanded={editing} aria-label={editing ? 'Done' : 'Customize'} title={editing ? 'Done' : 'Customize Home'} onClick={() => setEditing((v) => !v)}>
               {editing ? <IconCheck /> : <IconPencil />}

@@ -23,6 +23,7 @@ import type { Profile, ProfileImageType } from './profiles';
 import type { CastPlayRequest, CastPlayResponse, CastSettings } from './cast';
 import type { Recap, WatchKind } from './recap';
 import type { ProviderLogin, ProviderSettings, ProviderTestResult } from './provider';
+import type { RemoteCommand, RemoteDevice, RemotePresence } from './remote';
 
 
 /**
@@ -211,7 +212,14 @@ export type SyncEvent =
    * Sent to the profile whose playback was stopped by another client taking over the connection.
    * `clientId` is the stopped client's x-anycast-client id; other clients of the profile ignore it.
    */
-  | { type: 'playback-stopped'; profileId: string; clientId: string; reason: 'taken-over'; by: { profileName: string; device?: string } };
+  | { type: 'playback-stopped'; profileId: string; clientId: string; reason: 'taken-over'; by: { profileName: string; device?: string } }
+  /**
+   * Remote control (remote.ts): a phone of the account sent this command to the device `clientId`
+   * (other clients of the profile ignore it). `from` is the phone's device label.
+   */
+  | { type: 'remote-command'; profileId: string; clientId: string; command: RemoteCommand; from: string | null }
+  /** Remote control: the account's devices changed (one came, went, or plays something else). Sent to every profile of the account. */
+  | { type: 'remote-devices'; profileId: string; devices: RemoteDevice[] };
 
 /**
  * Swipe: a deck of random movies and series to sort through. Swiping right puts a title in Watch
@@ -406,6 +414,18 @@ export interface Api {
   'GET /api/cast/settings': { res: CastSettings };
   /** Admin only. 400 for an address that is not http(s)://host[:port] */
   'PUT /api/cast/settings': { body: CastSettings; res: CastSettings };
+
+  /**
+   * Remote control (remote.ts). Requests carry x-anycast-client / x-anycast-device.
+   * presence: this device can be steered (and what it plays); sent on changes and every REMOTE_HEARTBEAT_MS.
+   * DELETE presence: it can't any more (closed, or the setting turned off).
+   * devices: the account's devices other than this one, newest first.
+   * command: 404 when the device is gone; 400 for a bad command.
+   */
+  'POST /api/remote/presence': { body: RemotePresence; res: { ok: true } };
+  'DELETE /api/remote/presence': { res: { ok: true } };
+  'GET /api/remote/devices': { res: RemoteDevice[] };
+  'POST /api/remote/command': { body: { clientId: string; command: RemoteCommand }; res: { ok: true } };
 
   /** Rolling buffer: pinned channels record continuously (TL-4) */
   'GET /api/buffer/pins': { res: BufferPins };
