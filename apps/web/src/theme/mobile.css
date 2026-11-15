@@ -73,6 +73,10 @@ html[data-form="phone"] .sheet-item { padding: 0.75rem; }
 html[data-form="phone"] .sheet:focus { outline: none; }
 html[data-form="phone"] .card-menu button { min-height: 2.75rem; }
 
+/* the fit / fill button only shows held sideways (below) */
+html[data-form="phone"] .pl-top .pl-fit { display: none; }
+html[data-form="phone"] .pl-top .pl-fit[aria-pressed="true"] { background: rgba(0,0,0,0.6); }
+
 /* ---------- landscape phones ---------- */
 @media (orientation: landscape) {
   /*
@@ -100,6 +104,13 @@ html[data-form="phone"] .card-menu button { min-height: 2.75rem; }
   html[data-form="phone"] .player[data-bar]:not([data-theater]):not([data-mode="mini"]):not([data-mode="overlay"]) .pl-stage { height: 100dvh; }
   html[data-form="phone"] .player[data-bar] .pl-bar { padding-bottom: calc(0.25rem + var(--safe-b)); padding-left: calc(0.5rem + var(--safe-l)); padding-right: calc(0.5rem + var(--safe-r)); }
   html[data-form="phone"] .pl-top { padding-right: calc(0.75rem + var(--safe-r)); }
+  /*
+   * A sideways phone is wider than 16:9, so the whole picture leaves black bars at the sides, where
+   * the Dynamic Island sits. Fill zooms the picture to the screen's edges (pinch or the button in
+   * the top bar, Settings › Player). The controls keep to the safe area.
+   */
+  html[data-form="phone"] .player[data-fit="fill"] .pl-video { object-fit: cover; }
+  html[data-form="phone"] .pl-top .pl-fit { display: inline-flex; }
   html[data-form="phone"] .fav-bar .seg { max-width: 30rem; }
   html[data-form="phone"] .home-hero { grid-template-columns: minmax(0, 20rem) minmax(0, 1fr); }
   html[data-form="phone"] .detail { grid-template-columns: 9rem minmax(0, 1fr); gap: 1.5rem; }

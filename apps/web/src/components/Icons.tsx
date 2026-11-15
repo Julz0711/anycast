@@ -148,6 +148,14 @@ export const IconSparkle = (p: SVGProps<SVGSVGElement>) => (
 export const IconTheater = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="2.5" y="6" width="19" height="12" rx="2" /><path d="M6 10v4M18 10v4" /></svg>
 );
+/** player, phone sideways: zoom the picture to fill the screen (arrows out to the sides) */
+export const IconFill = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="2.5" y="5" width="19" height="14" rx="2" /><path d="M9 12H5.5M7 10l-2 2 2 2M15 12h3.5M17 10l2 2-2 2" /></svg>
+);
+/** player, phone sideways: back to the whole picture (arrows in from the sides) */
+export const IconFit = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="2.5" y="5" width="19" height="14" rx="2" /><path d="M5.5 12H10M8 10l2 2-2 2M18.5 12H14M16 10l-2 2 2 2" /></svg>
+);
 /** mini player size: a screen with a bigger or a smaller picture in it */
 export const IconResize = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="2.5" y="4.5" width="19" height="15" rx="2" /><rect x="8.5" y="9.5" width="10" height="7" rx="1" fill="currentColor" stroke="none" /></svg>

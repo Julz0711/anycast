@@ -87,6 +87,8 @@ export type LiveStreamMode = (typeof LIVE_STREAM_CHOICES)[number];
 /** Seconds without mouse, touch or key activity before the player's controls fade out while playing. */
 export const CONTROLS_HIDE_CHOICES = [1, 2, 3, 5, 8] as const;
 export type ControlsHideSeconds = (typeof CONTROLS_HIDE_CHOICES)[number];
+export const VIDEO_FIT_CHOICES = ['fit', 'fill'] as const;
+export type VideoFit = (typeof VIDEO_FIT_CHOICES)[number];
 
 /**
  * The second typeface, for titles, section heads and the clock (phones). 'plain' keeps the UI font.
@@ -149,6 +151,12 @@ export interface Preferences {
     liveStream: LiveStreamMode;
     /** seconds of no activity before the player's controls hide while it plays */
     controlsHide: ControlsHideSeconds;
+    /**
+     * A phone held sideways, whose screen is wider than the picture. fit: the whole picture, with
+     * black bars at the sides; fill: zoomed to fill the screen edge to edge (behind the notch or
+     * Dynamic Island too), cutting a little off the top and bottom. A pinch in the player switches.
+     */
+    videoFit: VideoFit;
     /**
      * off: no subtitles unless chosen for the item; on: always, in the preferred subtitle language
      * when there is one; auto: only when the audio is not in the preferred subtitle language
@@ -223,6 +231,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     liveBuffer: 4,
     liveStream: 'auto',
     controlsHide: 2,
+    videoFit: 'fit',
     subtitlesDefault: 'off',
     preferredAudioLanguage: 'en',
     preferredSubtitleLanguage: null,
@@ -281,6 +290,7 @@ export function mergePreferences(partial: unknown): Preferences {
   if (!LIVE_BUFFER_CHOICES.includes(prefs.player.liveBuffer)) prefs.player.liveBuffer = DEFAULT_PREFERENCES.player.liveBuffer;
   if (!LIVE_STREAM_CHOICES.includes(prefs.player.liveStream)) prefs.player.liveStream = DEFAULT_PREFERENCES.player.liveStream;
   if (!CONTROLS_HIDE_CHOICES.includes(prefs.player.controlsHide)) prefs.player.controlsHide = DEFAULT_PREFERENCES.player.controlsHide;
+  if (!VIDEO_FIT_CHOICES.includes(prefs.player.videoFit)) prefs.player.videoFit = DEFAULT_PREFERENCES.player.videoFit;
   if (!HEADLINE_FONT_CHOICES.includes(prefs.appearance.headlineFont)) prefs.appearance.headlineFont = DEFAULT_PREFERENCES.appearance.headlineFont;
   const pinned = prefs.categories.pinned;
   prefs.categories.pinned = Array.isArray(pinned) ? [...new Set(pinned.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 200) : [];
