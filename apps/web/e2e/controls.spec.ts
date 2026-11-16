@@ -34,6 +34,16 @@ test('control bar on the video: play, skip, volume, time, theater and full scree
   await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 2);
   await expect(page.locator('.player')).toHaveAttribute('data-chrome', 'on');
 
+  // the mouse rests on the picture: the bar and the pointer hide after the idle time, a move brings both back
+  const cursorAt = () =>
+    page.evaluate(([x, y]) => getComputedStyle(document.elementFromPoint(x, y)!).cursor, [sb.x + sb.width / 2, sb.y + sb.height / 3]);
+  await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 3);
+  await expect(page.locator('.player')).toHaveAttribute('data-chrome', 'off', { timeout: 5000 });
+  expect(await cursorAt()).toBe('none');
+  await page.mouse.move(sb.x + sb.width / 2 + 5, sb.y + sb.height / 3);
+  await expect(page.locator('.player')).toHaveAttribute('data-chrome', 'on');
+  expect(await cursorAt()).not.toBe('none');
+
   // a click on the picture pauses; the bar stays while paused
   await page.mouse.click(sb.x + sb.width / 2, sb.y + sb.height / 3);
   await expect(bar.getByRole('button', { name: 'Play', exact: true })).toBeVisible();

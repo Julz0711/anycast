@@ -156,7 +156,7 @@
 .player[data-mode="overlay"] .pl-title { font-size: 2rem; }
 .player[data-mode="overlay"] .pl-top { padding: 1.25rem max(var(--gutter), 5%); }
 .player[data-mode="overlay"][data-chrome="off"] .pl-panel, .player[data-mode="overlay"][data-chrome="off"] .pl-top { opacity: 0; pointer-events: none; }
-.player[data-mode="overlay"][data-chrome="off"] { cursor: none; }
+.player[data-mode="overlay"][data-chrome="off"], .player[data-mode="overlay"][data-chrome="off"] .pl-gesture { cursor: none; }
 [data-form="tv"] .pl-meta-line { font-size: 1rem; }
 [data-form="tv"] .rb-blocks { height: 2.25rem; }
 [data-form="tv"] .rb-block { font-size: 0.875rem; border-radius: 0.5rem; padding: 0 0.75rem; }
@@ -301,7 +301,8 @@
 .player[data-bar] .pl-top { transition: opacity 200ms ease; }
 .player[data-bar][data-chrome="off"] .pl-bar:not(:has(:focus-visible)),
 .player[data-bar][data-chrome="off"] .pl-top { opacity: 0; pointer-events: none; }
-.player[data-bar][data-chrome="off"] .pl-stage { cursor: none; }
+/* the mouse rests on the picture: hide the pointer with the bar (the gesture layer sets its own cursor, so name it too) */
+.player[data-bar][data-chrome="off"] .pl-stage, .player[data-bar][data-chrome="off"] .pl-gesture { cursor: none; }
 .player[data-bar][data-mode="overlay"] .pl-panel { display: none; }
 .player[data-bar][data-mode="overlay"] .pl-bar { padding-bottom: calc(0.5rem + var(--safe-b)); padding-left: max(1.25rem, var(--safe-l)); padding-right: max(1.25rem, var(--safe-r)); }
 .pl-top-title { min-width: 0; font-size: 1.125rem; font-weight: 600; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,0.6); }
