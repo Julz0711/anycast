@@ -219,7 +219,7 @@ export function playbackRoutes(app: FastifyInstance, s: Services): void {
   app.get<{ Params: BufParams & { seq: string } }>('/api/stream/buffer/:id/:run/:from/seg/:seq.ts', async (req, reply) => {
     if (!bufOk(req.params) || !/^\d+$/.test(req.params.seq)) return reply.code(404).send(notFound);
     const file = p.bufferSegment(req.params.id, Number(req.params.run), Number(req.params.seq));
-    return reply.header('cache-control', 'max-age=3600').type('video/mp2t').send(createReadStream(file));
+    return reply.header('cache-control', 'private, max-age=3600').type('video/mp2t').send(createReadStream(file));
   });
 
   app.get<{ Params: BufParams & { pipeline: string; '*': string } }>('/api/stream/buffer/:id/:run/:from/:pipeline/*', async (req, reply) => {

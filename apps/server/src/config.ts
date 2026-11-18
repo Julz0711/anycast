@@ -51,8 +51,11 @@ export interface Config {
    * trusted proxies.
    */
   trustProxy: boolean | number | string;
-  /** sign-ins from the internet need two-step sign-in (ANYCAST_2FA_OUTSIDE, default on) */
-  requireTwoFactorOutside?: boolean;
+  /**
+   * A password alone signs in from the internet too (ANYCAST_PASSWORD_OUTSIDE, default off). Off:
+   * from the internet, a device signs in only with a code a signed-in device approves.
+   */
+  passwordFromInternet?: boolean;
   /** background sync scheduler; tests turn it off */
   scheduler: boolean;
   /** rolling live buffer; missing fields take DEFAULT_BUFFER values */
@@ -140,7 +143,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     xtream: xtreamFromEnv(env),
     logLevel: env.LOG_LEVEL?.trim() || 'info',
     trustProxy: trustProxyFromEnv(env.TRUST_PROXY),
-    requireTwoFactorOutside: !/^(0|false|no|off)$/i.test(env.ANYCAST_2FA_OUTSIDE?.trim() ?? ''),
+    passwordFromInternet: /^(1|true|yes|on)$/i.test(env.ANYCAST_PASSWORD_OUTSIDE?.trim() ?? ''),
     scheduler: true,
     buffer: bufferFromEnv(env),
     hwaccel: hwaccelFromEnv(env),

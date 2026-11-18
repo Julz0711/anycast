@@ -1,4 +1,5 @@
 /** Whether a client address is the home network (LAN, Tailscale, this machine) or the internet. */
+import type { FastifyRequest } from 'fastify';
 import { isIP } from 'node:net';
 
 const V4_PRIVATE: [number, number][] = [
@@ -37,4 +38,21 @@ export function isHomeAddress(ip: string | undefined | null): boolean {
     return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80;
   }
   return false;
+}
+
+/**
+ * The visitor's address. Through a Cloudflare Tunnel, Cloudflare names it in cf-connecting-ip (the
+ * request itself arrives from cloudflared on this machine or network).
+ */
+export function clientIp(req: FastifyRequest): string {
+  const cf = req.headers['cf-connecting-ip'];
+  return typeof cf === 'string' && isIP(cf.trim()) ? cf.trim() : req.ip;
+}
+
+/**
+ * Whether a request comes from the internet. Anything that passed through Cloudflare does, whatever
+ * address the server sees, so a tunnel never makes the internet look like home.
+ */
+export function fromInternet(req: FastifyRequest): boolean {
+  return req.headers['cf-connecting-ip'] !== undefined || req.headers['cf-ray'] !== undefined || !isHomeAddress(req.ip);
 }

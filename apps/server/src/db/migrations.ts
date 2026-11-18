@@ -386,31 +386,6 @@ export const MIGRATIONS: string[] = [
   ) WITHOUT ROWID;
   `,
   `
-  -- two-step sign-in (auth/twofactor.ts). The TOTP secret is encrypted with ANYCAST_SECRET;
-  -- enabled_at is NULL while it is being set up; last_step stops a code being used twice.
-  CREATE TABLE two_factor (
-    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    secret TEXT NOT NULL,
-    enabled_at INTEGER,
-    last_step INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL
-  ) WITHOUT ROWID;
-  -- one-time recovery codes (sha256), for a lost authenticator
-  CREATE TABLE recovery_codes (
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    code_hash TEXT NOT NULL,
-    used_at INTEGER,
-    PRIMARY KEY (user_id, code_hash)
-  ) WITHOUT ROWID;
-  -- browsers that skip the code step at the next sign-in ("Remember this device")
-  CREATE TABLE trusted_devices (
-    token_hash TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    label TEXT,
-    created_at INTEGER NOT NULL,
-    last_used_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL
-  ) WITHOUT ROWID;
   -- signed-in devices (Settings › Security): an id to sign one out, what it is, how it signed in
   ALTER TABLE sessions ADD COLUMN id TEXT;
   ALTER TABLE sessions ADD COLUMN label TEXT;

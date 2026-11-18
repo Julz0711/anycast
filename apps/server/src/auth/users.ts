@@ -30,7 +30,7 @@ export const SESSION_COOKIE = 'anycast_session';
 export const SESSION_TTL_MS = 90 * 86400_000;
 
 export interface UserRow { id: string; username: string; password_hash: string; is_admin: number }
-export interface SessionInfo { label?: string | null; ip?: string | null; method?: 'password' | 'two_factor' | 'trusted' | 'approved' }
+export interface SessionInfo { label?: string | null; ip?: string | null; method?: 'password' | 'approved' }
 export interface SessionRow {
   token_hash: string; id: string; label: string | null; ip: string | null; created_at: number; last_seen_at: number | null; method: SessionInfo['method'] | null;
 }

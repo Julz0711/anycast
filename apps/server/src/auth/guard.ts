@@ -1,5 +1,5 @@
 /**
- * Wrong-password and wrong-code limits, on top of the per-route request rate limit:
+ * Wrong-password limits, on top of the per-route request rate limit:
  * - per address: IP_MAX failures in IP_WINDOW_MS lock that address out for the rest of the window;
  * - per account, from the internet only: ACCOUNT_MAX failures in ACCOUNT_WINDOW_MS stop sign-ins
  *   to that account from the internet for the rest of the window. The home network (and Tailscale)

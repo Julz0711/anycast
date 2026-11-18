@@ -1,40 +1,25 @@
 /**
- * Two-step sign-in and signed-in devices (Settings › Security).
+ * Signing in from the internet and signed-in devices (Settings › Security).
  *
- * Sign-in: POST /api/auth/login answers Me, or `{ twoFactor }` when the account has two-step sign-in
- * and this browser isn't remembered. The code then goes to POST /api/auth/2fa with the challenge.
- *
- * A TV signs in without typing: POST /api/auth/device/start shows a code, a signed-in phone approves
- * it at /approve?code=…, and the TV's polling of POST /api/auth/device/poll then signs it in.
+ * From the home network or Tailscale, a password signs in. From the internet it doesn't (403
+ * outside_needs_approval, unless ANYCAST_PASSWORD_OUTSIDE): there a device (a TV) signs in with a
+ * code. POST /api/auth/device/start shows the code, a signed-in phone approves it at /approve?code=…,
+ * and the device's polling of POST /api/auth/device/poll then signs it in.
  */
 import type { Me } from './api';
 
-/** The code step of a sign-in: valid for TWO_FACTOR_CHALLENGE_MS, a few tries. */
-export interface TwoFactorChallenge {
-  twoFactor: { challenge: string; expiresAt: number };
-}
-export type LoginResult = Me | TwoFactorChallenge;
-export const isTwoFactorChallenge = (r: LoginResult): r is TwoFactorChallenge => 'twoFactor' in r;
-
-export const TWO_FACTOR_CHALLENGE_MS = 5 * 60_000;
-/** "Remember this device": how long a browser skips the code step */
-export const TRUSTED_DEVICE_DAYS = 180;
-export const RECOVERY_CODE_COUNT = 10;
 /** How long a TV's sign-in code waits for approval */
 export const DEVICE_CODE_MS = 10 * 60_000;
 export const DEVICE_POLL_MS = 2000;
 
 /**
- * Login errors (besides 400/401):
- *   403 two_factor_required  this account has no two-step sign-in and the request comes from the internet
- *   429 locked_out           too many wrong tries; `retryAfter` seconds
- *   401 wrong_code           a wrong code in the code step; `attemptsLeft`
- *   410 challenge_expired    the code step took too long or had too many wrong tries: sign in again
+ * Login errors (besides 400/401 invalid_login):
+ *   403 outside_needs_approval  a password from the internet: sign in with a code instead
+ *   429 locked_out              too many wrong tries; `retryAfter` seconds
  */
 export interface AuthError {
-  error: 'two_factor_required' | 'locked_out' | 'wrong_code' | 'challenge_expired' | 'invalid_login' | 'wrong_password';
+  error: 'outside_needs_approval' | 'locked_out' | 'invalid_login';
   message: string;
-  attemptsLeft?: number;
   retryAfter?: number;
 }
 
@@ -47,27 +32,17 @@ export interface SignedInDevice {
   /** the address it was last seen from, and whether that is the home network (or Tailscale) */
   ip: string | null;
   outside: boolean;
-  /** how it signed in: password, password + code, approved from another device */
-  method: 'password' | 'two_factor' | 'trusted' | 'approved' | null;
+  /** how it signed in: password, or approved from another device */
+  method: 'password' | 'approved' | null;
   current: boolean;
 }
 
 export interface SecurityStatus {
-  twoFactor: { enabled: boolean; enabledAt: number | null; recoveryCodesLeft: number };
-  /** browsers that skip the code step */
-  trustedDevices: number;
   devices: SignedInDevice[];
   /** this request: where the server sees it coming from */
   here: { ip: string; outside: boolean };
-  /** sign-ins from the internet need two-step sign-in (ANYCAST_2FA_OUTSIDE) */
-  outsideNeedsTwoFactor: boolean;
-}
-
-export interface TwoFactorSetup {
-  /** base32, for typing into an authenticator by hand */
-  secret: string;
-  /** otpauth:// link, shown as a QR code */
-  uri: string;
+  /** a password alone also signs in from the internet (ANYCAST_PASSWORD_OUTSIDE) */
+  passwordFromInternet: boolean;
 }
 
 export interface DeviceCodeStart {

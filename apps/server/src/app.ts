@@ -5,8 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import path from 'node:path';
 import { HttpError, Users } from './auth/users';
 import { SignInGuard } from './auth/guard';
-import { Challenges, DeviceCodes } from './auth/pending';
-import { TwoFactor } from './auth/twofactor';
+import { DeviceCodes } from './auth/pending';
 import { AutoBackups, DEFAULT_BACKUP_KEEP } from './backup/auto';
 import { BackupError } from './backup/format';
 import { CatalogSync } from './catalog/sync';
@@ -133,7 +132,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   const backups = new AutoBackups(db, path.join(config.dataDir, 'backups'), config.backupKeep ?? DEFAULT_BACKUP_KEEP, (msg) => app.log.warn(msg));
   const services: Services = { config, db, users, source, sync, bus, userData: new UserData(db, bus), playback, parental: new Parental(db, bus), backups, cast: new CastLinks(users, db),
     remote: new RemoteHub(bus, (userId) => users.profiles(userId).map((p) => p.id)),
-    security: { twoFactor: new TwoFactor(db, config.secret), guard: new SignInGuard(), challenges: new Challenges(), devices: new DeviceCodes() },
+    security: { guard: new SignInGuard(), devices: new DeviceCodes() },
   };
 
   await app.register(cookie);

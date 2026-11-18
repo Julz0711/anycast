@@ -5,16 +5,16 @@ function deriveKey(secret: string, purpose: string): Buffer {
 }
 
 /** AES-256-GCM; output is base64(iv | tag | ciphertext). */
-export function encrypt(secret: string, plaintext: string, purpose = 'source-credentials'): string {
+export function encrypt(secret: string, plaintext: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', deriveKey(secret, purpose), iv);
+  const cipher = createCipheriv('aes-256-gcm', deriveKey(secret, 'source-credentials'), iv);
   const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   return Buffer.concat([iv, cipher.getAuthTag(), ct]).toString('base64');
 }
 
-export function decrypt(secret: string, payload: string, purpose = 'source-credentials'): string {
+export function decrypt(secret: string, payload: string): string {
   const buf = Buffer.from(payload, 'base64');
-  const decipher = createDecipheriv('aes-256-gcm', deriveKey(secret, purpose), buf.subarray(0, 12));
+  const decipher = createDecipheriv('aes-256-gcm', deriveKey(secret, 'source-credentials'), buf.subarray(0, 12));
   decipher.setAuthTag(buf.subarray(12, 28));
   return Buffer.concat([decipher.update(buf.subarray(28)), decipher.final()]).toString('utf8');
 }

@@ -1,50 +1,22 @@
-/** Settings › Security (two-step sign-in, signed-in devices) and signing in a TV with a code. */
+/** Settings › Security (signed-in devices) and signing in a TV with a code a signed-in device approves. */
 import { normalizeDeviceCode, type DeviceCodeInfo, type SecurityStatus } from '@anycast/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { isHomeAddress } from '../auth/net';
-import { TRUSTED_COOKIE } from '../auth/twofactor';
+import { clientIp, fromInternet, isHomeAddress } from '../auth/net';
 import { HttpError } from '../auth/users';
 import { sha256 } from '../crypto';
 import { auth, type Services } from '../context';
 import { deviceLabel, lockedOut, signIn } from './auth';
 
-const Password = z.object({ password: z.string().min(1).max(500) });
-const Code = z.object({ code: z.string().trim().min(1).max(40) });
-const Disable = z.object({ password: z.string().min(1).max(500), code: z.string().trim().min(1).max(40) });
 const Poll = z.object({ pollToken: z.string().min(1).max(100) });
 
 export function securityRoutes(app: FastifyInstance, s: Services): void {
-  const { twoFactor, guard, devices } = s.security;
-
-  /** Checks the signed-in user's password, counting wrong ones like a sign-in does. */
-  const checkPassword = async (req: FastifyRequest, password: string) => {
-    const user = auth(req).user;
-    const account = user.username.toLowerCase();
-    const wait = guard.retryAfter(req.ip, account);
-    if (wait) throw Object.assign(new HttpError(429, 'locked_out', `Too many wrong tries. Try again in ${Math.ceil(wait / 60)} minutes.`), { retryAfter: wait });
-    if (!(await s.users.passwordMatches(user, password))) {
-      guard.fail(req.ip, account);
-      throw new HttpError(403, 'wrong_password', 'Wrong password');
-    }
-  };
-  const checkCode = (req: FastifyRequest, code: string) => {
-    const user = auth(req).user;
-    const account = user.username.toLowerCase();
-    const wait = guard.retryAfter(req.ip, account);
-    if (wait) throw new HttpError(429, 'locked_out', `Too many wrong tries. Try again in ${Math.ceil(wait / 60)} minutes.`);
-    if (!twoFactor.verify(user.id, code)) {
-      guard.fail(req.ip, account);
-      throw new HttpError(403, 'wrong_code', 'Wrong code');
-    }
-  };
+  const { guard, devices } = s.security;
 
   app.get('/api/auth/security', async (req): Promise<SecurityStatus> => {
     const { user, token } = auth(req);
     const current = sha256(token);
     return {
-      twoFactor: twoFactor.status(user.id),
-      trustedDevices: twoFactor.trustedCount(user.id),
       devices: s.users.sessions(user.id).map((r) => ({
         id: r.id,
         label: r.label,
@@ -55,47 +27,9 @@ export function securityRoutes(app: FastifyInstance, s: Services): void {
         method: r.method ?? null,
         current: r.token_hash === current,
       })),
-      here: { ip: req.ip, outside: !isHomeAddress(req.ip) },
-      outsideNeedsTwoFactor: s.config.requireTwoFactorOutside !== false,
+      here: { ip: clientIp(req), outside: fromInternet(req) },
+      passwordFromInternet: s.config.passwordFromInternet === true,
     };
-  });
-
-  const strict = { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } };
-
-  app.post('/api/auth/2fa/setup', strict, async (req, reply) => {
-    const b = Password.safeParse(req.body);
-    if (!b.success) return reply.code(400).send({ error: 'bad_request', message: 'Enter your password' });
-    await checkPassword(req, b.data.password);
-    return twoFactor.begin(auth(req).user.id, auth(req).user.username);
-  });
-
-  app.post('/api/auth/2fa/enable', strict, async (req, reply) => {
-    const b = Code.safeParse(req.body);
-    if (!b.success) return reply.code(400).send({ error: 'bad_request', message: 'Enter the 6-digit code' });
-    return { recoveryCodes: twoFactor.enable(auth(req).user.id, b.data.code) };
-  });
-
-  app.post('/api/auth/2fa/disable', strict, async (req, reply) => {
-    const b = Disable.safeParse(req.body);
-    if (!b.success) return reply.code(400).send({ error: 'bad_request', message: 'Enter your password and a code' });
-    await checkPassword(req, b.data.password);
-    checkCode(req, b.data.code);
-    twoFactor.disable(auth(req).user.id);
-    reply.clearCookie(TRUSTED_COOKIE, { path: '/api/auth' });
-    return { ok: true as const };
-  });
-
-  app.post('/api/auth/2fa/recovery-codes', strict, async (req, reply) => {
-    const b = Code.safeParse(req.body);
-    if (!b.success) return reply.code(400).send({ error: 'bad_request', message: 'Enter a code' });
-    checkCode(req, b.data.code);
-    return { recoveryCodes: twoFactor.newRecoveryCodes(auth(req).user.id) };
-  });
-
-  app.delete('/api/auth/trusted', async (req, reply) => {
-    twoFactor.forgetTrusted(auth(req).user.id);
-    reply.clearCookie(TRUSTED_COOKIE, { path: '/api/auth' });
-    return { ok: true as const };
   });
 
   app.delete<{ Params: { id: string } }>('/api/auth/sessions/:id', async (req, reply) => {
@@ -114,9 +48,9 @@ export function securityRoutes(app: FastifyInstance, s: Services): void {
   /* ---------------- a TV signs in with a code ---------------- */
 
   app.post('/api/auth/device/start', { config: { rateLimit: { max: 6, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const wait = guard.retryAfter(req.ip);
+    const wait = guard.retryAfter(clientIp(req));
     if (wait) return lockedOut(reply, wait);
-    return devices.start(deviceLabel(req), req.ip);
+    return devices.start(deviceLabel(req), clientIp(req), fromInternet(req));
   });
 
   app.post('/api/auth/device/poll', { config: { rateLimit: { max: 90, timeWindow: '1 minute' } } }, async (req, reply) => {
@@ -140,7 +74,7 @@ export function securityRoutes(app: FastifyInstance, s: Services): void {
 
   app.get<{ Params: { code: string } }>('/api/auth/device/:code', lookup, async (req): Promise<DeviceCodeInfo> => {
     const r = pending(req.params.code);
-    return { code: r.code, label: r.label, ip: r.ip, outside: !isHomeAddress(r.ip), createdAt: r.createdAt, expiresAt: r.expiresAt };
+    return { code: r.code, label: r.label, ip: r.ip, outside: r.outside, createdAt: r.createdAt, expiresAt: r.expiresAt };
   });
 
   app.post<{ Params: { code: string } }>('/api/auth/device/:code/approve', lookup, async (req) => {

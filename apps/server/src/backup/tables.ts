@@ -23,9 +23,6 @@
  * Excluded:
  *   sessions          sign-in tokens (hashed); a restore must not sign anyone in, or out of a new server
  *   profile_entries   which sign-in sessions opened a locked profile; goes with the sessions
- *   two_factor, recovery_codes, trusted_devices
- *                     two-step sign-in: the secret is encrypted with this server's ANYCAST_SECRET, so a
- *                     restore elsewhere could lock the owner out. After a restore it is set up again.
  *   recent_channels   the last channels each profile watched (Home › Jump back in): short-lived
  *                     viewing history that fills again as soon as someone watches TV
  *   swipe_passed      movies and series a profile swiped away in Swipe; losing them only means
@@ -68,9 +65,6 @@ export const BACKUP_TABLES = {
 
   sessions: 'exclude',
   profile_entries: 'exclude',
-  two_factor: 'exclude',
-  recovery_codes: 'exclude',
-  trusted_devices: 'exclude',
   recent_channels: 'exclude',
   swipe_passed: 'exclude',
   source: 'exclude',

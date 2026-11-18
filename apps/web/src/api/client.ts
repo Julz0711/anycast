@@ -8,8 +8,8 @@ import { isDemo } from '../demo/flag';
 import { clientId, deviceLabel } from '../lib/client-id';
 
 export type Route = keyof Api;
-/** a 401 from these is a wrong password or code, not a signed-out session */
-const SIGN_IN_ROUTES = new Set<string>(['POST /api/auth/login', 'POST /api/auth/2fa']);
+/** a 401 from these is a wrong password, not a signed-out session */
+const SIGN_IN_ROUTES = new Set<string>(['POST /api/auth/login']);
 type Def<R extends Route> = Api[R];
 export type ResOf<R extends Route> = Def<R>['res'];
 export type QueryOf<R extends Route> = Def<R> extends { query: infer Q } ? Q : never;

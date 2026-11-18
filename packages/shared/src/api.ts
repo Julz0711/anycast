@@ -1,8 +1,8 @@
 /**
  * HTTP API contract between apps/web and apps/server. All routes are under /api.
  * Auth: POST /api/auth/login sets an httpOnly cookie "anycast_session" (90 days).
- * Every route except /api/auth/login, /api/auth/2fa, /api/auth/device/{start,poll} and /api/health requires the session cookie.
- * Two-step sign-in and TV sign-in by code: see security.ts.
+ * Every route except /api/auth/login, /api/auth/device/{start,poll} and /api/health requires the session cookie.
+ * From the internet, devices sign in with a code a signed-in device approves: see security.ts.
  * Profile: requests carry header "x-anycast-profile: <profileId>" (defaults to the user's first profile).
  *
  * Artwork: logo/poster fields are /api/art/{kind}/{id} paths (provider hosts never reach the client).
@@ -25,7 +25,7 @@ import type { CastPlayRequest, CastPlayResponse, CastSettings } from './cast';
 import type { Recap, WatchKind } from './recap';
 import type { ProviderLogin, ProviderSettings, ProviderTestResult } from './provider';
 import type { RemoteCommand, RemoteDevice, RemotePresence } from './remote';
-import type { DeviceCodeInfo, DeviceCodePoll, DeviceCodeStart, LoginResult, SecurityStatus, TwoFactorSetup } from './security';
+import type { DeviceCodeInfo, DeviceCodePoll, DeviceCodeStart, SecurityStatus } from './security';
 
 
 /**
@@ -282,9 +282,8 @@ export interface Api {
    * SyncEvent (and the usual per-kind events) to every profile it changed.
    */
   'POST /api/admin/restore': { body: { backup: BackupFile; mode?: RestoreMode; password: string }; res: RestoreResult };
-  'POST /api/auth/login': { body: { username: string; password: string }; res: LoginResult };
-  /** The code step: a 6-digit authenticator code or a recovery code. `remember` skips it on this browser next time. */
-  'POST /api/auth/2fa': { body: { challenge: string; code: string; remember?: boolean }; res: Me };
+  /** 403 outside_needs_approval from the internet (see security.ts) */
+  'POST /api/auth/login': { body: { username: string; password: string }; res: Me };
   /** A TV asks to sign in: it shows the code, a signed-in device approves it */
   'POST /api/auth/device/start': { res: DeviceCodeStart };
   'POST /api/auth/device/poll': { body: { pollToken: string }; res: DeviceCodePoll };
@@ -294,16 +293,6 @@ export interface Api {
   'POST /api/auth/device/:code/deny': { res: { ok: true } };
   /** Settings › Security */
   'GET /api/auth/security': { res: SecurityStatus };
-  /** Starts setting up two-step sign-in (needs the password); nothing changes until enable */
-  'POST /api/auth/2fa/setup': { body: { password: string }; res: TwoFactorSetup };
-  /** Turns it on with a first code from the authenticator; answers the recovery codes (shown once) */
-  'POST /api/auth/2fa/enable': { body: { code: string }; res: { recoveryCodes: string[] } };
-  /** Needs the password and a code (or a recovery code) */
-  'POST /api/auth/2fa/disable': { body: { password: string; code: string }; res: { ok: true } };
-  /** New recovery codes; the old ones stop working */
-  'POST /api/auth/2fa/recovery-codes': { body: { code: string }; res: { recoveryCodes: string[] } };
-  /** Every browser asks for the code again at its next sign-in */
-  'DELETE /api/auth/trusted': { res: { ok: true } };
   'DELETE /api/auth/sessions/:id': { res: { ok: true } };
   /** Signs out every device except this one */
   'POST /api/auth/sessions/sign-out-others': { res: { removed: number } };

@@ -1,11 +1,12 @@
 /**
- * Sign in: username and password, then the code step when the account has two-step sign-in.
- * A TV (or anything without a keyboard) signs in with a code instead: it shows the code and a QR
- * code, a signed-in phone approves it (/approve), and the TV is in. TVs start on that view.
+ * Sign in: username and password at home (or over Tailscale). From the internet, and on a TV, a
+ * device signs in with a code instead: it shows the code and a QR code, a signed-in phone approves
+ * it (/approve), and the device is in. TVs start on that view; a password tried from the internet
+ * switches to it.
  */
 import { DEVICE_POLL_MS, type AuthError, type DeviceCodeStart } from '@anycast/shared';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { login, loginWithCode, onSignedIn } from '../store/actions';
+import { useEffect, useState, type FormEvent } from 'react';
+import { login, onSignedIn } from '../store/actions';
 import { ApiError, call, errorMessage } from '../api/client';
 import { BrandMark } from '../components/Icons';
 import { Qr } from '../components/Qr';
@@ -13,7 +14,7 @@ import { isDemo } from '../demo/flag';
 import { useFormFactor } from '../lib/hooks';
 import '../theme/security.css';
 
-type Step = { kind: 'password' } | { kind: 'code'; challenge: string } | { kind: 'device' };
+type Step = { kind: 'password' } | { kind: 'device' };
 
 const authError = (e: unknown): AuthError | undefined => (e instanceof ApiError ? (e.body as AuthError | undefined) : undefined);
 
@@ -38,33 +39,28 @@ export function LoginScreen() {
           <BrandMark />
           AnyCast
         </div>
-        {step.kind === 'password' && <PasswordStep notice={notice} onCode={(challenge) => (setNotice(null), setStep({ kind: 'code', challenge }))} onDevice={() => setStep({ kind: 'device' })} />}
-        {step.kind === 'code' && (
-          <CodeStep
-            challenge={step.challenge}
-            onRestart={(why) => (setNotice(why), setStep({ kind: 'password' }))}
-          />
-        )}
-        {step.kind === 'device' && <DeviceStep onPassword={() => setStep({ kind: 'password' })} />}
+        {step.kind === 'password' && <PasswordStep onDevice={(why) => (setNotice(why ?? null), setStep({ kind: 'device' }))} />}
+        {step.kind === 'device' && <DeviceStep notice={notice} onPassword={() => (setNotice(null), setStep({ kind: 'password' }))} />}
       </div>
     </div>
   );
 }
 
-function PasswordStep(props: { notice: string | null; onCode: (challenge: string) => void; onDevice: () => void }) {
+function PasswordStep(props: { onDevice: (why?: string) => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(props.notice);
+  const [error, setError] = useState<string | null>(null);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const challenge = await login(username.trim(), password);
-      if (challenge) props.onCode(challenge.challenge);
+      await login(username.trim(), password);
     } catch (err) {
+      // from the internet a password doesn't sign in: show the code to approve on the phone
+      if (authError(err)?.error === 'outside_needs_approval') return props.onDevice(authError(err)!.message);
       setError(message(err));
     } finally {
       setBusy(false);
@@ -93,7 +89,7 @@ function PasswordStep(props: { notice: string | null; onCode: (challenge: string
         {busy ? 'Signing in…' : 'Sign in'}
       </button>
       {!isDemo() && (
-        <button className="btn btn-lg" type="button" onClick={props.onDevice} data-testid="login-device">
+        <button className="btn btn-lg" type="button" onClick={() => props.onDevice()} data-testid="login-device">
           Sign in with your phone
         </button>
       )}
@@ -104,93 +100,8 @@ function PasswordStep(props: { notice: string | null; onCode: (challenge: string
   );
 }
 
-function CodeStep(props: { challenge: string; onRestart: (why: string) => void }) {
-  const [code, setCode] = useState('');
-  const [recovery, setRecovery] = useState(false);
-  const [remember, setRemember] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await loginWithCode(props.challenge, code.trim(), remember);
-    } catch (err) {
-      const b = authError(err);
-      if (b?.error === 'challenge_expired') return props.onRestart(b.message);
-      setError(message(err));
-      setCode('');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // a full 6-digit code goes off by itself, like most sign-in pages
-  const onCode = (v: string) => {
-    const digits = recovery ? v : v.replace(/\D/g, '').slice(0, 6);
-    setCode(digits);
-    setError(null);
-  };
-  const formRef = useRef<HTMLFormElement>(null);
-  useEffect(() => {
-    if (!recovery && code.length === 6 && !busy) formRef.current?.requestSubmit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code]);
-
-  return (
-    <form ref={formRef} className="auth-step" onSubmit={submit} aria-labelledby="code-title" data-testid="login-code">
-      <h1 id="code-title" className="h1" style={{ fontSize: '1.5rem' }}>
-        Two-step sign-in
-      </h1>
-      <p className="muted">
-        {recovery ? 'Enter one of the recovery codes you saved when you set up two-step sign-in. Each works once.' : 'Enter the 6-digit code from your authenticator app.'}
-      </p>
-      <label className="field">
-        {recovery ? 'Recovery code' : 'Code'}
-        <input
-          key={recovery ? 'r' : 'c'}
-          className={`input${recovery ? '' : ' code-input'}`}
-          inputMode={recovery ? 'text' : 'numeric'}
-          autoComplete="one-time-code"
-          autoCapitalize="off"
-          spellCheck={false}
-          placeholder={recovery ? 'abcd-efgh' : '123456'}
-          maxLength={recovery ? 20 : 6}
-          value={code}
-          onChange={(e) => onCode(e.target.value)}
-          required
-          autoFocus
-        />
-      </label>
-      <label className="check">
-        <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-        <span>
-          Remember this device
-          <span className="field-hint">Next time, your password is enough here. Don't use this on a shared computer.</span>
-        </span>
-      </label>
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
-      <button className="btn btn-primary btn-lg" type="submit" disabled={busy || !code.trim()}>
-        {busy ? 'Checking…' : 'Continue'}
-      </button>
-      <button type="button" className="btn btn-quiet" onClick={() => (setRecovery((v) => !v), setCode(''), setError(null))}>
-        {recovery ? 'Use the authenticator app instead' : 'Lost your phone? Use a recovery code'}
-      </button>
-      <button type="button" className="btn btn-quiet" onClick={() => props.onRestart('')}>
-        Back
-      </button>
-    </form>
-  );
-}
-
 /** The TV side: shows a code, waits for a signed-in device to approve it. */
-function DeviceStep(props: { onPassword: () => void }) {
+function DeviceStep(props: { notice: string | null; onPassword: () => void }) {
   const [start, setStart] = useState<DeviceCodeStart | null>(null);
   const [state, setState] = useState<'loading' | 'waiting' | 'denied' | 'expired' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -245,6 +156,7 @@ function DeviceStep(props: { onPassword: () => void }) {
       <h1 id="device-title" className="h1" style={{ fontSize: '1.5rem' }}>
         Sign in with your phone
       </h1>
+      {props.notice && <p className="muted" role="status">{props.notice}</p>}
       {state === 'waiting' && start && (
         <div className="device-code-box">
           <Qr value={link} size="11rem" label="QR code that opens the approval page on your phone" />
