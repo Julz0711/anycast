@@ -1,7 +1,8 @@
 import { PROFILE_NAME_MAX } from '@anycast/shared';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { SESSION_COOKIE, SESSION_TTL_MS } from '../auth/users';
+import { clientIp, fromInternet } from '../auth/net';
+import { SESSION_COOKIE, SESSION_TTL_MS, type SessionInfo, type UserRow } from '../auth/users';
 import { CAST_CORS, castTokenOf } from '../cast';
 import { auth, type Services } from '../context';
 
@@ -10,14 +11,38 @@ const Name = z.string().trim().min(1).max(PROFILE_NAME_MAX);
 const CreateBody = z.object({ name: Name, avatar: z.string().max(40).nullable().optional() });
 const PatchBody = z.object({ name: Name.optional(), avatar: z.string().max(40).nullable().optional() });
 
-const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health']);
+const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/auth/device/start', '/api/auth/device/poll', '/api/health']);
 /**
  * Routes that work before a profile is open (the profile picker and profile management): they are
  * not refused for a locked profile, and check what they touch themselves.
  */
-const PROFILE_FREE = (url: string) => url === '/api/me' || url === '/api/auth/logout' || url === '/api/profiles' || url.startsWith('/api/profiles/');
+const PROFILE_FREE = (url: string) => url === '/api/me' || url.startsWith('/api/auth/') || url === '/api/profiles' || url.startsWith('/api/profiles/');
 
 const body = (req: FastifyRequest) => (req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {});
+
+/** What the device calls itself (x-anycast-device, e.g. "Chrome on Mac") */
+export const deviceLabel = (req: FastifyRequest): string | null => {
+  const v = req.headers['x-anycast-device'];
+  return typeof v === 'string' && v.trim() ? v.trim().slice(0, 80) : null;
+};
+
+export function lockedOut(reply: FastifyReply, seconds: number) {
+  const mins = Math.max(1, Math.ceil(seconds / 60));
+  return reply
+    .code(429)
+    .header('retry-after', String(seconds))
+    .send({ error: 'locked_out', message: `Too many wrong tries. Try again in ${mins} minute${mins === 1 ? '' : 's'}.`, retryAfter: seconds });
+}
+
+/** Starts a session for the user on this device (session cookie) and answers Me. */
+export function signIn(s: Services, req: FastifyRequest, reply: FastifyReply, user: UserRow, method: NonNullable<SessionInfo['method']>, label = deviceLabel(req)) {
+  const token = s.users.createSession(user.id, { label, ip: clientIp(req), method });
+  s.security.guard.succeed(clientIp(req));
+  reply.setCookie(SESSION_COOKIE, token, {
+    httpOnly: true, sameSite: 'lax', path: '/', secure: req.protocol === 'https', maxAge: SESSION_TTL_MS / 1000,
+  });
+  return s.users.me(user, token);
+}
 
 /** Resolves the session cookie and the profile (header x-anycast-profile, or ?profile= for EventSource). */
 export function registerAuthHook(app: FastifyInstance, s: Services): void {
@@ -35,7 +60,7 @@ export function registerAuthHook(app: FastifyInstance, s: Services): void {
     }
     if (!url.startsWith('/api/') || PUBLIC_ROUTES.has(url)) return;
     const token = req.cookies[SESSION_COOKIE];
-    const user = token ? s.users.userForSession(token) : null;
+    const user = token ? s.users.userForSession(token, clientIp(req)) : null;
     if (!token || !user) return reply.code(401).send({ error: 'unauthorized', message: 'Please sign in' });
     const profiles = s.users.profiles(user.id, token);
     const q = req.query as Record<string, unknown>;
@@ -53,13 +78,24 @@ export function authRoutes(app: FastifyInstance, s: Services): void {
   app.post('/api/auth/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     const body = LoginBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'bad_request', message: 'Username and password are required' });
+    // from the internet, a password is never even checked: a device signs in there only with a
+    // code that a signed-in device approves (POST /api/auth/device/start), so guessing is pointless
+    if (!s.config.passwordFromInternet && fromInternet(req)) {
+      return reply.code(403).send({
+        error: 'outside_needs_approval',
+        message: 'From the internet, sign in with your phone: show a code here and approve it on a device that is signed in.',
+      });
+    }
+    const { guard } = s.security;
+    const account = body.data.username.toLowerCase();
+    const wait = guard.retryAfter(clientIp(req), account);
+    if (wait) return lockedOut(reply, wait);
     const user = await s.users.verifyLogin(body.data.username, body.data.password);
-    if (!user) return reply.code(401).send({ error: 'invalid_login', message: 'Wrong username or password' });
-    const token = s.users.createSession(user.id);
-    reply.setCookie(SESSION_COOKIE, token, {
-      httpOnly: true, sameSite: 'lax', path: '/', secure: req.protocol === 'https', maxAge: SESSION_TTL_MS / 1000,
-    });
-    return s.users.me(user, token);
+    if (!user) {
+      guard.fail(clientIp(req), account);
+      return reply.code(401).send({ error: 'invalid_login', message: 'Wrong username or password' });
+    }
+    return signIn(s, req, reply, user, 'password');
   });
 
   app.post('/api/auth/logout', async (req, reply) => {

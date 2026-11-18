@@ -107,6 +107,9 @@ has in its App Store:
 AnyCast is then at `https://<server-name>.<your-tailnet>.ts.net`, with a valid certificate, from
 anywhere, without opening ports on your router. On the phone, open it and use "Add to Home Screen".
 
+Devices that can't run Tailscale (a Fire TV Stick on Vega OS, a hotel TV): see
+[Opening AnyCast to the internet](internet.md) for a port forward where outside devices sign in with your phone.
+
 ## 4b. Casting to a TV (Chromecast, AirPlay)
 
 The player has a cast button when a TV is on your network: Chromecast (and TVs with Chromecast

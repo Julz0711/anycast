@@ -385,4 +385,14 @@ export const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   ) WITHOUT ROWID;
   `,
+  `
+  -- signed-in devices (Settings › Security): an id to sign one out, what it is, how it signed in
+  ALTER TABLE sessions ADD COLUMN id TEXT;
+  ALTER TABLE sessions ADD COLUMN label TEXT;
+  ALTER TABLE sessions ADD COLUMN ip TEXT;
+  ALTER TABLE sessions ADD COLUMN last_seen_at INTEGER;
+  ALTER TABLE sessions ADD COLUMN method TEXT;
+  UPDATE sessions SET id = lower(hex(randomblob(9))), last_seen_at = created_at;
+  CREATE INDEX sessions_user ON sessions(user_id);
+  `,
 ];

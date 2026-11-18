@@ -309,6 +309,10 @@ function demoCommand(c: RemoteCommand) {
 
 const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/health$/, () => ({ ok: true, version: 'demo' })],
+  ['GET', /^\/api\/auth\/security$/, () => ({
+    passwordFromInternet: false, here: { ip: '192.168.0.20', outside: false },
+    devices: [{ id: 'd1', label: 'This browser', createdAt: Date.now() - 86_400_000, lastSeenAt: Date.now(), ip: '192.168.0.20', outside: false, method: 'password', current: true }],
+  })],
   ['GET', /^\/api\/admin\/backup$/, () => demoBackup()],
   ['GET', /^\/api\/admin\/backups$/, () => ({ keep: 7, files: demoAutoBackups() })],
   ['GET', /^\/api\/admin\/backups\/([^/]+)$/, () => demoBackup()],

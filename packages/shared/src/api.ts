@@ -1,7 +1,8 @@
 /**
  * HTTP API contract between apps/web and apps/server. All routes are under /api.
  * Auth: POST /api/auth/login sets an httpOnly cookie "anycast_session" (90 days).
- * Every route except /api/auth/login and /api/health requires the session cookie.
+ * Every route except /api/auth/login, /api/auth/device/{start,poll} and /api/health requires the session cookie.
+ * From the internet, devices sign in with a code a signed-in device approves: see security.ts.
  * Profile: requests carry header "x-anycast-profile: <profileId>" (defaults to the user's first profile).
  *
  * Artwork: logo/poster fields are /api/art/{kind}/{id} paths (provider hosts never reach the client).
@@ -24,6 +25,7 @@ import type { CastPlayRequest, CastPlayResponse, CastSettings } from './cast';
 import type { Recap, WatchKind } from './recap';
 import type { ProviderLogin, ProviderSettings, ProviderTestResult } from './provider';
 import type { RemoteCommand, RemoteDevice, RemotePresence } from './remote';
+import type { DeviceCodeInfo, DeviceCodePoll, DeviceCodeStart, SecurityStatus } from './security';
 
 
 /**
@@ -280,7 +282,20 @@ export interface Api {
    * SyncEvent (and the usual per-kind events) to every profile it changed.
    */
   'POST /api/admin/restore': { body: { backup: BackupFile; mode?: RestoreMode; password: string }; res: RestoreResult };
+  /** 403 outside_needs_approval from the internet (see security.ts) */
   'POST /api/auth/login': { body: { username: string; password: string }; res: Me };
+  /** A TV asks to sign in: it shows the code, a signed-in device approves it */
+  'POST /api/auth/device/start': { res: DeviceCodeStart };
+  'POST /api/auth/device/poll': { body: { pollToken: string }; res: DeviceCodePoll };
+  /** Signed in: what is asking to sign in with this code (404 unknown or expired) */
+  'GET /api/auth/device/:code': { res: DeviceCodeInfo };
+  'POST /api/auth/device/:code/approve': { res: { ok: true } };
+  'POST /api/auth/device/:code/deny': { res: { ok: true } };
+  /** Settings › Security */
+  'GET /api/auth/security': { res: SecurityStatus };
+  'DELETE /api/auth/sessions/:id': { res: { ok: true } };
+  /** Signs out every device except this one */
+  'POST /api/auth/sessions/sign-out-others': { res: { removed: number } };
   'POST /api/auth/logout': { res: { ok: true } };
   'GET /api/me': { res: Me };
 

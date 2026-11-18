@@ -44,8 +44,18 @@ export interface Config {
   admin: { username: string; password: string } | null;
   xtream: XtreamCredentials | null;
   logLevel: string;
-  /** trust X-Forwarded-* (set when running behind a reverse proxy) */
-  trustProxy: boolean;
+  /**
+   * Which X-Forwarded-* to believe (TRUST_PROXY). `true` in .env means one proxy in front (Nginx
+   * Proxy Manager): the client address is the one that proxy saw, so a client can't fake its
+   * address by sending its own X-Forwarded-For. A number is that many proxies; addresses/CIDRs are
+   * trusted proxies.
+   */
+  trustProxy: boolean | number | string;
+  /**
+   * A password alone signs in from the internet too (ANYCAST_PASSWORD_OUTSIDE, default off). Off:
+   * from the internet, a device signs in only with a code a signed-in device approves.
+   */
+  passwordFromInternet?: boolean;
   /** background sync scheduler; tests turn it off */
   scheduler: boolean;
   /** rolling live buffer; missing fields take DEFAULT_BUFFER values */
@@ -104,6 +114,15 @@ export function xtreamFromEnv(env: NodeJS.ProcessEnv): XtreamCredentials | null 
   return { url: url.replace(/\/+$/, ''), username, password };
 }
 
+/** TRUST_PROXY: true/yes = 1 proxy, a number = that many, anything else = trusted proxy addresses (comma-separated). */
+export function trustProxyFromEnv(v: string | undefined): boolean | number | string {
+  const t = v?.trim() ?? '';
+  if (!t || /^(0|false|no|off)$/i.test(t)) return false;
+  if (/^(true|yes|on)$/i.test(t)) return 1;
+  if (/^\d+$/.test(t)) return Number(t);
+  return t;
+}
+
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
   const secret = env.ANYCAST_SECRET?.trim() ?? '';
   if (secret.length < 16) {
@@ -123,7 +142,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     admin: adminUser && adminPassword ? { username: adminUser, password: adminPassword } : null,
     xtream: xtreamFromEnv(env),
     logLevel: env.LOG_LEVEL?.trim() || 'info',
-    trustProxy: /^(1|true|yes)$/i.test(env.TRUST_PROXY?.trim() ?? ''),
+    trustProxy: trustProxyFromEnv(env.TRUST_PROXY),
+    passwordFromInternet: /^(1|true|yes|on)$/i.test(env.ANYCAST_PASSWORD_OUTSIDE?.trim() ?? ''),
     scheduler: true,
     buffer: bufferFromEnv(env),
     hwaccel: hwaccelFromEnv(env),
