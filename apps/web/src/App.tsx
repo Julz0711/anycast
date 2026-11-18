@@ -32,6 +32,7 @@ const SettingsScreen = lazy(() => import('./screens/Settings'));
 const ProfilePage = lazy(() => import('./profiles/ProfilePage'));
 const RecapScreen = lazy(() => import('./screens/Recap'));
 const RemoteScreen = lazy(() => import('./remote/RemoteScreen'));
+const ApproveScreen = lazy(() => import('./screens/Approve'));
 
 function subscribeMotion(cb: () => void) {
   const mq = matchMedia('(prefers-reduced-motion: reduce)');
@@ -117,6 +118,7 @@ function AuthedRoutes() {
         <Routes>
           <Route path="/profiles" element={<ProfilePicker manage />} />
           <Route path="/profiles/:id" element={<ProfilePage />} />
+          <Route path="/approve" element={<ApproveScreen />} />
           <Route path="*" element={<ProfilePicker />} />
         </Routes>
       </Suspense>
@@ -137,6 +139,7 @@ function AuthedRoutes() {
           <Route path="/profiles/:id" element={<ProfilePage />} />
           <Route path="/recap" element={<RecapScreen />} />
           <Route path="/remote" element={<RemoteScreen />} />
+          <Route path="/approve" element={<ApproveScreen />} />
           <Route element={<Shell />}>
             <Route path="/home" element={<HomeScreen />} />
             <Route path="/live" element={<LiveScreen />} />

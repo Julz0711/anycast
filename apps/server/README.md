@@ -27,7 +27,8 @@ working directory and from the repo root.
 | `BUFFER_ENABLED` (on) | Set to `0` to turn the rolling buffer off. |
 | `THUMBS_MAX_GB` (2) | Cap for the scrub thumbnail cache in `DATA_DIR/thumbs`. Least recently used titles are removed first. |
 | `WEB_DIST` | The built web app. Defaults to `apps/web/dist` if that folder exists. Any unknown non-API path gets `index.html`. |
-| `TRUST_PROXY` | Set to `1` behind a reverse proxy that sets `X-Forwarded-*`. |
+| `TRUST_PROXY` | `true` (or `1`) behind one reverse proxy that sets `X-Forwarded-*` (e.g. Nginx Proxy Manager); a number for that many proxies in a row, or the proxies' addresses/CIDRs. Only the nearest proxies are trusted, so a client can't fake its address. |
+| `ANYCAST_2FA_OUTSIDE` | Default on: sign-ins from the internet (not a private, Tailscale or loopback address) need two-step sign-in. `off` allows a password alone from anywhere. See docs/internet.md. |
 | `LOG_LEVEL` | Pino level (`info` by default). |
 
 ## Run

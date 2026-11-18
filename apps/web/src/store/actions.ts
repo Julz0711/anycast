@@ -1,5 +1,5 @@
 /** State-changing actions: auth, profile, preferences (optimistic + debounced PUT), favorites, progress, sync events. */
-import { mergePreferences, type Favorite, type HideRules, type Preferences, type Progress, type SyncEvent } from '@anycast/shared';
+import { isTwoFactorChallenge, mergePreferences, type TwoFactorChallenge, type Favorite, type HideRules, type Preferences, type Progress, type SyncEvent } from '@anycast/shared';
 import { call, clearApiCache, errorMessage, requestHeaders, buildPath } from '../api/client';
 import { connectEvents } from '../api/events';
 import { runRemoteCommand } from '../remote/receiver';
@@ -88,8 +88,17 @@ export function onUnauthorized() {
   disconnect = null;
 }
 
-export async function login(username: string, password: string) {
-  const me = await call('POST /api/auth/login', { body: { username, password } });
+/** Signs in, or answers the code step when the account has two-step sign-in (and this browser isn't remembered). */
+export async function login(username: string, password: string): Promise<TwoFactorChallenge['twoFactor'] | null> {
+  const r = await call('POST /api/auth/login', { body: { username, password } });
+  if (isTwoFactorChallenge(r)) return r.twoFactor;
+  onSignedIn(r);
+  return null;
+}
+
+/** The code step: an authenticator code or a recovery code. */
+export async function loginWithCode(challenge: string, code: string, remember: boolean) {
+  const me = await call('POST /api/auth/2fa', { body: { challenge, code, remember } });
   onSignedIn(me);
 }
 

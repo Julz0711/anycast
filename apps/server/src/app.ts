@@ -4,6 +4,9 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import path from 'node:path';
 import { HttpError, Users } from './auth/users';
+import { SignInGuard } from './auth/guard';
+import { Challenges, DeviceCodes } from './auth/pending';
+import { TwoFactor } from './auth/twofactor';
 import { AutoBackups, DEFAULT_BACKUP_KEEP } from './backup/auto';
 import { BackupError } from './backup/format';
 import { CatalogSync } from './catalog/sync';
@@ -26,6 +29,7 @@ import { ConnectionLimitError, GapError, UpstreamError } from './playback/upstre
 import { createRedactor, redactDeep, type Redactor } from './redact';
 import { artRoutes } from './routes/art';
 import { authRoutes, registerAuthHook } from './routes/auth';
+import { securityRoutes } from './routes/security';
 import { backupRoutes } from './routes/backup';
 import { bufferRoutes } from './routes/buffer';
 import { castRoutes } from './routes/cast';
@@ -62,6 +66,8 @@ export interface BuiltApp {
   services: Services;
 }
 
+const hops = (n: number) => (_addr: string, i: number) => i < n;
+
 export async function buildApp(config: Config, opts: BuildOptions = {}): Promise<BuiltApp> {
   const db = openDb(path.join(config.dataDir, 'anycast.db'));
   ensureVariants(db);
@@ -91,7 +97,8 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
               },
             },
           },
-    trustProxy: config.trustProxy,
+    // a hop count n trusts the n proxies closest to the server (Fastify's types take only a function for it)
+    trustProxy: typeof config.trustProxy === 'number' ? hops(config.trustProxy) : config.trustProxy,
     bodyLimit: 1024 * 1024,
     // cast links (/cast/<token>/api/stream/...) are the stream routes, authenticated by the token
     rewriteUrl: rewriteCastUrl,
@@ -126,6 +133,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   const backups = new AutoBackups(db, path.join(config.dataDir, 'backups'), config.backupKeep ?? DEFAULT_BACKUP_KEEP, (msg) => app.log.warn(msg));
   const services: Services = { config, db, users, source, sync, bus, userData: new UserData(db, bus), playback, parental: new Parental(db, bus), backups, cast: new CastLinks(users, db),
     remote: new RemoteHub(bus, (userId) => users.profiles(userId).map((p) => p.id)),
+    security: { twoFactor: new TwoFactor(db, config.secret), guard: new SignInGuard(), challenges: new Challenges(), devices: new DeviceCodes() },
   };
 
   await app.register(cookie);
@@ -154,6 +162,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   registerAuthHook(app, services);
   app.get('/api/health', async () => ({ ok: true as const, version: VERSION }));
   authRoutes(app, services);
+  securityRoutes(app, services);
   catalogRoutes(app, services);
   providerRoutes(app, services);
   userDataRoutes(app, services);

@@ -1,5 +1,8 @@
 import type { FastifyRequest } from 'fastify';
 import type { Users, UserRow } from './auth/users';
+import type { SignInGuard } from './auth/guard';
+import type { Challenges, DeviceCodes } from './auth/pending';
+import type { TwoFactor } from './auth/twofactor';
 import type { CastLinks } from './cast';
 import type { RemoteHub } from './remote';
 import type { AutoBackups } from './backup/auto';
@@ -25,6 +28,7 @@ export interface Services {
   backups: AutoBackups;
   cast: CastLinks;
   remote: RemoteHub;
+  security: { twoFactor: TwoFactor; guard: SignInGuard; challenges: Challenges; devices: DeviceCodes };
 }
 
 export interface AuthContext {

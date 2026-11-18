@@ -8,6 +8,8 @@ import { isDemo } from '../demo/flag';
 import { clientId, deviceLabel } from '../lib/client-id';
 
 export type Route = keyof Api;
+/** a 401 from these is a wrong password or code, not a signed-out session */
+const SIGN_IN_ROUTES = new Set<string>(['POST /api/auth/login', 'POST /api/auth/2fa']);
 type Def<R extends Route> = Api[R];
 export type ResOf<R extends Route> = Def<R>['res'];
 export type QueryOf<R extends Route> = Def<R> extends { query: infer Q } ? Q : never;
@@ -103,7 +105,7 @@ async function callOnce<R extends Route>(route: R, opts: CallOpts<R>): Promise<R
     try {
       return (await fakeFetch(method, url, opts.body, opts.signal, hooks.profileId())) as ResOf<R>;
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401 && route !== 'POST /api/auth/login') hooks.onUnauthorized();
+      if (e instanceof ApiError && e.status === 401 && !SIGN_IN_ROUTES.has(route)) hooks.onUnauthorized();
       throw e;
     }
   }
@@ -122,7 +124,7 @@ async function callOnce<R extends Route>(route: R, opts: CallOpts<R>): Promise<R
     if ((e as Error).name === 'AbortError') throw e;
     throw new ApiError(0, "Can't reach the AnyCast server. Check that it is running and that you are online.");
   }
-  if (res.status === 401 && route !== 'POST /api/auth/login') hooks.onUnauthorized();
+  if (res.status === 401 && !SIGN_IN_ROUTES.has(route)) hooks.onUnauthorized();
   if (!res.ok) {
     let body: unknown;
     let msg = `${res.status} ${res.statusText}`;

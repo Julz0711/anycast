@@ -14,6 +14,7 @@ import type { CastScope } from '@anycast/shared';
 import type { IncomingMessage } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import type { Users } from './auth/users';
+import { sha256 } from './crypto';
 import type { AuthContext } from './context';
 import { kvGet, kvSet, type Db } from './db';
 
@@ -148,6 +149,11 @@ export class CastLinks {
   /** Ends the links of a sign-in session (sign out). */
   revokeSession(session: string): void {
     for (const [token, l] of this.links) if (l.session === session) this.links.delete(token);
+  }
+
+  /** The same, by the session's hash (signing a device out from Settings › Security) */
+  revokeSessionHash(hash: string): void {
+    for (const [token, l] of this.links) if (sha256(l.session) === hash) this.links.delete(token);
   }
 
   /** The address TVs reach the server at, when set (Settings > Casting). */

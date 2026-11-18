@@ -9,3 +9,4 @@ export * from './cast';
 export * from './recap';
 export * from './provider';
 export * from './remote';
+export * from './security';

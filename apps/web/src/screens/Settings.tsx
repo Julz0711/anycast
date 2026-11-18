@@ -25,6 +25,7 @@ import type { DeviceOverride, FormFactor } from '../lib/device';
 import { ParentalLock } from './ParentalLock';
 import { DiagnosticsSection } from './Diagnostics';
 import { HwEncoding } from './HwEncoding';
+import { SecuritySection } from './Security';
 import { ProviderSection } from './Provider';
 import { BackupSection } from './Backup';
 import { RemoteSettings } from '../remote/RemoteSettings';
@@ -68,6 +69,7 @@ export default function SettingsScreen() {
         { id: 'parental', title: 'Parental lock', body: <ParentalLock Row={Row} /> },
         { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
         { id: 'profiles', title: 'Profiles', body: <Profiles /> },
+        { id: 'security', title: 'Security', body: <SecuritySection Row={Row} /> },
         ...(isAdmin ? [{ id: 'provider', title: 'Provider', body: <ProviderSection /> }] : []),
         { id: 'source', title: 'Source & account', body: <Source /> },
         ...(isAdmin ? [{ id: 'backup', title: 'Backup & restore', body: <BackupSection Row={Row} /> }] : []),
@@ -85,6 +87,7 @@ export default function SettingsScreen() {
         { id: 'remote', title: 'Remote', body: <RemoteSettings Row={Row} /> },
         { id: 'tabs', title: 'Start', body: <StartTabs prefs={prefs} /> },
         { id: 'filters', title: 'Filters', body: <Filters /> },
+        { id: 'security', title: 'Security', body: <SecuritySection Row={Row} /> },
         ...(isAdmin ? [{ id: 'provider', title: 'Provider', body: <ProviderSection /> }] : []),
       ];
 

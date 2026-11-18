@@ -30,6 +30,11 @@ export const SESSION_COOKIE = 'anycast_session';
 export const SESSION_TTL_MS = 90 * 86400_000;
 
 export interface UserRow { id: string; username: string; password_hash: string; is_admin: number }
+export interface SessionInfo { label?: string | null; ip?: string | null; method?: 'password' | 'two_factor' | 'trusted' | 'approved' }
+export interface SessionRow {
+  token_hash: string; id: string; label: string | null; ip: string | null; created_at: number; last_seen_at: number | null; method: SessionInfo['method'] | null;
+}
+const SEEN_EVERY_MS = 5 * 60_000;
 
 export class HttpError extends Error {
   constructor(
@@ -79,25 +84,73 @@ export class Users {
     return (await verify(user.password_hash, password).catch(() => false)) ? user : null;
   }
 
-  createSession(userId: string): string {
+  createSession(userId: string, info: SessionInfo = {}): string {
     const token = newToken();
     const now = Date.now();
     this.db
-      .prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
-      .run(sha256(token), userId, now, now + SESSION_TTL_MS);
+      .prepare('INSERT INTO sessions (token_hash, user_id, created_at, expires_at, id, label, ip, last_seen_at, method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(sha256(token), userId, now, now + SESSION_TTL_MS, newId(), info.label?.slice(0, 80) ?? null, info.ip ?? null, now, info.method ?? null);
     this.db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
     return token;
   }
 
-  userForSession(token: string): UserRow | null {
+  /** when each session was last written as seen (in memory, so a busy player doesn't write every request) */
+  private readonly seen = new Map<string, number>();
+
+  userForSession(token: string, ip?: string): UserRow | null {
+    const hash = sha256(token);
+    const now = Date.now();
     const row = this.db
       .prepare('SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?')
-      .get(sha256(token), Date.now()) as UserRow | undefined;
+      .get(hash, now) as UserRow | undefined;
+    if (row && now - (this.seen.get(hash) ?? 0) > SEEN_EVERY_MS) {
+      if (this.seen.size > 5000) this.seen.clear();
+      this.seen.set(hash, now);
+      this.db.prepare('UPDATE sessions SET last_seen_at = ?, ip = COALESCE(?, ip) WHERE token_hash = ?').run(now, ip ?? null, hash);
+    }
     return row ?? null;
   }
 
   deleteSession(token: string): void {
-    this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(sha256(token));
+    const hash = sha256(token);
+    this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hash);
+    this.db.prepare('DELETE FROM profile_entries WHERE session_hash = ?').run(hash);
+  }
+
+  sessions(userId: string): SessionRow[] {
+    return this.db
+      .prepare('SELECT token_hash, id, label, ip, created_at, last_seen_at, method FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY COALESCE(last_seen_at, created_at) DESC')
+      .all(userId, Date.now()) as SessionRow[];
+  }
+
+  /** Signs out one device of the account; answers its token hash (null: no such session). */
+  deleteSessionById(userId: string, id: string): string | null {
+    const r = this.db.prepare('SELECT token_hash FROM sessions WHERE id = ? AND user_id = ?').get(id, userId) as { token_hash: string } | undefined;
+    if (!r) return null;
+    this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(r.token_hash);
+    this.db.prepare('DELETE FROM profile_entries WHERE session_hash = ?').run(r.token_hash);
+    return r.token_hash;
+  }
+
+  /** Signs out every device of the account but this one; answers the token hashes that went. */
+  deleteOtherSessions(userId: string, keepToken: string): string[] {
+    const keep = sha256(keepToken);
+    const gone = (this.db.prepare('SELECT token_hash FROM sessions WHERE user_id = ? AND token_hash != ?').all(userId, keep) as { token_hash: string }[]).map((r) => r.token_hash);
+    this.db.transaction(() => {
+      for (const h of gone) {
+        this.db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(h);
+        this.db.prepare('DELETE FROM profile_entries WHERE session_hash = ?').run(h);
+      }
+    })();
+    return gone;
+  }
+
+  async passwordMatches(user: UserRow, password: string): Promise<boolean> {
+    return password.length <= 500 && (await verify(user.password_hash, password).catch(() => false));
+  }
+
+  byUsername(username: string): UserRow | undefined {
+    return this.db.prepare('SELECT * FROM users WHERE username = ?').get(username) as UserRow | undefined;
   }
 
   /* ---------------- profiles ---------------- */
