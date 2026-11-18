@@ -732,6 +732,33 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   useEffect(() => {
     if (menu) setChrome(true);
   }, [menu]);
+  // TV browsers (Fire TV, Vega) draw their own pointer that ignores `cursor: none`. Pointer lock is
+  // the one thing a page can do to hide it, so lock while the controls are hidden and let go as soon
+  // as the pointer moves. Best effort: browsers that refuse simply keep their pointer.
+  useEffect(() => {
+    if (form !== 'tv' || mini || (!overlay && !bar)) return;
+    const root = rootRef.current;
+    if (!root || typeof root.requestPointerLock !== 'function') return;
+    const locked = () => document.pointerLockElement === root;
+    if (chrome) {
+      if (locked()) document.exitPointerLock();
+      return;
+    }
+    try {
+      const p = root.requestPointerLock() as unknown;
+      if (p instanceof Promise) p.catch(() => {});
+    } catch {
+      /* not allowed here */
+    }
+    const onMove = (e: MouseEvent) => {
+      if (locked() && (e.movementX || e.movementY)) activity();
+    };
+    document.addEventListener('mousemove', onMove);
+    return () => document.removeEventListener('mousemove', onMove);
+  }, [form, mini, overlay, bar, chrome, activity]);
+  useEffect(() => () => {
+    if (document.pointerLockElement && document.pointerLockElement === rootRef.current) document.exitPointerLock();
+  }, []);
   const holdVolume = useCallback(
     (holding: boolean) => {
       holdChrome.current = holding;
