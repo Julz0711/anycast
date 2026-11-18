@@ -12,3 +12,6 @@ test-results
 e2e-report
 e2e-results
 .claude/worktrees/
+android/.gradle/
+android/**/build/
+apps/web/public/firetv.apk

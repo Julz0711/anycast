@@ -1,0 +1,34 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'app.anycast.tv'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'app.anycast.tv'
+        minSdk 22
+        targetSdk 34
+        // CI passes the run number, so every build installs over the last one.
+        versionCode((System.getenv('VERSION_CODE') ?: '1') as int)
+        versionName "1.0.${System.getenv('VERSION_CODE') ?: '0'}"
+    }
+    signingConfigs {
+        // A fixed key in the repo: the APK is only sideloaded, and a stable key is what lets
+        // a new APK install over the old one (keeping the saved address and login).
+        release {
+            storeFile file('../anycast-tv.keystore')
+            storePassword 'anycasttv'
+            keyAlias 'anycast'
+            keyPassword 'anycasttv'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}

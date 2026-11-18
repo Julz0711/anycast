@@ -1,0 +1,27 @@
+name: Fire TV app
+# Builds the Fire TV wrapper (android/). Called by image.yml, which puts the APK into the
+# image so the server hands it out at /firetv.apk, and run on PRs that touch android/.
+on:
+  pull_request:
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_call:
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - run: gradle -p android assembleRelease --no-daemon
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firetv-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 7

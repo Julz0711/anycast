@@ -53,6 +53,7 @@ docker compose up -d --build
 ```
 
 For CasaOS, hardware transcoding, and HTTPS setup, see [docs/casaos.md](docs/casaos.md).
+Fire TV Stick: [docs/firetv.md](docs/firetv.md) (sideloaded wrapper app, served at `/firetv.apk`).
 
 ## Configuration and data
 
