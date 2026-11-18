@@ -36,7 +36,7 @@ test('control bar on the video: play, skip, volume, time, theater and full scree
 
   // the mouse rests on the picture: the bar and the pointer hide after the idle time, a move brings both back
   const cursorAt = () =>
-    page.evaluate(([x, y]) => getComputedStyle(document.elementFromPoint(x, y)!).cursor, [sb.x + sb.width / 2, sb.y + sb.height / 3]);
+    page.evaluate(([x, y]) => getComputedStyle(document.elementFromPoint(x, y)!).cursor, [sb.x + sb.width / 2, sb.y + sb.height / 3] as const);
   await page.mouse.move(sb.x + sb.width / 2, sb.y + sb.height / 3);
   await expect(page.locator('.player')).toHaveAttribute('data-chrome', 'off', { timeout: 5000 });
   expect(await cursorAt()).toBe('none');
