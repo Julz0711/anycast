@@ -10,7 +10,7 @@ import { useApp } from '../store/app';
 import { logout, showPicker } from '../store/actions';
 import { ProfileAvatar } from './Avatar';
 import { switchProfile, useSwitching } from './actions';
-import { IconChevron, IconLock, IconPencil, IconRemote, IconSettings, IconSignOut, IconSparkle, IconSwitch } from '../components/Icons';
+import { IconChevron, IconLock, IconPencil, IconRemote, IconSettings, IconSignOut, IconSparkle, IconSwitch, IconTv } from '../components/Icons';
 import '../theme/profiles.css';
 
 function useProfiles() {
@@ -68,6 +68,9 @@ export function ProfileMenuButton() {
           {others.length > 0 && <div className="pm-sep" role="separator" />}
           <button type="button" role="menuitem" className="pm-item" onClick={go(() => navigate('/recap'))}>
             <IconSparkle /> Your recap
+          </button>
+          <button type="button" role="menuitem" className="pm-item" onClick={go(() => navigate('/approve'))}>
+            <IconTv /> Sign in a TV
           </button>
           <button type="button" role="menuitem" className="pm-item" onClick={go(() => navigate(`/profiles/${current.id}`))}>
             <IconPencil /> Edit profile
@@ -143,6 +146,7 @@ export function ProfileHub() {
       <nav className="hub-list" aria-label="Profile and app">
         <HubRow icon={<IconSparkle />} label="Your recap" onClick={() => navigate('/recap')} />
         <HubRow icon={<IconRemote />} label="Remote" onClick={() => navigate('/remote')} />
+        <HubRow icon={<IconTv />} label="Sign in a TV" onClick={() => navigate('/approve')} />
         <HubRow icon={<IconSettings />} label="Settings" onClick={() => navigate('/settings')} />
         <HubRow icon={<IconPencil />} label="Manage profiles" onClick={() => navigate('/profiles')} />
         <HubRow icon={<IconSwitch />} label="Who's watching?" onClick={showPicker} />

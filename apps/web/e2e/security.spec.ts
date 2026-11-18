@@ -13,8 +13,13 @@ test('a TV signs in with a code that the phone approves; it then shows in Signed
   const code = (await codeEl.textContent())!;
   await expect(tv.getByRole('img', { name: /QR code/ })).toBeVisible();
 
-  // the phone: Settings › Security › Sign in a TV, typed in lower case without the dash
-  const phone = await profile.device();
+  // the phone: the profile page's quick link opens the code entry
+  const phone = await profile.device({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await phone.goto('/me');
+  await phone.getByRole('button', { name: 'Sign in a TV' }).click();
+  await expect(phone.getByLabel('Code shown on the TV')).toBeVisible();
+
+  // or Settings › Security › Sign in a TV, typed in lower case without the dash
   await phone.goto('/settings#set-security');
   const section = phone.locator('#set-security');
   await expect(section.getByText(/connected from your home network/)).toBeVisible();
