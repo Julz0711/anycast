@@ -13,10 +13,19 @@ concurrency:
   group: image
   cancel-in-progress: true
 jobs:
+  apk:
+    uses: ./.github/workflows/android.yml
   publish:
+    needs: apk
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # the Fire TV app, served by AnyCast at /firetv.apk (see docs/firetv.md)
+      - uses: actions/download-artifact@v4
+        with:
+          name: firetv-apk
+          path: apk
+      - run: mv apk/app-release.apk apps/web/public/firetv.apk
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
