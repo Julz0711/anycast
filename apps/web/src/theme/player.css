@@ -376,12 +376,26 @@
 [data-form="phone"] .pl-time { font-size: 0.75rem; padding: 0 0.375rem; }
 
 /* ---------- external subtitles (found online or from a file) ---------- */
-.pl-subs { position: absolute; left: 4%; right: 4%; bottom: 7%; display: flex; flex-direction: column; align-items: center; gap: 0.2em; pointer-events: none; z-index: 1; font-size: clamp(0.9375rem, 2.6vw, 2.25rem); line-height: 1.3; text-align: center; transition: bottom 200ms ease; }
-.player[data-bar][data-chrome="on"] .pl-subs { bottom: calc(7% + 3.5rem); }
-.player[data-mode="overlay"][data-chrome="on"] .pl-subs { bottom: calc(7% + 7rem); }
+/* look: Settings › Player › Subtitle style (data-sub-* on .player); the stream's own subtitles follow via ::cue where the browser allows */
+.player, .sub-preview { --sub-scale: 1; --sub-color: #fff; --sub-bg: rgb(0 0 0 / 0.62); --sub-shadow: 0 1px 2px rgb(0 0 0 / 0.6); --sub-bottom: 7%; }
+[data-sub-size="small"] { --sub-scale: 0.8; }
+[data-sub-size="large"] { --sub-scale: 1.25; }
+[data-sub-size="xlarge"] { --sub-scale: 1.55; }
+[data-sub-color="yellow"] { --sub-color: #ffe14d; }
+[data-sub-color="cyan"] { --sub-color: #7fe7ff; }
+[data-sub-color="green"] { --sub-color: #8cf58c; }
+[data-sub-bg="outline"] { --sub-bg: transparent; --sub-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 4px #000, 0 2px 6px rgb(0 0 0 / 0.8); }
+[data-sub-bg="solid"] { --sub-bg: #000; --sub-shadow: none; }
+[data-sub-pos="higher"] { --sub-bottom: 16%; }
+.pl-subs { position: absolute; left: 4%; right: 4%; bottom: var(--sub-bottom); display: flex; flex-direction: column; align-items: center; gap: 0.2em; pointer-events: none; z-index: 1; font-size: calc(clamp(0.9375rem, 2.6vw, 2.25rem) * var(--sub-scale)); line-height: 1.3; text-align: center; transition: bottom 200ms ease; }
+.player[data-bar][data-chrome="on"] .pl-subs { bottom: calc(var(--sub-bottom) + 3.5rem); }
+.player[data-mode="overlay"][data-chrome="on"] .pl-subs { bottom: calc(var(--sub-bottom) + 7rem); }
 .player[data-mode="mini"] .pl-subs { display: none; }
-.pl-subs-cue { white-space: pre-line; color: #fff; background: rgb(0 0 0 / 0.62); padding: 0.08em 0.45em; border-radius: 0.2em; font-weight: 500; text-shadow: 0 1px 2px rgb(0 0 0 / 0.6); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-[data-form="tv"] .pl-subs { font-size: clamp(1.5rem, 2.8vw, 3rem); }
+.pl-subs-cue { white-space: pre-line; color: var(--sub-color); background: var(--sub-bg); padding: 0.08em 0.45em; border-radius: 0.2em; font-weight: 500; text-shadow: var(--sub-shadow); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+[data-form="tv"] .pl-subs { font-size: calc(clamp(1.5rem, 2.8vw, 3rem) * var(--sub-scale)); }
+.sub-preview { position: relative; aspect-ratio: 16 / 7; width: 100%; max-width: 40rem; border-radius: 0.75rem; overflow: hidden; background: linear-gradient(160deg, #6b7f78 0%, #c9b98f 55%, #f2efe6 100%); }
+.sub-preview .pl-subs { font-size: calc(clamp(0.9375rem, 2.2vw, 1.5rem) * var(--sub-scale)); }
+.pl-video::cue { color: var(--sub-color); background-color: var(--sub-bg); text-shadow: var(--sub-shadow); font-size: calc(100% * var(--sub-scale)); }
 @media (prefers-reduced-motion: reduce) { .pl-subs { transition: none; } }
 
 .pl-menu-release { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16rem; }

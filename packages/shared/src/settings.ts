@@ -89,6 +89,17 @@ export const CONTROLS_HIDE_CHOICES = [1, 2, 3, 5, 8] as const;
 export type ControlsHideSeconds = (typeof CONTROLS_HIDE_CHOICES)[number];
 export const VIDEO_FIT_CHOICES = ['fit', 'fill'] as const;
 export type VideoFit = (typeof VIDEO_FIT_CHOICES)[number];
+/** How subtitles look (the player's own and, as far as the browser allows, the stream's). */
+export const SUBTITLE_SIZE_CHOICES = ['small', 'medium', 'large', 'xlarge'] as const;
+export type SubtitleSize = (typeof SUBTITLE_SIZE_CHOICES)[number];
+export const SUBTITLE_COLOR_CHOICES = ['white', 'yellow', 'cyan', 'green'] as const;
+export type SubtitleColor = (typeof SUBTITLE_COLOR_CHOICES)[number];
+/** outline: no box, a dark edge around the letters; box: a see-through dark box; solid: an opaque black box */
+export const SUBTITLE_BACKGROUND_CHOICES = ['outline', 'box', 'solid'] as const;
+export type SubtitleBackground = (typeof SUBTITLE_BACKGROUND_CHOICES)[number];
+/** bottom: near the bottom edge; higher: a little higher (clear of burnt-in text and the controls) */
+export const SUBTITLE_POSITION_CHOICES = ['bottom', 'higher'] as const;
+export type SubtitlePosition = (typeof SUBTITLE_POSITION_CHOICES)[number];
 
 /**
  * The second typeface, for titles, section heads and the clock (phones). 'plain' keeps the UI font.
@@ -166,6 +177,10 @@ export interface Preferences {
     preferredAudioLanguage: string | null;
     /** ISO 639-1; null: the stream's default subtitle track, else the first one */
     preferredSubtitleLanguage: string | null;
+    subtitleSize: SubtitleSize;
+    subtitleColor: SubtitleColor;
+    subtitleBackground: SubtitleBackground;
+    subtitlePosition: SubtitlePosition;
   };
   start: {
     startTab: TabId;
@@ -235,6 +250,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
     subtitlesDefault: 'off',
     preferredAudioLanguage: 'en',
     preferredSubtitleLanguage: null,
+    subtitleSize: 'medium',
+    subtitleColor: 'white',
+    subtitleBackground: 'box',
+    subtitlePosition: 'bottom',
   },
   start: {
     startTab: 'home',
@@ -291,6 +310,10 @@ export function mergePreferences(partial: unknown): Preferences {
   if (!LIVE_STREAM_CHOICES.includes(prefs.player.liveStream)) prefs.player.liveStream = DEFAULT_PREFERENCES.player.liveStream;
   if (!CONTROLS_HIDE_CHOICES.includes(prefs.player.controlsHide)) prefs.player.controlsHide = DEFAULT_PREFERENCES.player.controlsHide;
   if (!VIDEO_FIT_CHOICES.includes(prefs.player.videoFit)) prefs.player.videoFit = DEFAULT_PREFERENCES.player.videoFit;
+  if (!SUBTITLE_SIZE_CHOICES.includes(prefs.player.subtitleSize)) prefs.player.subtitleSize = DEFAULT_PREFERENCES.player.subtitleSize;
+  if (!SUBTITLE_COLOR_CHOICES.includes(prefs.player.subtitleColor)) prefs.player.subtitleColor = DEFAULT_PREFERENCES.player.subtitleColor;
+  if (!SUBTITLE_BACKGROUND_CHOICES.includes(prefs.player.subtitleBackground)) prefs.player.subtitleBackground = DEFAULT_PREFERENCES.player.subtitleBackground;
+  if (!SUBTITLE_POSITION_CHOICES.includes(prefs.player.subtitlePosition)) prefs.player.subtitlePosition = DEFAULT_PREFERENCES.player.subtitlePosition;
   if (!HEADLINE_FONT_CHOICES.includes(prefs.appearance.headlineFont)) prefs.appearance.headlineFont = DEFAULT_PREFERENCES.appearance.headlineFont;
   const pinned = prefs.categories.pinned;
   prefs.categories.pinned = Array.isArray(pinned) ? [...new Set(pinned.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))].slice(0, 200) : [];

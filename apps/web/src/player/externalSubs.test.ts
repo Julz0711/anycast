@@ -43,7 +43,7 @@ describe('when the player fetches subtitles on its own', () => {
     subtitleIndex: null,
     subtitlesInStream: false,
   });
-  const state: ExternalSubtitleState = { online: true, files: [], choice: null, savedOff: false };
+  const state: ExternalSubtitleState = { online: true, files: [], choice: null, savedOff: false, seriesLanguage: null };
   const prefs = (subtitlesDefault: 'off' | 'auto' | 'on', preferredSubtitleLanguage: string | null) => ({ ...DEFAULT_PREFERENCES.player, subtitlesDefault, preferredSubtitleLanguage });
   const base = { tracks: tracks('en'), shown: null, state, itemLanguage: null, deviceLanguage: 'de-DE' };
 
@@ -70,6 +70,13 @@ describe('when the player fetches subtitles on its own', () => {
     expect(autoLanguage({ ...base, prefs: prefs('on', 'de'), shown: 0 })).toBeNull();
     expect(autoLanguage({ ...base, prefs: prefs('on', 'de'), state: { ...state, savedOff: true } })).toBeNull();
     expect(autoLanguage({ ...base, prefs: prefs('on', 'de'), state: { ...state, choice: { fileId: null, offsetMs: 0 } } })).toBeNull();
+  });
+
+  test('another episode of the series had some: the same language, even with the preference off', () => {
+    const series = { ...state, seriesLanguage: 'de' };
+    expect(autoLanguage({ ...base, prefs: prefs('off', null), state: series })).toBe('de');
+    expect(autoLanguage({ ...base, prefs: prefs('off', null), state: { ...series, choice: { fileId: null, offsetMs: 0 } } })).toBeNull();
+    expect(autoLanguage({ ...base, prefs: prefs('off', null), state: series, shown: 1 })).toBeNull();
   });
 
   test('search language', () => {

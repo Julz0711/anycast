@@ -88,8 +88,8 @@ export function fmtOffset(ms: number): string {
 
 /**
  * The language to fetch external subtitles in on its own, or null to leave them off: when nothing
- * was picked for the item, the stream shows none of its own, and the Subtitles preference wants
- * some. Auto: only when the audio (or, when the stream doesn't say, the title's language from its
+ * was picked for the item, the stream shows none of its own, and either another episode of the
+ * series had some (its language) or the Subtitles preference wants some. Auto: only when the audio (or, when the stream doesn't say, the title's language from its
  * category) is not already in the subtitle language.
  */
 export function autoLanguage(o: {
@@ -105,6 +105,8 @@ export function autoLanguage(o: {
 }): string | null {
   const { prefs, tracks, state } = o;
   if (state.choice || state.savedOff || o.shown !== null) return null;
+  // picked for another episode of the series: the same language, whatever the preference says
+  if (state.seriesLanguage) return state.seriesLanguage;
   const want = normalizeLanguage(prefs.preferredSubtitleLanguage);
   const audioLang = tracks?.audio.find((a) => a.index === tracks.audioIndex)?.language ?? null;
   const spoken = audioLang ?? o.itemLanguage;

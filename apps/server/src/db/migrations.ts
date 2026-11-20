@@ -421,4 +421,15 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (profile_id, kind, item_id)
   ) WITHOUT ROWID;
   `,
+  `
+  -- the language each profile picked external subtitles in per series (subtitles/service.ts):
+  -- its other episodes get some in that language on their own
+  CREATE TABLE IF NOT EXISTS subtitle_series (
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    series_id TEXT NOT NULL,
+    language TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, series_id)
+  ) WITHOUT ROWID;
+  `,
 ];

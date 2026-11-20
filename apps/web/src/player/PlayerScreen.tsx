@@ -1262,6 +1262,13 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       if (info?.tracks?.subtitles.length) saveTracks({ subtitle: null });
     },
   });
+  // the next episode's subtitles are fetched while this one ends, so they show from its first line
+  const extLanguage = ext.active?.file.language ?? null;
+  const nextEpisodeId = nextEpisode?.id;
+  useEffect(() => {
+    if (!upNext || !extLanguage || !nextEpisodeId || kind !== 'episode') return;
+    void call('POST /api/subtitles/:kind/:id/auto', { params: { kind: 'episode', id: nextEpisodeId }, body: { language: extLanguage } }).catch(() => undefined);
+  }, [upNext, extLanguage, nextEpisodeId, kind]);
   const chooseAudio = (n: number) => {
     const t = info?.tracks;
     if (!t || n === t.audioIndex) return;
@@ -1501,6 +1508,10 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       data-theater={canTheater && theater && !mini && !overlay ? 'on' : undefined}
       data-bar={bar ? 'on' : undefined}
       data-fit={fill && form === 'phone' && !mini ? 'fill' : undefined}
+      data-sub-size={prefs.subtitleSize}
+      data-sub-color={prefs.subtitleColor}
+      data-sub-bg={prefs.subtitleBackground}
+      data-sub-pos={prefs.subtitlePosition}
       onPointerMove={overlay && !bar ? activity : undefined}
     >
       <div

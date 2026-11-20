@@ -37,6 +37,12 @@ export interface ExternalSubtitleState {
   choice: { fileId: string | null; offsetMs: number } | null;
   /** the profile turned subtitles off for this item in the player (also off for the stream's own) */
   savedOff: boolean;
+  /**
+   * Episodes: the language this profile last picked an external subtitle in for the series. Its
+   * other episodes then get one in that language on their own (the most downloaded), whatever
+   * the Subtitles preference says. null: none picked, or turned off in an episode since.
+   */
+  seriesLanguage: string | null;
 }
 
 /** One result of an online search. Downloading it (POST …/download) keeps it as an ExternalSubtitle. */

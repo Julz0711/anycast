@@ -162,7 +162,18 @@ export class SubtitleService {
     const files = this.files(kind, id);
     // a picked file that is gone (should not happen) counts as nothing picked
     const choice = c && (c.file_id === null || files.some((f) => f.id === c.file_id)) ? { fileId: c.file_id, offsetMs: c.offset_ms } : null;
-    return { online: !!this.login(), files, choice, savedOff };
+    return { online: !!this.login(), files, choice, savedOff, seriesLanguage: kind === 'episode' ? this.seriesLanguage(profileId, id) : null };
+  }
+
+  private seriesOf(episodeId: string): string | null {
+    return getEpisode(this.db, episodeId)?.series_id ?? null;
+  }
+
+  seriesLanguage(profileId: string, episodeId: string): string | null {
+    const series = this.seriesOf(episodeId);
+    if (!series) return null;
+    const r = this.db.prepare('SELECT language FROM subtitle_series WHERE profile_id = ? AND series_id = ?').get(profileId, series) as { language: string } | undefined;
+    return r?.language ?? null;
   }
 
   saveChoice(profileId: string, kind: SubKind, id: string, fileId: string | null, offsetMs: number | undefined): void {
@@ -174,6 +185,19 @@ export class SubtitleService {
          ON CONFLICT(profile_id, kind, item_id) DO UPDATE SET file_id = excluded.file_id, offset_ms = excluded.offset_ms, updated_at = excluded.updated_at`,
       )
       .run(profileId, kind, id, fileId, off, Date.now());
+    // an episode: the series keeps the language for its other episodes (off: none for them either)
+    const series = kind === 'episode' ? this.seriesOf(id) : null;
+    if (!series) return;
+    const language = fileId ? this.files(kind, id).find((f) => f.id === fileId)?.language : null;
+    if (fileId && !language) return;
+    if (language) {
+      this.db
+        .prepare(
+          `INSERT INTO subtitle_series (profile_id, series_id, language, updated_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(profile_id, series_id) DO UPDATE SET language = excluded.language, updated_at = excluded.updated_at`,
+        )
+        .run(profileId, series, language, Date.now());
+    } else this.db.prepare('DELETE FROM subtitle_series WHERE profile_id = ? AND series_id = ?').run(profileId, series);
   }
 
   /* ---------------- online ---------------- */
