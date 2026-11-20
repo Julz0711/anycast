@@ -35,6 +35,7 @@ import { RemoteSettings } from '../remote/RemoteSettings';
 import { CastSettings } from './CastSettings';
 import { resetSwipeDecks } from './Swipe';
 import '../theme/settings.css';
+import '../theme/player.css';
 import { HEADLINE_FONTS } from '../theme/theme';
 
 type P = Preferences;
@@ -593,6 +594,33 @@ const SUBTITLE_HINT: Record<P['player']['subtitlesDefault'], string> = {
   on: 'Shown whenever a title has them, in your subtitle language if it can. Titles without their own get them online, when set up.',
 };
 
+const SUBTITLE_BG_HINT: Record<P['player']['subtitleBackground'], string> = {
+  outline: 'Letters with a dark edge, no box: the least of the picture covered.',
+  box: 'A see-through dark box behind the lines.',
+  solid: 'A black box: easiest to read on bright pictures.',
+};
+
+/** How subtitles look with the chosen style, on a sample picture. */
+function SubtitlePreview({ p }: { p: P['player'] }) {
+  return (
+    <div className="set-row stack">
+      <div
+        className="sub-preview"
+        data-sub-size={p.subtitleSize}
+        data-sub-color={p.subtitleColor}
+        data-sub-bg={p.subtitleBackground}
+        data-sub-pos={p.subtitlePosition}
+        aria-label="Subtitle preview"
+        role="img"
+      >
+        <div className="pl-subs">
+          <span className="pl-subs-cue">This is how subtitles look.{'\n'}<i>Like this, in italics.</i></span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
   const p = prefs.player;
   const form = useFormFactor();
@@ -610,6 +638,39 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
           <LangSelect label="Subtitle language" value={p.preferredSubtitleLanguage} onChange={(v) => setPref('player', { preferredSubtitleLanguage: v })} />
         </Row>
       )}
+      <Row label="Subtitle size">
+        <Segmented
+          label="Subtitle size"
+          value={p.subtitleSize}
+          options={opts<P['player']['subtitleSize']>(['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['xlarge', 'Extra large'])}
+          onChange={(v) => setPref('player', { subtitleSize: v })}
+        />
+      </Row>
+      <Row label="Subtitle color">
+        <Segmented
+          label="Subtitle color"
+          value={p.subtitleColor}
+          options={opts<P['player']['subtitleColor']>(['white', 'White'], ['yellow', 'Yellow'], ['cyan', 'Cyan'], ['green', 'Green'])}
+          onChange={(v) => setPref('player', { subtitleColor: v })}
+        />
+      </Row>
+      <Row label="Subtitle background" hint={SUBTITLE_BG_HINT[p.subtitleBackground]}>
+        <Segmented
+          label="Subtitle background"
+          value={p.subtitleBackground}
+          options={opts<P['player']['subtitleBackground']>(['outline', 'Outline'], ['box', 'Box'], ['solid', 'Solid'])}
+          onChange={(v) => setPref('player', { subtitleBackground: v })}
+        />
+      </Row>
+      <Row label="Subtitle position" hint="Higher keeps them clear of text in the picture.">
+        <Segmented
+          label="Subtitle position"
+          value={p.subtitlePosition}
+          options={opts<P['player']['subtitlePosition']>(['bottom', 'Bottom'], ['higher', 'Higher'])}
+          onChange={(v) => setPref('player', { subtitlePosition: v })}
+        />
+      </Row>
+      <SubtitlePreview p={p} />
       <Row label="Autoplay next episode" hint={p.autoplayNext ? `Starts after a ${p.autoplayCountdown} s countdown.` : 'Off: playback stops at the end of an episode.'}>
         <Toggle label="Autoplay next episode" checked={p.autoplayNext} onChange={(v) => setPref('player', { autoplayNext: v })} />
       </Row>

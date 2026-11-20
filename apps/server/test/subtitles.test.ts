@@ -74,7 +74,8 @@ describe('OpenSubtitles requests and results', () => {
         { attributes: { language: 'de', download_count: 99, release: 'No file', files: [] } },
       ],
     });
-    expect(rankResults(results).map((r) => r.release)).toEqual(['Plain', 'HI', 'MT']);
+    // most downloaded first, machine translations last
+    expect(rankResults(results).map((r) => r.release)).toEqual(['HI', 'Plain', 'MT']);
   });
 });
 
@@ -124,6 +125,7 @@ async function setup(os = fakeOpenSubtitles(), env: { apiKey: string; username: 
   db.prepare("INSERT INTO movies (id, name, raw_name, category_id, year, gen) VALUES ('m1', 'Heat', 'EN - Heat (1995)', 'c1', 1995, 1)").run();
   db.prepare("INSERT INTO series (id, name, raw_name, category_id, year, gen) VALUES ('s1', 'Game of Thrones', 'Game of Thrones', 'c2', 2011, 1)").run();
   db.prepare("INSERT INTO episodes (id, series_id, season, episode, title) VALUES ('e1', 's1', 3, 5, 'Episode 5')").run();
+  db.prepare("INSERT INTO episodes (id, series_id, season, episode, title) VALUES ('e2', 's1', 3, 6, 'Episode 6')").run();
   const cookie = await login(app);
   const req = (method: 'GET' | 'POST' | 'PUT' | 'DELETE', url: string, payload?: object, c = cookie) => app.inject({ method, url, payload, headers: { cookie: c } });
   return { app, services, req, seen: os.seen };
@@ -133,7 +135,7 @@ describe('external subtitles API', () => {
   test('without a key: state says offline, search says not configured, files from the device still work', async () => {
     const { req } = await setup();
     const st = (await req('GET', '/api/subtitles/episode/e1')).json<ExternalSubtitleState>();
-    expect(st).toEqual({ online: false, files: [], choice: null, savedOff: false });
+    expect(st).toEqual({ online: false, files: [], choice: null, savedOff: false, seriesLanguage: null });
     const search = await req('GET', '/api/subtitles/episode/e1/search?lang=de');
     expect(search.statusCode).toBe(409);
     expect(search.json()).toMatchObject({ error: 'not_configured' });
@@ -187,12 +189,16 @@ describe('external subtitles API', () => {
     let st = (await req('GET', '/api/subtitles/episode/e1')).json<ExternalSubtitleState>();
     expect(st).toMatchObject({ online: true, choice: { fileId: 'os-111', offsetMs: 1500 } });
     expect(st.files.map((f) => f.id)).toEqual(['os-111']);
+    // the series remembers the language for its other episodes
+    expect((await req('GET', '/api/subtitles/episode/e2')).json<ExternalSubtitleState>()).toMatchObject({ choice: null, seriesLanguage: 'de' });
     // a file that isn't kept can't be picked
     expect((await req('PUT', '/api/subtitles/episode/e1/choice', { fileId: 'os-999' })).statusCode).toBe(404);
     // off
     await req('PUT', '/api/subtitles/episode/e1/choice', { fileId: null });
     st = (await req('GET', '/api/subtitles/episode/e1')).json<ExternalSubtitleState>();
     expect(st.choice).toEqual({ fileId: null, offsetMs: 0 });
+    // off in one episode: off for the series too
+    expect((await req('GET', '/api/subtitles/episode/e2')).json<ExternalSubtitleState>().seriesLanguage).toBeNull();
     // subtitles turned off in the player for the stream's own tracks show as savedOff
     await req('PUT', '/api/tracks/episode/e1', { subtitle: null });
     expect((await req('GET', '/api/subtitles/episode/e1')).json<ExternalSubtitleState>().savedOff).toBe(true);

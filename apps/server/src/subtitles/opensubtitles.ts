@@ -108,10 +108,9 @@ export function parseResults(data: unknown): OsResult[] {
   return out;
 }
 
-/** Best first: people's translations before machine ones, plain before hearing-impaired, then most downloaded. */
-export function rankResults<T extends Pick<OsResult, 'machineTranslated' | 'hearingImpaired' | 'trusted' | 'downloads'>>(list: T[]): T[] {
-  const score = (r: T) => (r.machineTranslated ? 0 : 4) + (r.hearingImpaired ? 0 : 2) + (r.trusted ? 1 : 0);
-  return [...list].sort((a, b) => score(b) - score(a) || b.downloads - a.downloads);
+/** Best first: the most downloaded, with machine translations (often poor) after people's. */
+export function rankResults<T extends Pick<OsResult, 'machineTranslated' | 'downloads'>>(list: T[]): T[] {
+  return [...list].sort((a, b) => Number(a.machineTranslated) - Number(b.machineTranslated) || b.downloads - a.downloads);
 }
 
 export interface ClientOptions {

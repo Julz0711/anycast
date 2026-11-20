@@ -33,6 +33,7 @@
  *                     address, and the OpenSubtitles login (encrypted with ANYCAST_SECRET, like source)
  *   subtitle_files    external subtitles found online or loaded from a device: a cache, found again in the player
  *   subtitle_choices  which external subtitle each profile picked per item, and its timing; picked again in a moment
+ *   subtitle_series   the language each profile picked external subtitles in per series; picked again in a moment
  *   categories, channels, movies, series, episodes
  *                     the catalog: synced from the provider again
  *   search_fts        the search index of the catalog (rebuilt by the sync)
@@ -72,6 +73,7 @@ export const BACKUP_TABLES = {
   swipe_passed: 'exclude',
   subtitle_files: 'exclude',
   subtitle_choices: 'exclude',
+  subtitle_series: 'exclude',
   source: 'exclude',
   kv: 'exclude',
   categories: 'exclude',

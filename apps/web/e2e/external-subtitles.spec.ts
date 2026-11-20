@@ -67,7 +67,7 @@ test('online search: results in the subtitle language, the one picked is downloa
   const file = { id: 'os-42', source: 'opensubtitles', language: 'de', label: 'Movie.2019.German.720p', cues: 1, addedAt: Date.now() };
   let downloaded = false;
   await page.route(`**/api/subtitles/movie/${id}`, (route) =>
-    route.fulfill({ json: { online: true, files: downloaded ? [file] : [], choice: downloaded ? { fileId: file.id, offsetMs: 0 } : null, savedOff: false } }),
+    route.fulfill({ json: { online: true, files: downloaded ? [file] : [], choice: downloaded ? { fileId: file.id, offsetMs: 0 } : null, savedOff: false, seriesLanguage: null } }),
   );
   await page.route(`**/api/subtitles/movie/${id}/search?**`, (route) =>
     route.fulfill({
@@ -99,4 +99,23 @@ test('online search: results in the subtitle language, the one picked is downloa
   await search.getByRole('button', { name: /Movie\.2019\.German\.720p/ }).click();
   await expect(page.getByTestId('external-subtitles')).toHaveText('Hallo aus dem Netz');
   await expect(page.getByRole('radiogroup', { name: 'Subtitles' }).getByRole('radio', { name: /German.*OpenSubtitles/ })).toHaveAttribute('aria-checked', 'true');
+});
+
+test('a series remembers the language: the next episode gets subtitles on its own', async ({ profile }) => {
+  test.setTimeout(90_000);
+  const page = await profile.device();
+  const ep = fx.series.ep2;
+  const file = { id: 'os-77', source: 'opensubtitles', language: 'de', label: 'Show.S01E02.German', cues: 1, addedAt: Date.now() };
+  const auto: string[] = [];
+  await page.route(`**/api/subtitles/episode/${ep}`, (route) => route.fulfill({ json: { online: true, files: [], choice: null, savedOff: false, seriesLanguage: 'de' } }));
+  await page.route(`**/api/subtitles/episode/${ep}/auto`, (route) => {
+    auto.push(route.request().postDataJSON().language);
+    return route.fulfill({ json: { file } });
+  });
+  await page.route('**/api/subtitles/file/os-77', (route) => route.fulfill({ contentType: 'text/vtt', body: 'WEBVTT\n\n00:00:00.000 --> 01:00:00.000\nNächste Folge\n' }));
+  // the profile's Subtitles preference is off: the series' language still wins
+  await page.goto(`/play/episode/${ep}?series=${fx.series.id}`);
+  await expectPlaying(page);
+  await expect(page.getByTestId('external-subtitles')).toHaveText('Nächste Folge');
+  expect(auto).toEqual(['de']);
 });
