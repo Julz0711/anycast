@@ -28,6 +28,9 @@ import { ConnectionLimitError, GapError, UpstreamError } from './playback/upstre
 import { createRedactor, redactDeep, type Redactor } from './redact';
 import { artRoutes } from './routes/art';
 import { authRoutes, registerAuthHook } from './routes/auth';
+import { subtitleRoutes } from './routes/subtitles';
+import { SubtitleService } from './subtitles/service';
+import type { ClientOptions as SubtitleClientOptions } from './subtitles/opensubtitles';
 import { securityRoutes } from './routes/security';
 import { backupRoutes } from './routes/backup';
 import { bufferRoutes } from './routes/buffer';
@@ -58,6 +61,8 @@ export interface BuildOptions {
   runEncodeTest?: EncodeRunner;
   /** whether a render device exists (tests pass a fake) */
   deviceExists?: (path: string) => boolean;
+  /** how the server reaches OpenSubtitles (tests pass a fake fetch) */
+  subtitles?: SubtitleClientOptions;
 }
 
 export interface BuiltApp {
@@ -133,6 +138,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   const services: Services = { config, db, users, source, sync, bus, userData: new UserData(db, bus), playback, parental: new Parental(db, bus), backups, cast: new CastLinks(users, db),
     remote: new RemoteHub(bus, (userId) => users.profiles(userId).map((p) => p.id)),
     security: { guard: new SignInGuard(), devices: new DeviceCodes() },
+    subtitles: new SubtitleService(db, config.secret, config.opensubtitles ?? null, opts.subtitles),
   };
 
   await app.register(cookie);
@@ -168,6 +174,7 @@ export async function buildApp(config: Config, opts: BuildOptions = {}): Promise
   listRoutes(app, services);
   swipeRoutes(app, services);
   playbackRoutes(app, services);
+  subtitleRoutes(app, services);
   castRoutes(app, services);
   remoteRoutes(app, services);
   bufferRoutes(app, services);

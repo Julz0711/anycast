@@ -212,6 +212,8 @@ export interface XVodInfo {
   cover: string | null;
   /** YouTube video id */
   trailer: string | null;
+  /** The Movie Database id, when the panel has it (finds subtitles exactly) */
+  tmdbId?: number | null;
 }
 
 export function parseVodInfo(data: unknown): XVodInfo {
@@ -244,5 +246,9 @@ export function parseVodInfo(data: unknown): XVodInfo {
     backdrop: backdrops.map(url).find(Boolean) ?? null,
     cover: url(info.cover_big) ?? url(info.movie_image),
     trailer: trailer && /^[\w-]{6,20}$/.test(trailer) ? trailer : null,
+    tmdbId: (() => {
+      const t = num.parse(info.tmdb_id) ?? num.parse(info.tmdb);
+      return t && Number.isInteger(t) && t > 0 ? t : null;
+    })(),
   };
 }

@@ -26,6 +26,9 @@ import type { Recap, WatchKind } from './recap';
 import type { ProviderLogin, ProviderSettings, ProviderTestResult } from './provider';
 import type { RemoteCommand, RemoteDevice, RemotePresence } from './remote';
 import type { DeviceCodeInfo, DeviceCodePoll, DeviceCodeStart, SecurityStatus } from './security';
+import type {
+  ExternalSubtitleState, SubtitleAutoResponse, SubtitleDownloadResponse, SubtitleSearchResponse, SubtitleSettings, SubtitleSettingsInput, SubtitleSettingsTest,
+} from './subtitles';
 
 
 /**
@@ -417,6 +420,29 @@ export interface Api {
    * answer 409 {error:'taken_over'} until someone asks for them again through /api/play/*.
    */
   'POST /api/play/takeover': { res: { ok: true; stopped: boolean } };
+  /**
+   * External subtitles (subtitles.ts), kind: movie | episode. The state: files kept for the item,
+   * this profile's pick and whether online search is set up.
+   */
+  'GET /api/subtitles/:kind/:id': { res: ExternalSubtitleState };
+  /** Searches OpenSubtitles for the item in `lang` (ISO 639-1). 409 {error:'not_configured'} without an API key. */
+  'GET /api/subtitles/:kind/:id/search': { query: { lang: string }; res: SubtitleSearchResponse };
+  /** Downloads a search result (or returns it when it is kept already) and keeps it for the item. */
+  'POST /api/subtitles/:kind/:id/download': { body: { fileId: string }; res: SubtitleDownloadResponse };
+  /** The best file in `language` for the item: a kept one, else the top search result, downloaded now. */
+  'POST /api/subtitles/:kind/:id/auto': { body: { language: string }; res: SubtitleAutoResponse };
+  /** Keeps a subtitle file from the device (SRT or WebVTT, base64 of its bytes, any common encoding). */
+  'POST /api/subtitles/:kind/:id/upload': { body: { name: string; data: string; language?: string | null }; res: SubtitleDownloadResponse };
+  /** This profile's pick for the item (fileId null = off) and its timing offset in ms (positive = later). */
+  'PUT /api/subtitles/:kind/:id/choice': { body: { fileId: string | null; offsetMs?: number }; res: { ok: true } };
+  /** A kept file as WebVTT (text/vtt). */
+  'GET /api/subtitles/file/:fileId': { res: string };
+  /** Admins: the OpenSubtitles login (never the key or password). */
+  'GET /api/subtitles/settings': { res: SubtitleSettings };
+  /** Admins: tests and saves the OpenSubtitles API key (and optional account). 400 with the reason when the test fails. */
+  'PUT /api/subtitles/settings': { body: SubtitleSettingsInput; res: SubtitleSettings & { test: SubtitleSettingsTest } };
+  /** Admins: removes the key entered in the app (a key in .env stays). */
+  'DELETE /api/subtitles/settings': { res: SubtitleSettings };
   /** This client stopped watching (player closed): its provider connection is released now. */
   'POST /api/play/stop': { res: { ok: true } };
 

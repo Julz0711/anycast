@@ -141,6 +141,8 @@ async function callOnce<R extends Route>(route: R, opts: CallOpts<R>): Promise<R
     throw new ApiError(res.status, msg, body);
   }
   if (res.status === 204) return undefined as unknown as ResOf<R>;
+  // subtitle files (text/vtt)
+  if (res.headers.get('content-type')?.startsWith('text/')) return (await res.text()) as ResOf<R>;
   return (await res.json()) as ResOf<R>;
 }
 
