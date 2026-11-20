@@ -2,7 +2,7 @@
  * Settings. Basic shows the essentials; All settings shows every Preferences field, grouped.
  * Every change applies immediately (optimistic) and syncs to the profile's other devices.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ACCENTS, ALL_TABS, DEFAULT_PREFERENCES, HEADLINE_FONT_CHOICES, normalizeTabOrder, PROFILES_MAX, type AccentId, type HideRules, type MediaKind, type Preferences, type TabId } from '@anycast/shared';
 import { useApp } from '../store/app';
 import { askOnLaunch, clearWatchHistory, logout, patchPrefs, refreshMe, saveHideRules, setAskOnLaunch, setDeviceOverride, setPref, toast } from '../store/actions';
@@ -18,7 +18,9 @@ import { capsHeader, convertedCodecs, isMobileDevice, liveHls, setConvertCodec }
 import { isDemo } from '../demo/flag';
 import { TABS, visibleTabs } from '../layout/tabs';
 import { ProgressBar, Segmented, Skeleton, Toggle } from '../components/ui';
-import { IconDown, IconDrag, IconLock, IconRefresh, IconUp } from '../components/Icons';
+import { IconClock, IconClose, IconDown, IconDrag, IconFilter, IconHome, IconInfo, IconLists, IconLive, IconLock, IconPalette, IconPlay, IconPulse, IconRefresh, IconRemote, IconRewind, IconSearch, IconServer, IconShield, IconSwipe, IconTabs, IconUp, IconUpload, IconUser } from '../components/Icons';
+import { IconCast } from '../player/cast/icons';
+import { matches, queryTerms } from './settingsSearch';
 import { ListsManager } from '../components/ListEditor';
 import { HomeEditor } from '../components/HomeEditor';
 import type { DeviceOverride, FormFactor } from '../lib/device';
@@ -39,12 +41,19 @@ const opts = <T extends string | number>(...pairs: [T, string][]) => pairs.map((
 const LAYOUT_KEY = { phone: 'layoutPhone', large: 'layoutLarge', tv: 'layoutTv' } as const;
 const FORM_NAME: Record<FormFactor, string> = { phone: 'phone', large: 'desktop & tablet', tv: 'TV' };
 
+type Section = { id: string; title: string; desc: string; icon: ReactNode; body: ReactNode; keywords?: string };
+type Group = { id: string; title: string; sections: Section[] };
+
 export default function SettingsScreen() {
   const prefs = useApp((s) => s.prefs);
   const me = useApp((s) => s.me);
   const profileId = useApp((s) => s.profileId);
   const form = useFormFactor();
-  const all = prefs.settingsMode === 'all';
+  const [query, setQuery] = useState('');
+  const terms = useMemo(() => queryTerms(query), [query]);
+  const searching = terms.length > 0;
+  // a search looks through every option, also the ones Basic leaves out
+  const all = prefs.settingsMode === 'all' || searching;
   const profile = me?.profiles.find((p) => p.id === profileId);
   const isAdmin = me?.user.isAdmin ?? false;
   // /settings#set-parental (from a profile page) opens at that section
@@ -53,56 +62,188 @@ export default function SettingsScreen() {
     if (id) requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView());
   }, []);
 
-  const sections: { id: string; title: string; body: ReactNode; basic?: boolean }[] = all
-    ? [
-        { id: 'appearance', title: 'Appearance', body: <Appearance prefs={prefs} all /> },
-        { id: 'live', title: 'Live TV', body: <LiveSettings prefs={prefs} form={form} all /> },
-        { id: 'lists', title: 'Channel lists', body: <ListsManager /> },
-        { id: 'player', title: 'Player', body: <PlayerSettings prefs={prefs} all /> },
-        { id: 'casting', title: 'Casting', body: <CastSettings Row={Row} /> },
-        { id: 'remote', title: 'Remote', body: <RemoteSettings Row={Row} /> },
-        { id: 'tabs', title: 'Start & tabs', body: <StartTabs prefs={prefs} all /> },
-        { id: 'home', title: 'Home', body: <HomeEditor compact /> },
-        { id: 'history', title: 'Watch history', body: <WatchHistory prefs={prefs} /> },
-        { id: 'swipe', title: 'Swipe', body: <SwipeSettings /> },
-        { id: 'filters', title: 'Filters', body: <Filters all /> },
-        { id: 'parental', title: 'Parental lock', body: <ParentalLock Row={Row} /> },
-        { id: 'buffer', title: 'Rewind buffer', body: <RewindBuffer /> },
-        { id: 'profiles', title: 'Profiles', body: <Profiles /> },
-        { id: 'security', title: 'Security', body: <SecuritySection Row={Row} /> },
-        ...(isAdmin ? [{ id: 'provider', title: 'Provider', body: <ProviderSection /> }] : []),
-        { id: 'source', title: 'Source & account', body: <Source /> },
-        ...(isAdmin ? [{ id: 'backup', title: 'Backup & restore', body: <BackupSection Row={Row} /> }] : []),
-        {
-          id: 'diagnostics',
-          title: 'Diagnostics',
-          body: <DiagnosticsSection isAdmin={isAdmin} Row={Row} />,
-        },
-        { id: 'about', title: 'About', body: <About /> },
-      ]
-    : [
-        { id: 'appearance', title: 'Appearance', body: <Appearance prefs={prefs} /> },
-        { id: 'live', title: 'Live TV', body: <LiveSettings prefs={prefs} form={form} /> },
-        { id: 'player', title: 'Player', body: <PlayerSettings prefs={prefs} /> },
-        { id: 'remote', title: 'Remote', body: <RemoteSettings Row={Row} /> },
-        { id: 'tabs', title: 'Start', body: <StartTabs prefs={prefs} /> },
-        { id: 'filters', title: 'Filters', body: <Filters /> },
-        { id: 'security', title: 'Security', body: <SecuritySection Row={Row} /> },
-        ...(isAdmin ? [{ id: 'provider', title: 'Provider', body: <ProviderSection /> }] : []),
-      ];
+  const groups: Group[] = (
+    all
+      ? [
+          {
+            id: 'look',
+            title: 'Look & start',
+            sections: [
+              { id: 'appearance', title: 'Appearance', desc: 'Colors, fonts, text size and motion.', icon: <IconPalette />, body: <Appearance prefs={prefs} all />, keywords: 'theme color font' },
+              { id: 'tabs', title: 'Start & tabs', desc: 'Where the app opens and which tabs it shows.', icon: <IconTabs />, body: <StartTabs prefs={prefs} all />, keywords: 'navigation menu order' },
+              { id: 'home', title: 'Home', desc: 'The sections on your Home page.', icon: <IconHome />, body: <HomeEditor compact />, keywords: 'dashboard customize' },
+            ],
+          },
+          {
+            id: 'watch',
+            title: 'Watching',
+            sections: [
+              { id: 'live', title: 'Live TV', desc: 'Channel list, guide and channel details.', icon: <IconLive />, body: <LiveSettings prefs={prefs} form={form} all />, keywords: 'channels guide epg' },
+              { id: 'lists', title: 'Channel lists', desc: 'Your own lists of channels.', icon: <IconLists />, body: <ListsManager />, keywords: 'favorites' },
+              { id: 'player', title: 'Player', desc: 'Languages, subtitles, buffering and controls.', icon: <IconPlay />, body: <PlayerSettings prefs={prefs} all />, keywords: 'video playback' },
+              { id: 'casting', title: 'Casting', desc: 'Play on a TV or speaker.', icon: <IconCast />, body: <CastSettings Row={Row} />, keywords: 'chromecast airplay' },
+              { id: 'remote', title: 'Remote', desc: 'Use your phone as a remote.', icon: <IconRemote />, body: <RemoteSettings Row={Row} /> },
+              { id: 'swipe', title: 'Swipe', desc: 'Titles you swiped away.', icon: <IconSwipe />, body: <SwipeSettings /> },
+            ],
+          },
+          {
+            id: 'yours',
+            title: 'You & your family',
+            sections: [
+              { id: 'history', title: 'Watch history', desc: 'What you watched, and your recap.', icon: <IconClock />, body: <WatchHistory prefs={prefs} />, keywords: 'recap' },
+              { id: 'filters', title: 'Filters', desc: 'Hide languages, countries and categories.', icon: <IconFilter />, body: <Filters all />, keywords: 'hide' },
+              { id: 'parental', title: 'Parental lock', desc: 'PINs and what kids can watch.', icon: <IconLock />, body: <ParentalLock Row={Row} />, keywords: 'kids pin' },
+              { id: 'profiles', title: 'Profiles', desc: "Who's watching, and switching between them.", icon: <IconUser />, body: <Profiles /> },
+            ],
+          },
+          {
+            id: 'server',
+            title: 'Server & account',
+            sections: [
+              { id: 'security', title: 'Security', desc: 'Sign-in, password and devices.', icon: <IconShield />, body: <SecuritySection Row={Row} />, keywords: 'password login' },
+              ...(isAdmin ? [{ id: 'provider', title: 'Provider', desc: 'The login of your TV provider.', icon: <IconServer />, body: <ProviderSection />, keywords: 'xtream login' }] : []),
+              { id: 'source', title: 'Source & account', desc: 'Subscription, catalog and sync.', icon: <IconRefresh />, body: <Source />, keywords: 'sync' },
+              { id: 'buffer', title: 'Rewind buffer', desc: 'Live TV the server keeps so you can rewind.', icon: <IconRewind />, body: <RewindBuffer />, keywords: 'timeshift' },
+              ...(isAdmin ? [{ id: 'backup', title: 'Backup & restore', desc: 'Save or bring back everything.', icon: <IconUpload />, body: <BackupSection Row={Row} /> }] : []),
+              { id: 'diagnostics', title: 'Diagnostics', desc: 'Check the server and connection.', icon: <IconPulse />, body: <DiagnosticsSection isAdmin={isAdmin} Row={Row} /> },
+              { id: 'about', title: 'About', desc: 'Versions, reset and sign out.', icon: <IconInfo />, body: <About />, keywords: 'version' },
+            ],
+          },
+        ]
+      : [
+          {
+            id: 'look',
+            title: 'Look & start',
+            sections: [
+              { id: 'appearance', title: 'Appearance', desc: 'Colors and fonts.', icon: <IconPalette />, body: <Appearance prefs={prefs} /> },
+              { id: 'tabs', title: 'Start', desc: 'Where the app opens.', icon: <IconTabs />, body: <StartTabs prefs={prefs} /> },
+            ],
+          },
+          {
+            id: 'watch',
+            title: 'Watching',
+            sections: [
+              { id: 'live', title: 'Live TV', desc: 'Channel list or full guide.', icon: <IconLive />, body: <LiveSettings prefs={prefs} form={form} /> },
+              { id: 'player', title: 'Player', desc: 'Languages, subtitles, buffering and controls.', icon: <IconPlay />, body: <PlayerSettings prefs={prefs} /> },
+              { id: 'remote', title: 'Remote', desc: 'Use your phone as a remote.', icon: <IconRemote />, body: <RemoteSettings Row={Row} /> },
+            ],
+          },
+          {
+            id: 'yours',
+            title: 'You & your family',
+            sections: [{ id: 'filters', title: 'Filters', desc: 'Hide languages and countries.', icon: <IconFilter />, body: <Filters /> }],
+          },
+          {
+            id: 'server',
+            title: 'Server & account',
+            sections: [
+              { id: 'security', title: 'Security', desc: 'Sign-in, password and devices.', icon: <IconShield />, body: <SecuritySection Row={Row} /> },
+              ...(isAdmin ? [{ id: 'provider', title: 'Provider', desc: 'The login of your TV provider.', icon: <IconServer />, body: <ProviderSection /> }] : []),
+            ],
+          },
+        ]
+  ).filter((g) => g.sections.length);
+
+  const mainRef = useRef<HTMLDivElement>(null);
+  const [found, setFound] = useState<{ rows: number; sections: string[] } | null>(null);
+  const lastRow = useRef<{ row: Element; section: string } | null>(null);
+
+  // Filter in place: rows whose text matches stay, the rest hide; a section whose name matches shows whole.
+  // Runs again when a section's content loads later (lists, sources, the buffer…).
+  useLayoutEffect(() => {
+    const root = mainRef.current;
+    if (!root) return;
+    if (!searching) {
+      root.querySelectorAll('[data-filter],[data-hit],[data-out]').forEach((el) => (el.removeAttribute('data-filter'), el.removeAttribute('data-hit'), el.removeAttribute('data-out')));
+      setFound(null);
+      return;
+    }
+    let raf = 0;
+    const apply = () => {
+      obs.disconnect();
+      let rows = 0;
+      const hitSections: string[] = [];
+      root.querySelectorAll<HTMLElement>('.set-section').forEach((sec) => {
+        const head = sec.dataset.search ?? '';
+        const rowEls = [...sec.querySelectorAll('.set-row')];
+        // rows that match win; a section whose name matches but none of its rows shows whole (lists, profiles…)
+        let n = 0;
+        for (const r of rowEls) {
+          if (matches(r.textContent + ' ' + [...r.querySelectorAll('[aria-label]')].map((e) => e.getAttribute('aria-label')).join(' '), terms)) {
+            r.setAttribute('data-hit', '');
+            n++;
+          } else r.removeAttribute('data-hit');
+        }
+        if (!n && matches(head, terms)) {
+          sec.dataset.filter = 'all';
+          sec.removeAttribute('data-out');
+          rows += Math.max(1, rowEls.length);
+          hitSections.push(sec.id);
+          return;
+        }
+        sec.dataset.filter = 'rows';
+        if (n) {
+          sec.removeAttribute('data-out');
+          hitSections.push(sec.id);
+        } else sec.setAttribute('data-out', '');
+        rows += n;
+      });
+      root.querySelectorAll<HTMLElement>('.set-group').forEach((g) => (g.querySelector('.set-section:not([data-out])') ? g.removeAttribute('data-out') : g.setAttribute('data-out', '')));
+      setFound((f) => (f && f.rows === rows && f.sections.join() === hitSections.join() ? f : { rows, sections: hitSections }));
+      obs.observe(root, { childList: true, subtree: true, characterData: true });
+    };
+    const obs = new MutationObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(apply);
+    });
+    apply();
+    return () => (obs.disconnect(), cancelAnimationFrame(raf));
+  }, [searching, terms, all, isAdmin]);
+
+  // the row last touched in the results: clearing the search shows it again where it lives
+  useLayoutEffect(() => {
+    if (searching || !lastRow.current) return;
+    const { row, section } = lastRow.current;
+    lastRow.current = null;
+    const target = row.isConnected ? row : document.getElementById(`set-${section}`);
+    if (!target) return;
+    target.scrollIntoView({ block: 'center' });
+    target.classList.add('set-flash');
+    setTimeout(() => target.classList.remove('set-flash'), 1600);
+  }, [searching]);
+  const remember = (e: { target: EventTarget }) => {
+    if (!searching) return;
+    const row = (e.target as Element).closest?.('.set-row');
+    const sec = row?.closest('.set-section');
+    if (row && sec) lastRow.current = { row, section: sec.id.replace(/^set-/, '') };
+  };
+
+  const shown = (id: string) => !found || found.sections.includes(`set-${id}`);
+  const jump = (id: string) => document.getElementById(`set-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const active = useActiveSection(groups.flatMap((g) => g.sections.map((s) => s.id)), mainRef);
 
   return (
     <div className="settings">
       {form !== 'phone' && (
         <nav className="set-index" aria-label="Settings sections">
-          {sections.map((s) => (
-            <a key={s.id} href={`#set-${s.id}`} onClick={(e) => (e.preventDefault(), document.getElementById(`set-${s.id}`)?.scrollIntoView({ behavior: 'smooth' }))}>
-              {s.title}
-            </a>
-          ))}
+          {groups.map((g) =>
+            g.sections.some((s) => shown(s.id)) ? (
+              <div key={g.id} className="set-index-group">
+                <div className="set-index-title">{g.title}</div>
+                {g.sections.map((s) =>
+                  shown(s.id) ? (
+                    <a key={s.id} href={`#set-${s.id}`} aria-current={active === s.id ? 'true' : undefined} onClick={(e) => (e.preventDefault(), jump(s.id))}>
+                      <span className="set-index-ico">{s.icon}</span>
+                      {s.title}
+                    </a>
+                  ) : null,
+                )}
+              </div>
+            ) : null,
+          )}
         </nav>
       )}
-      <div className="set-main">
+      <div className="set-main" ref={mainRef} onPointerDownCapture={remember} onFocusCapture={remember}>
         <div className="page-head">
           <h1 className="h1">Settings</h1>
           <Segmented
@@ -113,21 +254,97 @@ export default function SettingsScreen() {
             onChange={(v) => patchPrefs({ settingsMode: v })}
           />
         </div>
-        <p className="muted set-intro pad-x">
-          {all ? 'Showing every option.' : 'Showing the essentials. Switch to All settings for everything.'} Settings sync to every device for this profile
-          {profile ? ` (${profile.name})` : ''}.
-        </p>
-        {sections.map((s) => (
-          <section key={s.id} id={`set-${s.id}`} className="set-section pad-x" aria-labelledby={`set-h-${s.id}`}>
-            <h2 id={`set-h-${s.id}`} className="label">
-              {s.title}
+        <div className="set-search pad-x">
+          <label className="search-box">
+            <IconSearch />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && query) (e.preventDefault(), e.stopPropagation(), setQuery(''));
+                if (e.key === 'Enter') document.querySelector('.set-section:not([data-out]) [data-hit], .set-section[data-filter="all"]')?.scrollIntoView({ block: 'center' });
+              }}
+              placeholder="Search settings"
+              aria-label="Search settings"
+              enterKeyHint="search"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            {query && (
+              <button type="button" className="set-search-clear" aria-label="Clear search" onClick={() => setQuery('')}>
+                <IconClose />
+              </button>
+            )}
+          </label>
+          {searching && (
+            <p className="muted set-intro" aria-live="polite">
+              {found && found.rows === 0
+                ? `Nothing matches “${query.trim()}”. Try another word, like “subtitles” or “color”.`
+                : found
+                  ? `${found.rows} ${found.rows === 1 ? 'option' : 'options'} in ${found.sections.length} ${found.sections.length === 1 ? 'section' : 'sections'}${prefs.settingsMode === 'basic' ? ', from All settings too' : ''}. Clear the search to see an option in its place.`
+                  : ' '}
+            </p>
+          )}
+        </div>
+        {!searching && (
+          <p className="muted set-intro pad-x">
+            {prefs.settingsMode === 'all' ? 'Showing every option.' : 'Showing the essentials. Switch to All settings for everything.'} Settings sync to every device for this profile
+            {profile ? ` (${profile.name})` : ''}.
+          </p>
+        )}
+        {groups.map((g) => (
+          <div key={g.id} className="set-group" aria-labelledby={`set-g-${g.id}`} role="group">
+            <h2 id={`set-g-${g.id}`} className="set-group-title pad-x">
+              {g.title}
             </h2>
-            {s.body}
-          </section>
+            {g.sections.map((s) => (
+              <section key={s.id} id={`set-${s.id}`} className="set-section" aria-labelledby={`set-h-${s.id}`} data-search={`${s.title} ${s.desc} ${s.keywords ?? ''} ${g.title}`}>
+                <header className="set-head pad-x">
+                  <span className="set-head-ico" aria-hidden="true">
+                    {s.icon}
+                  </span>
+                  <span className="set-head-text">
+                    <h3 id={`set-h-${s.id}`} className="set-title">
+                      {s.title}
+                    </h3>
+                    <span className="set-desc">{s.desc}</span>
+                  </span>
+                </header>
+                <div className="set-card">{s.body}</div>
+              </section>
+            ))}
+          </div>
         ))}
       </div>
     </div>
   );
+}
+
+/** the section at the top of the screen, for the index beside the page */
+function useActiveSection(ids: string[], rootRef: RefObject<HTMLElement>) {
+  const [active, setActive] = useState<string | null>(null);
+  const key = ids.join();
+  useEffect(() => {
+    if (!rootRef.current || typeof IntersectionObserver === 'undefined') return;
+    const visible = new Map<string, number>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) e.isIntersecting ? visible.set(e.target.id, e.boundingClientRect.top) : visible.delete(e.target.id);
+        const first = ids.find((id) => visible.has(`set-${id}`));
+        if (first) setActive(first);
+      },
+      { rootMargin: '-15% 0px -60% 0px' },
+    );
+    ids.forEach((id) => {
+      const el = document.getElementById(`set-${id}`);
+      if (el) io.observe(el);
+    });
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return active;
 }
 
 function Row(props: { label: string; hint?: ReactNode; children: ReactNode; stack?: boolean }) {
