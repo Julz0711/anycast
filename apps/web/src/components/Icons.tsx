@@ -185,3 +185,37 @@ export const IconLaptop = (p: SVGProps<SVGSVGElement>) => (
 export const IconPhone = (p: SVGProps<SVGSVGElement>) => (
   <svg {...base(p)}><rect x="7" y="2.5" width="10" height="19" rx="2.5" /><path d="M11 18.5h2" /></svg>
 );
+
+/* ---- Settings section marks ---- */
+/** a painter's palette: Appearance */
+export const IconPalette = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 3a9 9 0 000 18c1.4 0 2-1 2-2 0-1.5-1.2-1.8-1.2-3 0-1 .8-1.8 1.8-1.8H17a4 4 0 004-4C21 6.4 17 3 12 3z" /><circle cx="7.5" cy="11" r="1.1" fill="currentColor" stroke="none" /><circle cx="10" cy="7" r="1.1" fill="currentColor" stroke="none" /><circle cx="15" cy="7.5" r="1.1" fill="currentColor" stroke="none" /></svg>
+);
+/** a shield: Security */
+export const IconShield = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8.3-7.5 9.5-4.3-1.2-7.5-4.9-7.5-9.5V6z" /><path d="M9 12l2.2 2.2L15.5 10" /></svg>
+);
+/** a server box: Provider, Source */
+export const IconServer = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3.5" y="4" width="17" height="7" rx="2" /><rect x="3.5" y="13" width="17" height="7" rx="2" /><path d="M7.5 7.5h.01M7.5 16.5h.01" /></svg>
+);
+/** a person: Profiles */
+export const IconUser = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><circle cx="12" cy="8" r="4" /><path d="M4.5 20.5c.8-3.8 3.8-6 7.5-6s6.7 2.2 7.5 6" /></svg>
+);
+/** a pulse line: Diagnostics */
+export const IconPulse = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M3 12h4l2.5-6 5 12 2.5-6h4" /></svg>
+);
+/** a circular arrow back: Rewind buffer, Watch history */
+export const IconRewind = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 12a8 8 0 108-8 8.2 8.2 0 00-6 2.7" /><path d="M5.5 3v4h4" /><path d="M12 8v4l2.5 2.5" /></svg>
+);
+/** a funnel: Filters */
+export const IconFilter = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><path d="M4 5h16l-6 7.5V19l-4 1.5v-8z" /></svg>
+);
+/** stacked tabs: Start & tabs */
+export const IconTabs = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M3.5 9h17M9 4.5V9" /></svg>
+);
