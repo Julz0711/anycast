@@ -18,7 +18,7 @@ import { capsHeader, convertedCodecs, isMobileDevice, liveHls, setConvertCodec }
 import { isDemo } from '../demo/flag';
 import { TABS, visibleTabs } from '../layout/tabs';
 import { ProgressBar, Segmented, Skeleton, Toggle } from '../components/ui';
-import { IconClock, IconClose, IconDown, IconDrag, IconFilter, IconHome, IconInfo, IconLists, IconLive, IconLock, IconPalette, IconPlay, IconPulse, IconRefresh, IconRemote, IconRewind, IconSearch, IconServer, IconShield, IconSwipe, IconTabs, IconUp, IconUpload, IconUser } from '../components/Icons';
+import { IconClock, IconClose, IconDown, IconDrag, IconFilter, IconHome, IconInfo, IconLists, IconLive, IconLock, IconPalette, IconPlay, IconPulse, IconRefresh, IconRemote, IconRewind, IconSearch, IconServer, IconShield, IconSwipe, IconTabs, IconTracks, IconUp, IconUpload, IconUser } from '../components/Icons';
 import { IconCast } from '../player/cast/icons';
 import { matches, queryTerms } from './settingsSearch';
 import { ListsManager } from '../components/ListEditor';
@@ -29,6 +29,7 @@ import { DiagnosticsSection } from './Diagnostics';
 import { HwEncoding } from './HwEncoding';
 import { SecuritySection } from './Security';
 import { ProviderSection } from './Provider';
+import { OnlineSubtitlesSection } from './OnlineSubtitles';
 import { BackupSection } from './Backup';
 import { RemoteSettings } from '../remote/RemoteSettings';
 import { CastSettings } from './CastSettings';
@@ -102,6 +103,7 @@ export default function SettingsScreen() {
             sections: [
               { id: 'security', title: 'Security', desc: 'Sign-in, password and devices.', icon: <IconShield />, body: <SecuritySection Row={Row} />, keywords: 'password login' },
               ...(isAdmin ? [{ id: 'provider', title: 'Provider', desc: 'The login of your TV provider.', icon: <IconServer />, body: <ProviderSection />, keywords: 'xtream login' }] : []),
+              ...(isAdmin ? [{ id: 'subtitles', title: 'Online subtitles', desc: 'Find subtitles for titles that have none.', icon: <IconTracks />, body: <OnlineSubtitlesSection />, keywords: 'opensubtitles subtitle api key' }] : []),
               { id: 'source', title: 'Source & account', desc: 'Subscription, catalog and sync.', icon: <IconRefresh />, body: <Source />, keywords: 'sync' },
               { id: 'buffer', title: 'Rewind buffer', desc: 'Live TV the server keeps so you can rewind.', icon: <IconRewind />, body: <RewindBuffer />, keywords: 'timeshift' },
               ...(isAdmin ? [{ id: 'backup', title: 'Backup & restore', desc: 'Save or bring back everything.', icon: <IconUpload />, body: <BackupSection Row={Row} /> }] : []),
@@ -587,8 +589,8 @@ function LangSelect(props: { label: string; value: string | null; onChange: (v: 
 
 const SUBTITLE_HINT: Record<P['player']['subtitlesDefault'], string> = {
   off: 'Turn them on in the player when you want them.',
-  auto: 'Shown when the audio is not in your subtitle language.',
-  on: 'Shown whenever a title has them, in your subtitle language if it can.',
+  auto: 'Shown when the audio is not in your subtitle language. Titles without their own get them online, when set up.',
+  on: 'Shown whenever a title has them, in your subtitle language if it can. Titles without their own get them online, when set up.',
 };
 
 function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
@@ -604,7 +606,7 @@ function PlayerSettings({ prefs, all }: { prefs: P; all?: boolean }) {
         <Segmented label="Subtitles" value={p.subtitlesDefault} options={opts<P['player']['subtitlesDefault']>(['off', 'Off'], ['auto', 'Auto'], ['on', 'Always'])} onChange={(v) => setPref('player', { subtitlesDefault: v })} />
       </Row>
       {p.subtitlesDefault !== 'off' && (
-        <Row label="Subtitle language">
+        <Row label="Subtitle language" hint={p.subtitlesDefault === 'auto' && !p.preferredSubtitleLanguage ? 'Auto needs a language here: it shows subtitles when the audio is in another one.' : undefined}>
           <LangSelect label="Subtitle language" value={p.preferredSubtitleLanguage} onChange={(v) => setPref('player', { preferredSubtitleLanguage: v })} />
         </Row>
       )}

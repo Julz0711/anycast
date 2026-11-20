@@ -10,3 +10,4 @@ export * from './recap';
 export * from './provider';
 export * from './remote';
 export * from './security';
+export * from './subtitles';

@@ -27,6 +27,9 @@ import { Ribbon, VodBar } from './Timeline';
 import { useThumbIndex } from './thumbs';
 import { hasTrackChoice, playingTracks, reloadTracks as keepTracks, renditionOf, subtitleAction, type TrackRequest } from './tracks';
 import { TracksMenu } from './TracksMenu';
+import { SubtitleOverlay } from './SubtitleOverlay';
+import { useExternalSubtitles } from './useExternalSubtitles';
+import { searchLanguage } from './externalSubs';
 import { EpisodeList } from './EpisodeList';
 import { UpNextCard, upNextDue } from './upNext';
 import { RewindTip } from './RewindTip';
@@ -1244,6 +1247,21 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     },
     [isLive, atLive, position, load],
   );
+  /* external subtitles (movies and episodes): found online or loaded from a file */
+  const ext = useExternalSubtitles({
+    kind: vodKind,
+    id,
+    ready: !isLive && !!info,
+    tracks: info?.tracks,
+    shown: subIdx,
+    itemLanguage: (kind === 'episode' ? series.data?.language : movie.data?.language) ?? null,
+    onShow: () => {
+      // the stream's own subtitles go off while an external one shows
+      setSubIdx(null);
+      playing.current.tracks = { ...playing.current.tracks, sub: 'off' };
+      if (info?.tracks?.subtitles.length) saveTracks({ subtitle: null });
+    },
+  });
   const chooseAudio = (n: number) => {
     const t = info?.tracks;
     if (!t || n === t.audioIndex) return;
@@ -1252,6 +1270,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
   };
   const chooseSubtitle = (n: number | null) => {
     const t = info?.tracks;
+    // off, or the stream's own: no external one (remembered, so it isn't fetched on its own next time)
+    if (!isLive && (ext.active || n === null)) ext.off(true);
     if (!t || n === subIdx) return;
     const action = subtitleAction(t, n);
     if (action === 'none') return;
@@ -1275,7 +1295,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     image: (isLive ? ch?.logo : kind === 'episode' ? series.data?.poster : movie.data?.poster) ?? null,
   };
   const tracks = info?.tracks;
-  const hasTracks = hasTrackChoice(tracks);
+  // movies and episodes always: subtitles can be found online or loaded from a file
+  const hasTracks = hasTrackChoice(tracks) || (!isLive && !!info && !casting);
   const showPlayOverlay = !casting && !error && !moved && upNext !== 'end' && (needsTap || (paused && !waiting));
   const shownPaused = casting ? ccPlayer === 'PAUSED' : paused || needsTap;
 
@@ -1453,8 +1474,15 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
             onClose={() => setMenu(null)}
           />
         )}
-        {menu === 'tracks' && tracks && (
-          <TracksMenu tracks={tracks} subtitle={subIdx} onAudio={chooseAudio} onSubtitle={chooseSubtitle} onClose={() => setMenu(null)} />
+        {menu === 'tracks' && (tracks || !isLive) && (
+          <TracksMenu
+            tracks={tracks}
+            subtitle={subIdx}
+            onAudio={chooseAudio}
+            onSubtitle={chooseSubtitle}
+            onClose={() => setMenu(null)}
+            external={isLive ? undefined : { kind: vodKind, id, ext, language: searchLanguage(prefs, navigator.language), canFile: form !== 'tv', isAdmin }}
+          />
         )}
 
     </>
@@ -1503,6 +1531,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           onEnded={onEnded}
           onError={onVideoError}
         />
+        {ext.active && !casting && <SubtitleOverlay videoRef={videoRef} cues={ext.active.cues} offsetMs={ext.active.offsetMs} />}
         <div
           className="pl-gesture"
           onPointerDown={onGestureDown}

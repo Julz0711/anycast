@@ -12,6 +12,7 @@ import type { EventBus } from './events';
 import type { Parental } from './parental';
 import type { PlaybackService } from './playback/service';
 import type { SourceService } from './source';
+import type { SubtitleService } from './subtitles/service';
 import type { UserData } from './userdata';
 
 export interface Services {
@@ -28,6 +29,7 @@ export interface Services {
   cast: CastLinks;
   remote: RemoteHub;
   security: { guard: SignInGuard; devices: DeviceCodes };
+  subtitles: SubtitleService;
 }
 
 export interface AuthContext {

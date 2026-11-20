@@ -66,6 +66,8 @@ export interface Config {
   hwaccel?: { setting: HwAccelSetting; device: string };
   /** automatic daily backups kept in DATA_DIR/backups (default 7); 0 = off */
   backupKeep?: number;
+  /** OpenSubtitles login from .env (OPENSUBTITLES_API_KEY, _USERNAME, _PASSWORD); one entered in the app wins */
+  opensubtitles?: { apiKey: string; username: string | null; password: string | null } | null;
 }
 
 const num = (v: string | undefined): number | null => {
@@ -141,6 +143,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     secret,
     admin: adminUser && adminPassword ? { username: adminUser, password: adminPassword } : null,
     xtream: xtreamFromEnv(env),
+    opensubtitles: env.OPENSUBTITLES_API_KEY?.trim()
+      ? { apiKey: env.OPENSUBTITLES_API_KEY.trim(), username: env.OPENSUBTITLES_USERNAME?.trim() || null, password: env.OPENSUBTITLES_PASSWORD?.trim() || null }
+      : null,
     logLevel: env.LOG_LEVEL?.trim() || 'info',
     trustProxy: trustProxyFromEnv(env.TRUST_PROXY),
     passwordFromInternet: /^(1|true|yes|on)$/i.test(env.ANYCAST_PASSWORD_OUTSIDE?.trim() ?? ''),

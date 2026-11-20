@@ -395,4 +395,30 @@ export const MIGRATIONS: string[] = [
   UPDATE sessions SET id = lower(hex(randomblob(9))), last_seen_at = created_at;
   CREATE INDEX sessions_user ON sessions(user_id);
   `,
+  `
+  -- external subtitles (subtitles/service.ts): files found online or loaded from a device, kept per
+  -- movie or episode as WebVTT so no one downloads them twice; id = 'os-<OpenSubtitles file id>' or 'up-<random>'
+  CREATE TABLE IF NOT EXISTS subtitle_files (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    source TEXT NOT NULL,
+    language TEXT,
+    label TEXT NOT NULL,
+    vtt TEXT NOT NULL,
+    cues INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS subtitle_files_item ON subtitle_files(kind, item_id);
+  -- the external subtitle file each profile picked per item (file_id NULL = turned off), and its timing offset
+  CREATE TABLE IF NOT EXISTS subtitle_choices (
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    file_id TEXT,
+    offset_ms INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, kind, item_id)
+  ) WITHOUT ROWID;
+  `,
 ];

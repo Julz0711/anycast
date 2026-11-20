@@ -29,7 +29,10 @@
  *                     they can come up in the deck again
  *   source            the provider login (Xtream URL, user, password), encrypted with ANYCAST_SECRET:
  *                     a backup file must never carry it; it is entered again in the app (or .env)
- *   kv                only the last catalog / guide sync times (sync state, not user data)
+ *   kv                the last catalog / guide sync times (sync state, not user data), the cast
+ *                     address, and the OpenSubtitles login (encrypted with ANYCAST_SECRET, like source)
+ *   subtitle_files    external subtitles found online or loaded from a device: a cache, found again in the player
+ *   subtitle_choices  which external subtitle each profile picked per item, and its timing; picked again in a moment
  *   categories, channels, movies, series, episodes
  *                     the catalog: synced from the provider again
  *   search_fts        the search index of the catalog (rebuilt by the sync)
@@ -67,6 +70,8 @@ export const BACKUP_TABLES = {
   profile_entries: 'exclude',
   recent_channels: 'exclude',
   swipe_passed: 'exclude',
+  subtitle_files: 'exclude',
+  subtitle_choices: 'exclude',
   source: 'exclude',
   kv: 'exclude',
   categories: 'exclude',
