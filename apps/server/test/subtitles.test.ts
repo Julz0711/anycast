@@ -1,7 +1,7 @@
 import type { ExternalSubtitleState, SubtitleDownloadResponse, SubtitleSearchResponse, SubtitleSettings } from '@anycast/shared';
 import { afterEach, describe, expect, test } from 'vitest';
 import { convertSubtitle, decodeSubtitle, parseCues, parseTime } from '../src/subtitles/convert';
-import { parseResults, rankResults, searchParams } from '../src/subtitles/opensubtitles';
+import { OpenSubtitlesClient, parseResults, rankResults, searchParams } from '../src/subtitles/opensubtitles';
 import { guessLanguage } from '../src/subtitles/service';
 import { login, makeApp } from './helpers';
 
@@ -62,7 +62,7 @@ describe('OpenSubtitles requests and results', () => {
     expect(searchParams({ type: 'episode', query: 'Game of Thrones', season: 3, episode: 5, language: 'de' })).toBe(
       'episode_number=5&languages=de&query=game+of+thrones&season_number=3&type=episode',
     );
-    expect(searchParams({ type: 'movie', query: 'Heat', year: 1995, tmdbId: 949, language: 'pt' })).toBe('languages=pt-pt%2Cpt-br&tmdb_id=949&type=movie');
+    expect(searchParams({ type: 'movie', query: 'Heat', year: 1995, tmdbId: 949, language: 'pt' })).toBe('languages=pt-pt,pt-br&tmdb_id=949&type=movie');
   });
 
   test('parse and rank', () => {
@@ -241,5 +241,63 @@ describe('external subtitles API', () => {
     expect(dl.body).toEqual({ file_id: 111, sub_format: 'srt' });
     // changing only the key keeps the account and its password
     expect((await req('PUT', '/api/subtitles/settings', { apiKey: 'k2' })).json()).toMatchObject({ username: 'me' });
+  });
+});
+
+describe('OpenSubtitles client: limits and login', () => {
+  const json = (data: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json', ...headers } });
+
+  test('a 429 waits as asked and tries once more', async () => {
+    let calls = 0;
+    const c = new OpenSubtitlesClient({ apiKey: 'k' }, {
+      baseUrl: 'https://os.example/api/v1',
+      fetch: (async () => (++calls === 1 ? json({ message: 'API rate limit exceeded' }, 429, { 'retry-after': '1' }) : json({ data: [] }))) as typeof fetch,
+    });
+    expect(await c.search({ type: 'movie', query: 'heat', language: 'en' })).toEqual([]);
+    expect(calls).toBe(2);
+  });
+
+  test('a rejected account is not signed in again; an expired token is renewed once', async () => {
+    const logins: number[] = [];
+    let first = true;
+    const rejecting = new OpenSubtitlesClient({ apiKey: 'k', username: 'me', password: 'bad' }, {
+      baseUrl: 'https://os.example/api/v1',
+      fetch: (async () => (logins.push(1), json({ message: 'Invalid username/password' }, 401))) as typeof fetch,
+    });
+    await expect(rejecting.search({ type: 'movie', query: 'heat', language: 'en' })).rejects.toMatchObject({ code: 'auth' });
+    await expect(rejecting.search({ type: 'movie', query: 'heat', language: 'en' })).rejects.toMatchObject({ code: 'auth' });
+    expect(logins.length).toBe(1);
+
+    const seen: string[] = [];
+    const renewing = new OpenSubtitlesClient({ apiKey: 'k', username: 'me', password: 'pw' }, {
+      baseUrl: 'https://os.example/api/v1',
+      fetch: (async (u: string | URL | Request, init?: RequestInit) => {
+        const url = String(u);
+        const auth = (init?.headers as Record<string, string>).Authorization ?? '';
+        seen.push(`${url.split('/api/v1')[1]} ${auth}`);
+        if (url.endsWith('/login')) return json({ token: first ? 'old' : 'new' });
+        if (auth === 'Bearer old') {
+          first = false;
+          return json({ message: 'token expired' }, 401);
+        }
+        return json({ data: [] });
+      }) as typeof fetch,
+    });
+    await renewing.search({ type: 'movie', query: 'heat', language: 'en' });
+    expect(seen.map((s) => s.replace(/\?.*? /, ' '))).toEqual(['/login ', '/subtitles Bearer old', '/login ', '/subtitles Bearer new']);
+  }, 10_000);
+
+  test('the VIP host from the login is used only when it is an opensubtitles.com host', async () => {
+    const hosts: string[] = [];
+    const make = (base_url: string) =>
+      new OpenSubtitlesClient({ apiKey: 'k', username: 'me', password: 'pw' }, {
+        fetch: (async (u: string | URL | Request) => {
+          hosts.push(new URL(String(u)).host);
+          return String(u).endsWith('/login') ? json({ token: 't', base_url }) : json({ data: [] });
+        }) as typeof fetch,
+      });
+    await make('vip-api.opensubtitles.com').search({ type: 'movie', query: 'heat', language: 'en' });
+    await make('evil.example').search({ type: 'movie', query: 'heat', language: 'en' });
+    expect(hosts).toEqual(['api.opensubtitles.com', 'vip-api.opensubtitles.com', 'api.opensubtitles.com', 'api.opensubtitles.com']);
   });
 });
