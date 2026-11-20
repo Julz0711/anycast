@@ -271,7 +271,7 @@ export class SubtitleService {
       return await p;
     } catch (err) {
       if (err instanceof OpenSubtitlesError) {
-        const status = err.code === 'quota' ? 429 : err.code === 'auth' ? 409 : 502;
+        const status = err.code === 'quota' ? 429 : err.code === 'busy' ? 503 : err.code === 'auth' ? 409 : 502;
         throw new SubtitleError(status, err.code === 'auth' ? 'not_configured' : err.code, err.message);
       }
       throw err;
