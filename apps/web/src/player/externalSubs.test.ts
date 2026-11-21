@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { DEFAULT_PREFERENCES, type ExternalSubtitleState, type PlaybackTracks } from '@anycast/shared';
+import { autoSubtitleRate, DEFAULT_PREFERENCES, SUBTITLE_DRIFT, type ExternalSubtitleState, type PlaybackTracks } from '@anycast/shared';
 import { activeCues, autoLanguage, cueSegments, fmtOffset, parseVtt, searchLanguage } from './externalSubs';
 
 const VTT = 'WEBVTT\n\n00:00:01.000 --> 00:00:03.500\nHello <i>there</i>\n\n00:00:03.000 --> 00:00:05.000\nTwo\nlines\n\n01:00:00.000 --> 01:00:02.000\nLate\n';
@@ -22,6 +22,31 @@ describe('external subtitles', () => {
     expect(activeCues(cues, 3601, 0).map((c) => c.text)).toEqual(['Late']);
     expect(activeCues(cues, 3601, -500).map((c) => c.text)).toEqual(['Late']);
     expect(activeCues(cues, 3603, 0)).toEqual([]);
+  });
+
+  test('drift: a subtitle made for 23.976 fps on a 25 fps video', () => {
+    // a line at 25:00 in the file belongs at 23:58 in the faster video: a minute behind without the fix
+    const cues = [{ start: 1500, end: 1503, text: 'Late line' }];
+    const rate = SUBTITLE_DRIFT.later;
+    expect(activeCues(cues, 1500.5, 0)).toHaveLength(1);
+    expect(activeCues(cues, 1500.5, 0, rate)).toEqual([]);
+    expect(activeCues(cues, 1500 * rate + 0.5, 0, rate)).toHaveLength(1);
+    // with an offset on top
+    expect(activeCues(cues, 1500 * rate + 2.5, 2000, rate)).toHaveLength(1);
+    // the other way round
+    expect(activeCues(cues, 1500 * SUBTITLE_DRIFT.earlier + 0.5, 0, SUBTITLE_DRIFT.earlier)).toHaveLength(1);
+  });
+
+  test('drift from the frame rates', () => {
+    expect(autoSubtitleRate(23.976, 25)).toBeCloseTo(SUBTITLE_DRIFT.later, 3);
+    expect(autoSubtitleRate(25, 23.976)).toBeCloseTo(SUBTITLE_DRIFT.earlier, 3);
+    expect(autoSubtitleRate(24, 25)).toBeCloseTo(0.96, 3);
+    // the same rate, 23.976 vs 24 (0.1 %), 30 vs 25 (another kind of mismatch) or unknown: as made
+    expect(autoSubtitleRate(25, 25)).toBe(1);
+    expect(autoSubtitleRate(23.976, 24)).toBe(1);
+    expect(autoSubtitleRate(30, 25)).toBe(1);
+    expect(autoSubtitleRate(null, 25)).toBe(1);
+    expect(autoSubtitleRate(23.976, null)).toBe(1);
   });
 
   test('segments keep italic and decode entities', () => {
@@ -69,13 +94,13 @@ describe('when the player fetches subtitles on its own', () => {
   test('not when something was picked, turned off, or the stream shows its own', () => {
     expect(autoLanguage({ ...base, prefs: prefs('on', 'de'), shown: 0 })).toBeNull();
     expect(autoLanguage({ ...base, prefs: prefs('on', 'de'), state: { ...state, savedOff: true } })).toBeNull();
-    expect(autoLanguage({ ...base, prefs: prefs('on', 'de'), state: { ...state, choice: { fileId: null, offsetMs: 0 } } })).toBeNull();
+    expect(autoLanguage({ ...base, prefs: prefs('on', 'de'), state: { ...state, choice: { fileId: null, offsetMs: 0, rate: null } } })).toBeNull();
   });
 
   test('another episode of the series had some: the same language, even with the preference off', () => {
     const series = { ...state, seriesLanguage: 'de' };
     expect(autoLanguage({ ...base, prefs: prefs('off', null), state: series })).toBe('de');
-    expect(autoLanguage({ ...base, prefs: prefs('off', null), state: { ...series, choice: { fileId: null, offsetMs: 0 } } })).toBeNull();
+    expect(autoLanguage({ ...base, prefs: prefs('off', null), state: { ...series, choice: { fileId: null, offsetMs: 0, rate: null } } })).toBeNull();
     expect(autoLanguage({ ...base, prefs: prefs('off', null), state: series, shown: 1 })).toBeNull();
   });
 

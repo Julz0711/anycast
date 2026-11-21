@@ -6,8 +6,8 @@
 import { useEffect, useState, type RefObject } from 'react';
 import { activeCues, cueSegments, type Cue } from './externalSubs';
 
-export function SubtitleOverlay(props: { videoRef: RefObject<HTMLVideoElement | null>; cues: Cue[]; offsetMs: number }) {
-  const { videoRef, cues, offsetMs } = props;
+export function SubtitleOverlay(props: { videoRef: RefObject<HTMLVideoElement | null>; cues: Cue[]; offsetMs: number; rate: number }) {
+  const { videoRef, cues, offsetMs, rate } = props;
   const [lines, setLines] = useState<Cue[]>([]);
 
   useEffect(() => {
@@ -16,7 +16,7 @@ export function SubtitleOverlay(props: { videoRef: RefObject<HTMLVideoElement | 
     let raf = 0;
     let last = '';
     const update = () => {
-      const now = activeCues(cues, v.currentTime, offsetMs);
+      const now = activeCues(cues, v.currentTime, offsetMs, rate);
       const key = now.map((c) => `${c.start}:${c.end}`).join('|');
       if (key !== last) {
         last = key;
@@ -41,7 +41,7 @@ export function SubtitleOverlay(props: { videoRef: RefObject<HTMLVideoElement | 
       v.removeEventListener('seeked', update);
       v.removeEventListener('timeupdate', update);
     };
-  }, [videoRef, cues, offsetMs]);
+  }, [videoRef, cues, offsetMs, rate]);
 
   if (!lines.length) return null;
   return (

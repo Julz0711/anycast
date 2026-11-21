@@ -15,6 +15,7 @@ import { setBufferPin, useBufferPins } from '../api/buffer';
 import { useAsync, useFormFactor } from '../lib/hooks';
 import { readLocal, writeLocal } from '../lib/storage';
 import { isTypingTarget } from '../lib/misc';
+import { isBackKey } from '../nav/spatial';
 import { fmtBehind, fmtClock, fmtDay, fmtDuration, fmtRange } from '../lib/time';
 import { parseMediaTime, parseTimeInput } from '../lib/timeParse';
 import { createEngine, PlaybackFailure, type Engine } from './engine';
@@ -28,7 +29,7 @@ import { useThumbIndex } from './thumbs';
 import { hasTrackChoice, playingTracks, reloadTracks as keepTracks, renditionOf, subtitleAction, type TrackRequest } from './tracks';
 import { TracksMenu } from './TracksMenu';
 import { SubtitleOverlay } from './SubtitleOverlay';
-import { useExternalSubtitles } from './useExternalSubtitles';
+import { rateOf, useExternalSubtitles } from './useExternalSubtitles';
 import { searchLanguage } from './externalSubs';
 import { EpisodeList } from './EpisodeList';
 import { UpNextCard, upNextDue } from './upNext';
@@ -783,7 +784,8 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
       if (isTypingTarget(t) || t?.closest('[data-player-keys="off"]')) {
-        if (e.key === 'Escape') {
+        // a TV remote's Back (Escape, GoBack, BrowserBack or a platform key code) closes the menu too
+        if (e.key === 'Escape' || (!isTypingTarget(t) && isBackKey(e))) {
           setMenu(null);
           e.preventDefault();
         }
@@ -899,9 +901,10 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           else back();
           break;
         default:
-          if (e.keyCode === 461 || e.keyCode === 10009) {
+          if (isBackKey(e)) {
             handled();
-            back();
+            if (menu) setMenu(null);
+            else back();
           } else if (/^[0-9]$/.test(k) && !isLive && form !== 'tv') {
             // 0–9 jump to 0 %–90 % of a movie or episode, like YouTube
             const d = videoRef.current?.duration;
@@ -1255,6 +1258,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
     tracks: info?.tracks,
     shown: subIdx,
     itemLanguage: (kind === 'episode' ? series.data?.language : movie.data?.language) ?? null,
+    videoFps: info?.diagnostics?.probe.video?.fps ?? null,
     onShow: () => {
       // the stream's own subtitles go off while an external one shows
       setSubIdx(null);
@@ -1542,7 +1546,7 @@ export default function PlayerScreen({ kind, id, search, mini, go, expand, close
           onEnded={onEnded}
           onError={onVideoError}
         />
-        {ext.active && !casting && <SubtitleOverlay videoRef={videoRef} cues={ext.active.cues} offsetMs={ext.active.offsetMs} />}
+        {ext.active && !casting && <SubtitleOverlay videoRef={videoRef} cues={ext.active.cues} offsetMs={ext.active.offsetMs} rate={rateOf(ext.active)} />}
         <div
           className="pl-gesture"
           onPointerDown={onGestureDown}

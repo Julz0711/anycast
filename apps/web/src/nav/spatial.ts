@@ -88,7 +88,7 @@ export function moveFocus(dir: Dir): boolean {
   return true;
 }
 
-const BACK_KEYCODES = new Set([461 /* webOS */, 10009 /* Tizen */, 4 /* Android */]);
+const BACK_KEYCODES = new Set([461 /* webOS */, 10009 /* Tizen */, 4 /* Android */, 27 /* Fire TV Vega WebView, whatever key name it reports */]);
 export function isBackKey(e: KeyboardEvent): boolean {
   if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack') return true;
   if (e.key === 'Backspace') return !isEditable(e.target);

@@ -38,7 +38,7 @@ test('a subtitle file from the device: shown, shifted, remembered, turned off', 
 
   // shift it half a second later; the shift is saved a moment after
   const shifted = page.waitForResponse((r) => r.url().endsWith(`/api/subtitles/movie/${id}/choice`) && r.request().method() === 'PUT' && r.request().postDataJSON().offsetMs === 500);
-  await menu.getByRole('button', { name: 'Show subtitles later' }).click();
+  await menu.getByRole('button', { name: 'Show subtitles half a second later' }).click();
   await expect(menu.getByRole('group', { name: 'Subtitle timing' })).toContainText('+0.5 s');
   await shifted;
 
@@ -53,7 +53,7 @@ test('a subtitle file from the device: shown, shifted, remembered, turned off', 
   const off = page.waitForResponse((r) => r.url().endsWith(`/api/subtitles/movie/${id}/choice`) && r.request().method() === 'PUT');
   await subs.getByRole('radio', { name: 'Off' }).click();
   await expect(overlay).toBeHidden();
-  expect((await off).request().postDataJSON()).toEqual({ fileId: null, offsetMs: 0 });
+  expect((await off).request().postDataJSON()).toEqual({ fileId: null, offsetMs: 0, rate: null });
   await page.reload();
   await expectPlaying(page);
   await page.waitForTimeout(1000);
@@ -118,4 +118,61 @@ test('a series remembers the language: the next episode gets subtitles on its ow
   await expectPlaying(page);
   await expect(page.getByTestId('external-subtitles')).toHaveText('Nächste Folge');
   expect(auto).toEqual(['de']);
+});
+
+test('on a TV: the remote reaches the close button, Back closes the menu, and drift can be fixed', async ({ profile }) => {
+  test.setTimeout(90_000);
+  const page = await profile.device();
+  await page.addInitScript(() => localStorage.setItem('anycast.device', 'tv'));
+  const id = fx.movie.id;
+  const file = { id: 'os-50', source: 'opensubtitles', language: 'de', label: 'Movie.2019.German.BluRay', cues: 1, fps: null, addedAt: Date.now() };
+  const saved: { fileId: string | null; offsetMs: number; rate: number | null }[] = [];
+  await page.route(`**/api/subtitles/movie/${id}`, (route) =>
+    route.fulfill({ json: { online: true, files: [file], choice: { fileId: file.id, offsetMs: 0, rate: null }, savedOff: false, seriesLanguage: null } }),
+  );
+  await page.route(`**/api/subtitles/movie/${id}/choice`, (route) => {
+    saved.push(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.route('**/api/subtitles/file/os-50', (route) => route.fulfill({ contentType: 'text/vtt', body: 'WEBVTT\n\n00:00:00.000 --> 01:00:00.000\nVom Fernseher\n' }));
+
+  await page.goto(`/play/movie/${id}`);
+  await expectPlaying(page);
+  await expect(page.getByTestId('external-subtitles')).toHaveText('Vom Fernseher');
+  const menu = page.getByRole('dialog', { name: 'Audio and subtitles' });
+  const open = async () => {
+    await page.getByRole('button', { name: 'Audio & subtitles' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(menu).toBeVisible();
+  };
+
+  // Back on the remote (Vega's WebView may name it anything but Escape) closes it, and the player stays
+  await open();
+  const key = (init: { key: string; keyCode?: number }) =>
+    page.evaluate(({ key, keyCode }) => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, keyCode, bubbles: true, cancelable: true })), init);
+  await key({ key: 'GoBack' });
+  await expect(menu).toBeHidden();
+  await expect(page).toHaveURL(new RegExp(`/play/movie/${id}`));
+  await open();
+  await key({ key: 'Unidentified', keyCode: 27 });
+  await expect(menu).toBeHidden();
+
+  // up from the top of a column reaches the close button; OK on it closes
+  await open();
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowUp');
+  await expect(menu.getByRole('button', { name: 'Close' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeHidden();
+
+  // timing in steps of 5 s, and the drift fix for a subtitle made for another frame rate
+  await open();
+  const timing = menu.getByRole('group', { name: 'Subtitle timing' });
+  await timing.getByRole('button', { name: 'Show subtitles 5 seconds later' }).click();
+  await expect(timing).toContainText('+5 s');
+  const drift = menu.getByRole('radiogroup', { name: 'Subtitle drift' });
+  await expect(drift.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true');
+  await drift.getByRole('radio', { name: 'Later and later' }).click();
+  await expect(drift.getByRole('radio', { name: 'Later and later' })).toHaveAttribute('aria-checked', 'true');
+  await expect.poll(() => saved.at(-1)).toMatchObject({ fileId: 'os-50', offsetMs: 5000 });
+  expect(saved.at(-1)!.rate).toBeCloseTo(0.959, 3);
 });

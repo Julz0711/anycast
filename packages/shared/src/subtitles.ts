@@ -21,6 +21,8 @@ export interface ExternalSubtitle {
   label: string;
   /** cues in the file */
   cues: number;
+  /** the frame rate of the video the subtitle was timed for (OpenSubtitles says, often not); null: unknown */
+  fps: number | null;
   addedAt: number;
 }
 
@@ -34,7 +36,7 @@ export interface ExternalSubtitleState {
    * This profile's pick for the item: a file id, or null when it turned external subtitles off.
    * null (the whole field): nothing picked yet, so the profile's Subtitles preference decides.
    */
-  choice: { fileId: string | null; offsetMs: number } | null;
+  choice: { fileId: string | null; offsetMs: number; rate: number | null } | null;
   /** the profile turned subtitles off for this item in the player (also off for the stream's own) */
   savedOff: boolean;
   /**
@@ -112,4 +114,31 @@ export const SUBTITLE_LIMITS = {
   name: 200,
   /** the timing offset, either way */
   offsetMs: 10 * 60_000,
+  /** the drift fix (cue times multiplied by it), either way */
+  rateMin: 0.9,
+  rateMax: 1.1,
 } as const;
+
+/**
+ * Drift: a subtitle timed for a video at another frame rate (a 23.976 fps film release on a 25 fps
+ * European TV copy, which plays 4 % faster) starts in time and then falls behind more and more:
+ * 30 s after 12 minutes, a minute after 25. Multiplying its cue times by the ratio of the two frame
+ * rates puts it back. A rate of 1 leaves the times as they are.
+ */
+export const SUBTITLE_DRIFT = {
+  /** the subtitles come later and later: made for 23.976 fps, the video runs at 25 */
+  later: 24000 / 1001 / 25,
+  /** earlier and earlier: made for 25 fps, the video runs at 23.976 */
+  earlier: 25 / (24000 / 1001),
+} as const;
+
+/**
+ * The drift fix to apply on its own, from the frame rate the subtitle was made for and the video's:
+ * their ratio when they differ like film and TV frame rates do (2 %–7 %), else 1.
+ */
+export function autoSubtitleRate(subtitleFps: number | null | undefined, videoFps: number | null | undefined): number {
+  if (!subtitleFps || !videoFps || subtitleFps <= 0 || videoFps <= 0) return 1;
+  const r = subtitleFps / videoFps;
+  const d = Math.abs(1 - r);
+  return d >= 0.02 && d <= 0.07 ? r : 1;
+}

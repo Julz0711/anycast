@@ -22,7 +22,7 @@ export type SubKind = 'movie' | 'episode';
 const KV_KEY = 'opensubtitles';
 const SEARCH_TTL_MS = 6 * 3600_000;
 
-interface FileRow { id: string; kind: string; item_id: string; source: string; language: string | null; label: string; cues: number; created_at: number }
+interface FileRow { id: string; kind: string; item_id: string; source: string; language: string | null; label: string; cues: number; fps: number | null; created_at: number }
 interface Saved { login: OpenSubtitlesLogin; updatedAt: number }
 
 export class SubtitleError extends Error {
@@ -36,7 +36,7 @@ export class SubtitleError extends Error {
 }
 
 const toFile = (r: FileRow): ExternalSubtitle => ({
-  id: r.id, source: r.source === 'upload' ? 'upload' : 'opensubtitles', language: r.language, label: r.label, cues: r.cues, addedAt: r.created_at,
+  id: r.id, source: r.source === 'upload' ? 'upload' : 'opensubtitles', language: r.language, label: r.label, cues: r.cues, fps: r.fps ?? null, addedAt: r.created_at,
 });
 
 export class SubtitleService {
@@ -145,7 +145,7 @@ export class SubtitleService {
 
   files(kind: SubKind, id: string): ExternalSubtitle[] {
     const rows = this.db
-      .prepare('SELECT id, kind, item_id, source, language, label, cues, created_at FROM subtitle_files WHERE kind = ? AND item_id = ? ORDER BY created_at DESC')
+      .prepare('SELECT id, kind, item_id, source, language, label, cues, fps, created_at FROM subtitle_files WHERE kind = ? AND item_id = ? ORDER BY created_at DESC')
       .all(kind, id) as FileRow[];
     return rows.map(toFile);
   }
@@ -156,12 +156,12 @@ export class SubtitleService {
   }
 
   state(profileId: string, kind: SubKind, id: string, savedOff: boolean): ExternalSubtitleState {
-    const c = this.db.prepare('SELECT file_id, offset_ms FROM subtitle_choices WHERE profile_id = ? AND kind = ? AND item_id = ?').get(profileId, kind, id) as
-      | { file_id: string | null; offset_ms: number }
+    const c = this.db.prepare('SELECT file_id, offset_ms, rate FROM subtitle_choices WHERE profile_id = ? AND kind = ? AND item_id = ?').get(profileId, kind, id) as
+      | { file_id: string | null; offset_ms: number; rate: number | null }
       | undefined;
     const files = this.files(kind, id);
     // a picked file that is gone (should not happen) counts as nothing picked
-    const choice = c && (c.file_id === null || files.some((f) => f.id === c.file_id)) ? { fileId: c.file_id, offsetMs: c.offset_ms } : null;
+    const choice = c && (c.file_id === null || files.some((f) => f.id === c.file_id)) ? { fileId: c.file_id, offsetMs: c.offset_ms, rate: c.rate ?? null } : null;
     return { online: !!this.login(), files, choice, savedOff, seriesLanguage: kind === 'episode' ? this.seriesLanguage(profileId, id) : null };
   }
 
@@ -176,15 +176,17 @@ export class SubtitleService {
     return r?.language ?? null;
   }
 
-  saveChoice(profileId: string, kind: SubKind, id: string, fileId: string | null, offsetMs: number | undefined): void {
+  /** rate: the drift fix (cue times multiplied by it); null or left out = worked out from the frame rates */
+  saveChoice(profileId: string, kind: SubKind, id: string, fileId: string | null, offsetMs: number | undefined, rate?: number | null): void {
     if (fileId !== null && !this.files(kind, id).some((f) => f.id === fileId)) throw new SubtitleError(404, 'not_found', 'That subtitle is not kept for this title');
     const off = Math.round(Math.max(-SUBTITLE_LIMITS.offsetMs, Math.min(SUBTITLE_LIMITS.offsetMs, offsetMs ?? 0)));
+    const r = rate === undefined || rate === null || fileId === null ? null : Math.max(SUBTITLE_LIMITS.rateMin, Math.min(SUBTITLE_LIMITS.rateMax, rate));
     this.db
       .prepare(
-        `INSERT INTO subtitle_choices (profile_id, kind, item_id, file_id, offset_ms, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(profile_id, kind, item_id) DO UPDATE SET file_id = excluded.file_id, offset_ms = excluded.offset_ms, updated_at = excluded.updated_at`,
+        `INSERT INTO subtitle_choices (profile_id, kind, item_id, file_id, offset_ms, rate, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(profile_id, kind, item_id) DO UPDATE SET file_id = excluded.file_id, offset_ms = excluded.offset_ms, rate = excluded.rate, updated_at = excluded.updated_at`,
       )
-      .run(profileId, kind, id, fileId, off, Date.now());
+      .run(profileId, kind, id, fileId, off, r, Date.now());
     // an episode: the series keeps the language for its other episodes (off: none for them either)
     const series = kind === 'episode' ? this.seriesOf(id) : null;
     if (!series) return;
@@ -233,7 +235,7 @@ export class SubtitleService {
   }
 
   /** Downloads an OpenSubtitles file for the item and keeps it; a kept one is returned as it is. */
-  async download(kind: SubKind, id: string, fileId: string, hint?: { language: string | null; release: string }): Promise<{ file: ExternalSubtitle; remaining: number | null }> {
+  async download(kind: SubKind, id: string, fileId: string, hint?: { language: string | null; release: string; fps: number | null }): Promise<{ file: ExternalSubtitle; remaining: number | null }> {
     if (!/^\d{1,12}$/.test(fileId)) throw new SubtitleError(400, 'bad_request', 'fileId is an OpenSubtitles file id');
     this.exists(kind, id);
     const fid = `os-${fileId}`;
@@ -249,7 +251,7 @@ export class SubtitleService {
         const { bytes, remaining } = await this.wrap(this.os().download(fileId));
         const conv = convertSubtitle(bytes);
         if (!conv) throw new SubtitleError(502, 'upstream', 'That subtitle file has no lines AnyCast can read. Pick another one.');
-        const file = this.store(fid, kind, id, 'opensubtitles', meta?.language ?? null, meta?.release ?? 'OpenSubtitles', conv);
+        const file = this.store(fid, kind, id, 'opensubtitles', meta?.language ?? null, meta?.release ?? 'OpenSubtitles', conv, meta?.fps ?? null);
         return { file, remaining };
       })().finally(() => this.inflight.delete(key));
       this.inflight.set(key, p);
@@ -268,7 +270,7 @@ export class SubtitleService {
     const { results } = await this.wrap(this.results(kind, id, language));
     const best = results[0];
     if (!best) return null;
-    return (await this.download(kind, id, best.fileId, { language: best.language ?? language, release: best.release })).file;
+    return (await this.download(kind, id, best.fileId, { language: best.language ?? language, release: best.release, fps: best.fps })).file;
   }
 
   /** Keeps a file from the device. */
@@ -281,12 +283,12 @@ export class SubtitleService {
     return this.store(`up-${randomBytes(9).toString('base64url')}`, kind, id, 'upload', normalizeLanguage(language) ?? guessLanguage(label), label, conv);
   }
 
-  private store(fid: string, kind: SubKind, id: string, source: string, language: string | null, label: string, conv: { vtt: string; cues: number }): ExternalSubtitle {
+  private store(fid: string, kind: SubKind, id: string, source: string, language: string | null, label: string, conv: { vtt: string; cues: number }, fps: number | null = null): ExternalSubtitle {
     const now = Date.now();
     this.db
-      .prepare('INSERT OR REPLACE INTO subtitle_files (id, kind, item_id, source, language, label, vtt, cues, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(fid, kind, id, source, language, label, conv.vtt, conv.cues, now);
-    return toFile({ id: fid, kind, item_id: id, source, language, label, cues: conv.cues, created_at: now });
+      .prepare('INSERT OR REPLACE INTO subtitle_files (id, kind, item_id, source, language, label, vtt, cues, fps, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(fid, kind, id, source, language, label, conv.vtt, conv.cues, fps, now);
+    return toFile({ id: fid, kind, item_id: id, source, language, label, cues: conv.cues, fps, created_at: now });
   }
 
   /** OpenSubtitles errors as SubtitleErrors with a status for the route. */

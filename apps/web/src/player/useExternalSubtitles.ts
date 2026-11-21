@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ExternalSubtitle, ExternalSubtitleState, PlaybackTracks } from '@anycast/shared';
-import { SUBTITLE_LIMITS } from '@anycast/shared';
+import { autoSubtitleRate, SUBTITLE_LIMITS } from '@anycast/shared';
 import { call, errorMessage } from '../api/client';
 import { useApp } from '../store/app';
 import { autoLanguage, parseVtt, type Cue } from './externalSubs';
@@ -14,7 +14,14 @@ export interface ActiveExternal {
   file: ExternalSubtitle;
   cues: Cue[];
   offsetMs: number;
+  /** the drift fix picked in the menu; null: the one worked out from the frame rates (autoRate) */
+  rate: number | null;
+  /** the drift fix from the subtitle's and the video's frame rates (1 when they match or aren't known) */
+  autoRate: number;
 }
+
+/** The drift fix in effect. */
+export const rateOf = (a: ActiveExternal): number => a.rate ?? a.autoRate;
 
 export interface ExternalSubtitles {
   state: ExternalSubtitleState | null;
@@ -27,6 +34,8 @@ export interface ExternalSubtitles {
   /** hide the external subtitle; remember=true keeps it off for this item */
   off: (remember: boolean) => void;
   setOffset: (ms: number) => void;
+  /** the drift fix (SUBTITLE_DRIFT); null: worked out from the frame rates */
+  setRate: (rate: number | null) => void;
   /** a file from the device */
   upload: (file: File) => Promise<void>;
   /** a search result was downloaded: show it */
@@ -51,6 +60,8 @@ export function useExternalSubtitles(o: {
   /** the stream's own subtitle track showing (null = none) */
   shown: number | null;
   itemLanguage: string | null;
+  /** the video's frame rate (the server's probe), for the drift fix */
+  videoFps: number | null;
   /** an external subtitle started showing: turn the stream's own off */
   onShow: () => void;
 }): ExternalSubtitles {
@@ -65,10 +76,10 @@ export function useExternalSubtitles(o: {
   const latest = useRef(o);
   latest.current = o;
 
-  const show = useCallback(async (file: ExternalSubtitle, offsetMs: number, forItem: string) => {
+  const show = useCallback(async (file: ExternalSubtitle, offsetMs: number, rate: number | null, forItem: string) => {
     const text = await call('GET /api/subtitles/file/:fileId', { params: { fileId: file.id } });
     if (itemRef.current !== forItem) return false;
-    setActive({ file, cues: parseVtt(String(text)), offsetMs });
+    setActive({ file, cues: parseVtt(String(text)), offsetMs, rate, autoRate: autoSubtitleRate(file.fps, latest.current.videoFps) });
     latest.current.onShow();
     return true;
   }, []);
@@ -97,7 +108,7 @@ export function useExternalSubtitles(o: {
       setState(st);
       const picked = st.choice?.fileId ? st.files.find((f) => f.id === st.choice!.fileId) : null;
       if (picked) {
-        await show(picked, st.choice!.offsetMs, forItem).catch(() => undefined);
+        await show(picked, st.choice!.offsetMs, st.choice!.rate ?? null, forItem).catch(() => undefined);
         return;
       }
       const cur = latest.current;
@@ -113,7 +124,7 @@ export function useExternalSubtitles(o: {
         const file = kept ?? (await call('POST /api/subtitles/:kind/:id/auto', { params: { kind, id }, body: { language: lang } })).file;
         if (gone || !file) return;
         if (!kept) setState((s) => (s && !s.files.some((f) => f.id === file.id) ? { ...s, files: [file, ...s.files] } : s));
-        await show(file, 0, forItem);
+        await show(file, 0, null, forItem);
       } catch {
         /* quietly: the menu can still search */
       } finally {
@@ -126,9 +137,9 @@ export function useExternalSubtitles(o: {
   }, [ready, item, kind, id, show]);
 
   const saveChoice = useCallback(
-    (fileId: string | null, offsetMs: number) =>
-      void call('PUT /api/subtitles/:kind/:id/choice', { params: { kind, id }, body: { fileId, offsetMs } })
-        .then(() => setState((s) => (s ? { ...s, choice: { fileId, offsetMs } } : s)))
+    (fileId: string | null, offsetMs: number, rate: number | null) =>
+      void call('PUT /api/subtitles/:kind/:id/choice', { params: { kind, id }, body: { fileId, offsetMs, rate } })
+        .then(() => setState((s) => (s ? { ...s, choice: { fileId, offsetMs, rate } } : s)))
         .catch(() => undefined),
     [kind, id],
   );
@@ -138,8 +149,10 @@ export function useExternalSubtitles(o: {
       setError(null);
       setBusy('Loading subtitles…');
       try {
-        const offsetMs = state?.choice?.fileId === file.id ? state.choice.offsetMs : 0;
-        if (await show(file, offsetMs, item)) saveChoice(file.id, offsetMs);
+        const same = state?.choice?.fileId === file.id;
+        const offsetMs = same ? state.choice!.offsetMs : 0;
+        const rate = same ? (state.choice!.rate ?? null) : null;
+        if (await show(file, offsetMs, rate, item)) saveChoice(file.id, offsetMs, rate);
       } catch (e) {
         setError(errorMessage(e));
       } finally {
@@ -160,24 +173,32 @@ export function useExternalSubtitles(o: {
   const off = useCallback(
     (remember: boolean) => {
       setActive(null);
-      if (remember) saveChoice(null, 0);
+      if (remember) saveChoice(null, 0, null);
     },
     [saveChoice],
   );
 
-  // the offset saves a moment after the last change
+  // the timing saves a moment after the last change
   const offsetTimer = useRef<number | undefined>(undefined);
-  const setOffset = useCallback(
-    (ms: number) => {
-      const v = Math.max(-SUBTITLE_LIMITS.offsetMs, Math.min(SUBTITLE_LIMITS.offsetMs, Math.round(ms)));
+  const setTiming = useCallback(
+    (change: (a: ActiveExternal) => Partial<ActiveExternal>) => {
       setActive((a) => {
         if (!a) return a;
+        const next = { ...a, ...change(a) };
         window.clearTimeout(offsetTimer.current);
-        offsetTimer.current = window.setTimeout(() => saveChoice(a.file.id, v), 800);
-        return { ...a, offsetMs: v };
+        offsetTimer.current = window.setTimeout(() => saveChoice(next.file.id, next.offsetMs, next.rate), 800);
+        return next;
       });
     },
     [saveChoice],
+  );
+  const setOffset = useCallback(
+    (ms: number) => setTiming(() => ({ offsetMs: Math.max(-SUBTITLE_LIMITS.offsetMs, Math.min(SUBTITLE_LIMITS.offsetMs, Math.round(ms))) })),
+    [setTiming],
+  );
+  const setRate = useCallback(
+    (rate: number | null) => setTiming(() => ({ rate: rate === null ? null : Math.max(SUBTITLE_LIMITS.rateMin, Math.min(SUBTITLE_LIMITS.rateMax, rate)) })),
+    [setTiming],
   );
   useEffect(() => () => window.clearTimeout(offsetTimer.current), []);
 
@@ -199,5 +220,5 @@ export function useExternalSubtitles(o: {
     [kind, id, added],
   );
 
-  return { state, active, busy, error, pick, off, setOffset, upload, added };
+  return { state, active, busy, error, pick, off, setOffset, setRate, upload, added };
 }
