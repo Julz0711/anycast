@@ -30,6 +30,7 @@ const SYNONYMS: Record<string, string[]> = {
   programm: ['guide', 'programme'],
   fernsehprogramm: ['guide'],
   epg: ['guide'],
+  pause: ['off air'],
   liste: ['list'],
   favoriten: ['favorite'],
   sprache: ['language'],

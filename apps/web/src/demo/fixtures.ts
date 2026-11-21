@@ -47,7 +47,7 @@ const CH_NAMES: Record<Genre, string[]> = {
   music: ['Beat FM TV', 'Loop', 'Encore', 'Stage Live'],
 };
 const SHOWS: Record<Genre, string[]> = {
-  sport: ['Matchday Live', 'Pre-match', 'Cup Final: North vs. Harbour', 'Highlights', 'Classic Finals', 'Cycling: Stage 9', 'Tennis: Quarter-finals', 'Motor Weekly', 'The Goal Show', 'Boxing Night'],
+  sport: ['Matchday Live', 'Pre-match', 'Cup Final: North vs. Harbour', 'Highlights', 'Classic Finals', 'Cycling: Stage 9', 'Tennis: Quarter-finals', 'Motor Weekly', 'The Goal Show', 'Boxing Night', 'Sendepause'],
   news: ['Morning Briefing', 'World Tonight', 'Evening Bulletin', 'Weather', 'Late News', 'Business Hour', 'The Interview', 'Headlines'],
   movies: ['The Long Coast', 'Glass Harbour', 'Night Train East', 'Late Film', 'Red Meridian', 'Slow Tide', 'Afterlight', 'Ninefold'],
   kids: ['Paper Planes', 'Bedtime Stories', 'Robot Pals', 'The Garden Gang', 'Bubble Lab', 'Tiny Explorers'],
