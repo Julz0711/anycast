@@ -40,7 +40,10 @@ export function homeKey(description: string | null | undefined): string | null {
   const ground = norm(m[1]!);
   const town = norm(m[2]!);
   for (const [g, key] of GROUNDS) if (ground.includes(g) && !(g === 'olympiastadion' && town !== 'berlin')) return key;
-  return TOWNS[town] ?? town;
+  if (TOWNS[town]) return TOWNS[town]!;
+  // "Frankfurt am Main", "Freiburg im Breisgau", "Mülheim an der Ruhr": the club goes by the first word
+  const first = /^(\S{4,})\s+(am|im|an|in|ob|bei|vor)\b/.exec(town)?.[1];
+  return first && first !== 'bad' ? first : town;
 }
 
 /** kickoff from this long before the programme starts ... */
