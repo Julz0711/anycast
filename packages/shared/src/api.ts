@@ -170,7 +170,8 @@ export interface ItemsById {
 }
 
 export interface SearchResults {
-  live: Channel[];
+  /** with what's on now and next, so a hit shows its programme (five "Sky Sport Bundesliga" channels: which match is where) */
+  live: LiveChannelWithNow[];
   movies: Movie[];
   series: Series[];
 }

@@ -508,7 +508,7 @@ const routes: [string, RegExp, Handler][] = [
     const s = (q.get('q') ?? '').trim();
     if (!s) return { live: [], movies: [], series: [] };
     return {
-      live: fx.channels.filter((c) => !hidden(rulesOf(st, true), c) && contains(c.name, s)).slice(0, 20),
+      live: fx.channels.filter((c) => !hidden(rulesOf(st, true), c) && contains(c.name, s)).slice(0, 20).map((c) => mask(st, withNow(c, Date.now()))),
       movies: fx.movies.filter((c) => !hidden(rulesOf(st, true), c) && contains(c.name, s)).slice(0, 30),
       series: fx.series.filter((c) => !hidden(rulesOf(st, true), c) && contains(c.name, s)).slice(0, 30),
     };

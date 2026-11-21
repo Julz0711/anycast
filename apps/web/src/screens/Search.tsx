@@ -1,14 +1,16 @@
 /** One box, instant results grouped Live / Movies / Series. Debounced; stale requests are aborted. */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { SearchResults } from '@anycast/shared';
 import { call, errorMessage, isAbort } from '../api/client';
-import { remember } from '../api/catalog';
+import { remember, visibleCategories } from '../api/catalog';
 import { setZapList } from '../store/actions';
-import { useFormFactor } from '../lib/hooks';
+import { useAsync, useFormFactor, useNow } from '../lib/hooks';
+import { useApp } from '../store/app';
 import { writeLocal } from '../lib/storage';
-import { PosterCard } from '../components/cards';
-import { Empty, LogoTile, Skeleton } from '../components/ui';
+import { ChannelRow, PosterCard } from '../components/cards';
+import { Empty, Skeleton } from '../components/ui';
+import { catLabel } from './Live';
 import { IconSearch } from '../components/Icons';
 import { PosterSkeleton } from './Vod';
 
@@ -21,6 +23,12 @@ export function SearchScreen() {
   const form = useFormFactor();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
+  const now = useNow(30_000);
+  const rules = useApp((s) => s.hideRules);
+  const version = useApp((s) => s.catalogVersion);
+  /** shown under a channel without guide data */
+  const cats = useAsync(() => visibleCategories('live', rules), [rules, version]);
+  const catNames = useMemo(() => new Map((cats.data ?? []).map((c) => [c.id, catLabel(c)])), [cats.data]);
 
   useEffect(() => {
     const term = q.trim();
@@ -89,24 +97,18 @@ export function SearchScreen() {
             </div>
             <div className="search-live">
               {res.live.map((ch) => (
-                <button
+                <ChannelRow
                   key={ch.id}
-                  type="button"
-                  className="ch-row"
-                  onClick={() => {
+                  ch={ch}
+                  now={now}
+                  showNext={form !== 'phone'}
+                  category={catNames.get(ch.categoryId)}
+                  onOpen={(id) => {
                     setZapList(res.live.map((c) => c.id));
-                    writeLocal('anycast.lastChannel', ch.id);
-                    navigate(`/play/live/${ch.id}`);
+                    writeLocal('anycast.lastChannel', id);
+                    navigate(`/play/live/${id}`);
                   }}
-                >
-                  <LogoTile name={ch.name} logo={ch.logo} />
-                  <span className="ch-main">
-                    <span className="ch-top">
-                      <span className="name">{ch.name}</span>
-                      <span className="ch-num tabnum">{ch.number}</span>
-                    </span>
-                  </span>
-                </button>
+                />
               ))}
             </div>
           </section>

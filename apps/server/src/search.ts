@@ -7,7 +7,7 @@
  * that start with the query first.
  */
 import type { HideRules, MediaKind, SearchResults } from '@anycast/shared';
-import { asGroup, hideClause, KIND_INDEX, KIND_TABLE, toChannel, toMovie, toSeries, type ChannelRow, type MovieRow, type SeriesRow } from './catalog/store';
+import { asGroup, hideClause, nowNext, KIND_INDEX, KIND_TABLE, toChannel, toMovie, toSeries, type ChannelRow, type MovieRow, type SeriesRow } from './catalog/store';
 import type { Db } from './db';
 
 /** visible matches ranked per kind and query */
@@ -49,7 +49,9 @@ function mergeVariants(rows: ChannelRow[], limit: number): ChannelRow[] {
   return out.slice(0, limit);
 }
 
-export function search(db: Db, q: string, rules: HideRules, limit = SEARCH_LIMIT, opts: { merge?: boolean } = {}): SearchResults {
+/** Live hits carry what's on now and next (at `opts.now`, default: now). */
+export function search(db: Db, q: string, rules: HideRules, limit = SEARCH_LIMIT, opts: { merge?: boolean; now?: number } = {}): SearchResults {
+  const now = opts.now ?? Date.now();
   const tokens = tokensOf(q);
   const fts = toFtsQuery(tokens);
   if (!fts) return { live: [], movies: [], series: [] };
@@ -68,7 +70,10 @@ export function search(db: Db, q: string, rules: HideRules, limit = SEARCH_LIMIT
       .all(fts, KIND_INDEX[kind], ...hide.params, lead, n) as R[];
   };
   return {
-    live: (opts.merge ? mergeVariants(run<ChannelRow>('live', CANDIDATES), limit).map(asGroup) : run<ChannelRow>('live')).map(toChannel),
+    live: (opts.merge ? mergeVariants(run<ChannelRow>('live', CANDIDATES), limit).map(asGroup) : run<ChannelRow>('live')).map((r) => ({
+      ...toChannel(r),
+      ...nowNext(db, r, now),
+    })),
     movies: run<MovieRow>('movie').map(toMovie),
     series: run<SeriesRow>('series').map(toSeries),
   };
