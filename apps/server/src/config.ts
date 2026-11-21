@@ -68,6 +68,8 @@ export interface Config {
   backupKeep?: number;
   /** OpenSubtitles login from .env (OPENSUBTITLES_API_KEY, _USERNAME, _PASSWORD); one entered in the app wins */
   opensubtitles?: { apiKey: string; username: string | null; password: string | null } | null;
+  /** Bundesliga fixtures from OpenLigaDB name "BL" guide entries (FOOTBALL_FIXTURES=off turns it off); off when missing */
+  footballFixtures?: boolean;
 }
 
 const num = (v: string | undefined): number | null => {
@@ -146,6 +148,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     opensubtitles: env.OPENSUBTITLES_API_KEY?.trim()
       ? { apiKey: env.OPENSUBTITLES_API_KEY.trim(), username: env.OPENSUBTITLES_USERNAME?.trim() || null, password: env.OPENSUBTITLES_PASSWORD?.trim() || null }
       : null,
+    footballFixtures: !/^(0|false|no|off)$/i.test(env.FOOTBALL_FIXTURES?.trim() ?? ''),
     logLevel: env.LOG_LEVEL?.trim() || 'info',
     trustProxy: trustProxyFromEnv(env.TRUST_PROXY),
     passwordFromInternet: /^(1|true|yes|on)$/i.test(env.ANYCAST_PASSWORD_OUTSIDE?.trim() ?? ''),
