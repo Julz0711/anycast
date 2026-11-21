@@ -16,8 +16,8 @@ export interface Fixture {
   awayShort: string;
 }
 
-/** "Aus der BayArena in Leverkusen, Deutschland." -> ground "BayArena", town "Leverkusen" */
-const VENUE = /\b(?:aus|live aus|im|in)\s+(?:dem|der|den)\s+(.+?)\s+in\s+([\p{L}][\p{L}.\- ]*?)\s*(?:[,.(]|$)/iu;
+/** "Aus der BayArena in Leverkusen, Deutschland." / "Aus dem Deutsche Bank Park, Frankfurt, Deutschland." -> ground, town */
+const VENUE = /\b(?:aus|live aus|im|in)\s+(?:dem|der|den)\s+(.+?)(?:\s+in\s+|\s*,\s*)([\p{L}][\p{L}.\- ]*?)\s*(?:[,.(]|$)/iu;
 
 /** grounds whose town alone would be wrong or unclear -> a word of the home side's name */
 const GROUNDS: [string, string][] = [

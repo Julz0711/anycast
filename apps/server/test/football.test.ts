@@ -22,6 +22,7 @@ describe('football fixtures', () => {
     expect(homeKey('Aus dem Millerntor-Stadion in Hamburg, Deutschland.')).toBe('pauli');
     expect(homeKey('Aus dem Signal Iduna Park in Dortmund')).toBe('dortmund');
     expect(homeKey('Aus dem Deutsche Bank Park in Frankfurt am Main, Deutschland.')).toBe('frankfurt');
+    expect(homeKey('Aus dem Deutsche Bank Park, Frankfurt, Deutschland.')).toBe('frankfurt');
     expect(homeKey('Aus dem Europa-Park Stadion in Freiburg im Breisgau, Deutschland.')).toBe('freiburg');
     expect(homeKey('Alle Spiele, alle Tore.')).toBeNull();
     expect(homeKey(null)).toBeNull();
@@ -31,6 +32,7 @@ describe('football fixtures', () => {
     expect(withMatch(prog('BL', 'Aus der BayArena in Leverkusen, Deutschland.', '2026-11-21T14:15:00Z'), SATURDAY).title).toBe('BL: Leverkusen – Bayern');
     expect(withMatch(prog('BL', 'Aus der PreZero Arena in Sinsheim, Deutschland.', '2026-11-21T14:15:00Z'), SATURDAY).title).toBe('BL: Hoffenheim – Bremen');
     expect(withMatch(prog('BL', 'Aus dem Deutsche Bank Park in Frankfurt am Main, Deutschland.', '2026-11-21T14:15:00Z'), SATURDAY).title).toBe('BL: Frankfurt – Köln');
+    expect(withMatch(prog('BL', 'Aus dem Deutsche Bank Park, Frankfurt, Deutschland.', '2026-11-21T14:15:00Z'), SATURDAY).title).toBe('BL: Frankfurt – Köln');
     expect(withMatch(prog('BL', 'Aus dem Olympiastadion in Berlin, Deutschland.', '2026-11-21T14:15:00Z'), SATURDAY).title).toBe('BL: Hertha – HSV');
   });
 
