@@ -37,6 +37,7 @@ test('a TV signs in with a code that the phone approves; it then shows in Signed
 
   // back on the phone: the TV is listed, signed in by approval; sign it out
   await phone.goto('/settings#set-security');
+  await phone.getByRole('button', { name: 'Show devices' }).click();
   const row = phone.locator('.sec-device', { hasText: 'approved from another device' }).first();
   await expect(row).toBeVisible();
   await row.getByRole('button', { name: 'Sign out' }).click();

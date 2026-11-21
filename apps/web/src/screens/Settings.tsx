@@ -18,7 +18,9 @@ import { capsHeader, convertedCodecs, isMobileDevice, liveHls, setConvertCodec }
 import { isDemo } from '../demo/flag';
 import { TABS, visibleTabs } from '../layout/tabs';
 import { ProgressBar, Segmented, Skeleton, Toggle } from '../components/ui';
-import { IconClock, IconClose, IconDown, IconDrag, IconFilter, IconHome, IconInfo, IconLists, IconLive, IconLock, IconPalette, IconPlay, IconPulse, IconRefresh, IconRemote, IconRewind, IconSearch, IconServer, IconShield, IconSwipe, IconTabs, IconTracks, IconUp, IconUpload, IconUser } from '../components/Icons';
+import { SortableList } from '../components/Sortable';
+import { moveItem } from '../lib/reorder';
+import { IconClock, IconClose, IconFilter, IconHome, IconInfo, IconLists, IconLive, IconLock, IconPalette, IconPlay, IconPulse, IconRefresh, IconRemote, IconRewind, IconSearch, IconServer, IconShield, IconSwipe, IconTabs, IconTracks, IconUpload, IconUser } from '../components/Icons';
 import { IconCast } from '../player/cast/icons';
 import { matches, queryTerms } from './settingsSearch';
 import { ListsManager } from '../components/ListEditor';
@@ -778,12 +780,6 @@ function StartTabs({ prefs, all }: { prefs: P; all?: boolean }) {
   const s = prefs.start;
   const vis = visibleTabs(s.tabOrder, s.hiddenTabs);
   const order: TabId[] = normalizeTabOrder(s.tabOrder);
-  const [drag, setDrag] = useState<TabId | null>(null);
-  const move = (id: TabId, to: number) => {
-    const next = order.filter((t) => t !== id);
-    next.splice(Math.max(0, Math.min(next.length, to)), 0, id);
-    setPref('start', { tabOrder: next });
-  };
   const setHidden = (id: TabId, hide: boolean) => {
     const hidden = hide ? [...s.hiddenTabs, id] : s.hiddenTabs.filter((t) => t !== id);
     if (visibleTabs(order, hidden).length === 0 || hidden.length >= ALL_TABS.length) return toast('Keep at least one tab visible.');
@@ -798,30 +794,18 @@ function StartTabs({ prefs, all }: { prefs: P; all?: boolean }) {
       </Row>
       {all && (
         <Row label="Tab order and visible tabs" hint="Drag, or use the arrows, to reorder. Settings is always shown." stack>
-          <ol className="tab-order">
-            {order.map((id, i) => (
-              <li
-                key={id}
-                draggable
-                onDragStart={(e) => (setDrag(id), e.dataTransfer.setData('text/plain', id))}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => (e.preventDefault(), drag && move(drag, i), setDrag(null))}
-                onDragEnd={() => setDrag(null)}
-                className={drag === id ? 'dragging' : undefined}
-                data-nav-row={`tab-${id}`}
-              >
-                <IconDrag />
-                <span className="to-name">{TABS[id].label}</span>
-                <button type="button" className="icon-btn sm" aria-label={`Move ${TABS[id].label} up`} disabled={i === 0} onClick={() => move(id, i - 1)}>
-                  <IconUp />
-                </button>
-                <button type="button" className="icon-btn sm" aria-label={`Move ${TABS[id].label} down`} disabled={i === order.length - 1} onClick={() => move(id, i + 1)}>
-                  <IconDown />
-                </button>
-                <Toggle label={`Show ${TABS[id].label}`} checked={!s.hiddenTabs.includes(id)} onChange={(v) => setHidden(id, !v)} />
-              </li>
-            ))}
-          </ol>
+          <SortableList
+            label="Tabs"
+            className="tab-order"
+            tv="arrows"
+            items={order}
+            keyOf={(id) => id}
+            nameOf={(id) => TABS[id].label}
+            render={(id) => <span className="to-name">{TABS[id].label}</span>}
+            rowClass={(id) => (s.hiddenTabs.includes(id) ? 'off' : '')}
+            onMove={(from, to) => setPref('start', { tabOrder: moveItem(order, from, to) })}
+            actions={(id) => <Toggle label={`Show ${TABS[id].label}`} checked={!s.hiddenTabs.includes(id)} onChange={(v) => setHidden(id, !v)} />}
+          />
         </Row>
       )}
     </>
