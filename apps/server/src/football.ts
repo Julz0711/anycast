@@ -16,8 +16,8 @@ export interface Fixture {
   awayShort: string;
 }
 
-/** "Aus der BayArena in Leverkusen, Deutschland." -> ground "BayArena", town "Leverkusen" */
-const VENUE = /\b(?:aus|live aus|im|in)\s+(?:dem|der|den)\s+(.+?)\s+in\s+([\p{L}][\p{L}.\- ]*?)\s*(?:[,.(]|$)/iu;
+/** "Aus der BayArena in Leverkusen, Deutschland." / "Aus dem Deutsche Bank Park, Frankfurt, Deutschland." -> ground, town */
+const VENUE = /\b(?:aus|live aus|im|in)\s+(?:dem|der|den)\s+(.+?)(?:\s+in\s+|\s*,\s*)([\p{L}][\p{L}.\- ]*?)\s*(?:[,.(]|$)/iu;
 
 /** grounds whose town alone would be wrong or unclear -> a word of the home side's name */
 const GROUNDS: [string, string][] = [
@@ -40,13 +40,16 @@ export function homeKey(description: string | null | undefined): string | null {
   const ground = norm(m[1]!);
   const town = norm(m[2]!);
   for (const [g, key] of GROUNDS) if (ground.includes(g) && !(g === 'olympiastadion' && town !== 'berlin')) return key;
-  return TOWNS[town] ?? town;
+  if (TOWNS[town]) return TOWNS[town]!;
+  // "Frankfurt am Main", "Freiburg im Breisgau", "Mülheim an der Ruhr": the club goes by the first word
+  const first = /^(\S{4,})\s+(am|im|an|in|ob|bei|vor)\b/.exec(town)?.[1];
+  return first && first !== 'bad' ? first : town;
 }
 
 /** kickoff from this long before the programme starts ... */
 const BEFORE_MS = 20 * 60_000;
-/** ... to this long after (pre-match shows start 15-45 min early) */
-const AFTER_MS = 75 * 60_000;
+/** ... to this long after (pre-match shows start 15-90 min early) */
+const AFTER_MS = 105 * 60_000;
 
 /** The fixture a programme shows, or null when unsure. */
 export function findFixture(p: Pick<EpgProgram, 'description' | 'start'>, fixtures: Fixture[]): Fixture | null {
