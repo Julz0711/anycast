@@ -56,8 +56,8 @@
 .home-edit { background: var(--surface); border-radius: 1rem; padding: 1.25rem; margin: 0.25rem 0 0.75rem; }
 [data-form="phone"] .home-edit { margin: 0.25rem var(--gutter) 0.75rem; padding: 1rem; }
 .home-edit-intro { font-size: 0.875rem; margin-bottom: 0.875rem; }
-.home-edit .tab-order li { background: var(--surface-2); }
-.home-editor .tab-order li.off .to-name { color: var(--muted); }
+.home-edit .tab-order .reorder-row { background: var(--surface-2); }
+.home-edit .tab-order .reorder-row.lifted { background: var(--track); }
 .to-hint { display: block; font-size: 0.8125rem; font-weight: 500; color: var(--muted); }
 .home-editor-opts { max-width: 40rem; margin-top: 0.5rem; }
 .home-editor .set-row:last-child { border-bottom: 0; }

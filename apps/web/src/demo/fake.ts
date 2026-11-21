@@ -311,7 +311,12 @@ const routes: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/health$/, () => ({ ok: true, version: 'demo' })],
   ['GET', /^\/api\/auth\/security$/, () => ({
     passwordFromInternet: false, here: { ip: '192.168.0.20', outside: false },
-    devices: [{ id: 'd1', label: 'This browser', createdAt: Date.now() - 86_400_000, lastSeenAt: Date.now(), ip: '192.168.0.20', outside: false, method: 'password', current: true }],
+    devices: [
+      { id: 'd1', label: 'This browser', createdAt: Date.now() - 86_400_000, lastSeenAt: Date.now(), ip: '192.168.0.20', outside: false, method: 'password', current: true },
+      { id: 'd2', label: 'TV', createdAt: Date.now() - 3 * 86_400_000, lastSeenAt: Date.now() - 9 * 3_600_000, ip: '192.168.0.107', outside: false, method: 'approved', current: false },
+      { id: 'd3', label: 'Safari on iPhone', createdAt: Date.now() - 2 * 86_400_000, lastSeenAt: Date.now() - 26 * 3_600_000, ip: '192.168.0.134', outside: false, method: 'password', current: false },
+      { id: 'd4', label: 'Chrome on Mac', createdAt: Date.now() - 2 * 86_400_000, lastSeenAt: Date.now() - 22 * 3_600_000, ip: '100.101.12.4', outside: false, method: 'password', current: false },
+    ],
   })],
   ['GET', /^\/api\/admin\/backup$/, () => demoBackup()],
   ['GET', /^\/api\/admin\/backups$/, () => ({ keep: 7, files: demoAutoBackups() })],

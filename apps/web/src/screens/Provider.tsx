@@ -162,7 +162,7 @@ export function ProviderSection() {
     : s.origin === 'app' ? `Entered in the app${s.updatedAt ? ` ${fmtRelativeAgo(s.updatedAt)}` : ''}.`
     : "From the server's .env file.";
   return (
-    <div data-testid="provider-settings">
+    <div className="provider-settings" data-testid="provider-settings">
       <p className="muted provider-intro">
         Every profile watches through this login. {from} The password is stored encrypted on your server and is never shown again.
         {s.envSet && ' If you change XTREAM_* in .env later, that wins at the next restart.'}

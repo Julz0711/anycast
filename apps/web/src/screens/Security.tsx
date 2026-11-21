@@ -1,12 +1,13 @@
 /**
  * Settings › Security: where this device connects from, signing in a TV with its code, and the
- * devices signed in to this account.
+ * devices signed in to this account (a row here, the list in a sheet).
  */
 import type { SecurityStatus, SignedInDevice } from '@anycast/shared';
 import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { call, errorMessage } from '../api/client';
 import { Skeleton } from '../components/ui';
+import { Sheet } from '../components/lists';
 import { toast } from '../store/actions';
 import { fmtRelativeAgo } from '../lib/time';
 import { useAsync } from '../lib/hooks';
@@ -74,22 +75,35 @@ function SignInTv({ Row }: { Row: RowC }) {
   );
 }
 
+/** One row in Settings (how many, any from the internet); the list itself opens in a sheet. */
 function Devices({ Row, s, reload }: { Row: RowC; s: SecurityStatus; reload: () => void }) {
+  const [open, setOpen] = useState(false);
+  const n = s.devices.length;
+  const outside = s.devices.filter((d) => d.outside).length;
+  const hint = `${n} device${n === 1 ? '' : 's'} signed in, this one included${outside ? `, ${outside} from the internet` : ''}. Sign out anything you don't recognize.`;
+  return (
+    <>
+      <Row label="Signed-in devices" hint={hint}>
+        <button type="button" className="btn" onClick={() => setOpen(true)}>
+          Show devices
+        </button>
+      </Row>
+      {open && <DevicesSheet s={s} reload={reload} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function DevicesSheet({ s, reload, onClose }: { s: SecurityStatus; reload: () => void; onClose: () => void }) {
   const others = s.devices.filter((d) => !d.current).length;
   const signOut = (d: SignedInDevice) =>
     void call('DELETE /api/auth/sessions/:id', { params: { id: d.id } }).then(() => (reload(), toast(`Signed out ${d.label ?? 'that device'}.`)), (e) => toast(errorMessage(e), 'error'));
   const signOutOthers = () =>
     void call('POST /api/auth/sessions/sign-out-others').then((r) => (reload(), toast(`Signed out ${r.removed} device${r.removed === 1 ? '' : 's'}.`)), (e) => toast(errorMessage(e), 'error'));
   return (
-    <>
-      <Row label="Signed-in devices" hint="Everything signed in to this account. Sign out anything you don't recognize.">
-        <button type="button" className="btn" disabled={!others} onClick={signOutOthers}>
-          Sign out all others
-        </button>
-      </Row>
+    <Sheet title="Signed-in devices" onClose={onClose} className="sec-sheet">
       <ul className="sec-devices" aria-label="Signed-in devices">
         {s.devices.map((d) => (
-          <li key={d.id} className="sec-device">
+          <li key={d.id} className="sec-device" data-nav-row={`device-${d.id}`}>
             <div className="sec-device-text">
               <div className="set-label">
                 {d.label ?? 'Unknown device'}
@@ -109,6 +123,12 @@ function Devices({ Row, s, reload }: { Row: RowC; s: SecurityStatus; reload: () 
           </li>
         ))}
       </ul>
-    </>
+      <div className="sec-sheet-foot">
+        <span className="muted">{others ? `${others} other device${others === 1 ? '' : 's'}` : 'Only this device is signed in.'}</span>
+        <button type="button" className="btn" disabled={!others} onClick={signOutOthers}>
+          Sign out all others
+        </button>
+      </div>
+    </Sheet>
   );
 }

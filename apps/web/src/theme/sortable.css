@@ -1,0 +1,21 @@
+/* reorderable lists (components/Sortable.tsx): Settings tabs and Home sections, channel lists */
+.reorder { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.375rem; }
+.reorder-row { display: flex; align-items: center; gap: 0.375rem; padding: 0.375rem 0.375rem 0.375rem 0.25rem; min-height: 3.25rem; border-radius: 0.75rem; background: var(--surface); position: relative; transition: background var(--dur), box-shadow var(--dur); }
+/* the row in your hand: lifted above the others, which slide out of its way */
+.reorder-row.lifted { z-index: 2; background: var(--surface-2); box-shadow: 0 0.875rem 2rem rgb(0 0 0 / 0.45), inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+.reorder-row.moving { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-tint); }
+.reorder-handle { flex: none; width: 2.25rem; height: 2.5rem; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: transparent; cursor: grab; touch-action: none; border-radius: 0.5rem; }
+.reorder-handle:hover, .reorder-handle:focus-visible { color: var(--text); background: var(--surface-2); }
+.reorder-row.lifted .reorder-handle { cursor: grabbing; color: var(--accent); background: transparent; }
+.reorder-handle .ico { width: 1.25rem; height: 1.25rem; }
+.reorder-main { flex: 1; min-width: 0; }
+.reorder-arrows { display: inline-flex; flex: none; }
+[data-form="phone"] .reorder-arrows { display: none; }
+.reorder .icon-btn.sm { width: 2.25rem; height: 2.25rem; background: transparent; }
+.reorder .icon-btn.sm:hover { background: var(--surface-2); }
+.reorder .icon-btn.sm[disabled] { opacity: 0.35; cursor: default; }
+.reorder-row .btn { height: 2.25rem; padding: 0 0.875rem; flex: none; }
+[data-form="tv"] .reorder-row .btn { height: 2.75rem; }
+/* while dragging: the grabbing hand everywhere, no text selection */
+body:has(.reorder-row.lifted) { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+[data-form="tv"] .reorder-row { padding-left: 1rem; }
