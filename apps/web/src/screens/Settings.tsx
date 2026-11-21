@@ -541,6 +541,9 @@ function LiveSettings({ prefs, form, all }: { prefs: P; form: FormFactor; all?: 
       <Row label="Merge duplicate channels" hint="Show a channel once when your provider has it in several versions (HD, FHD, 4K, RAW…). Pick another version in the player; if one doesn't start, the next one plays.">
         <Toggle label="Merge duplicate channels" checked={l.mergeVariants} onChange={(v) => setPref('live', { mergeVariants: v })} />
       </Row>
+      <Row label="Hide channels off air" hint="Search leaves out channels whose guide says nothing is on (Sendepause, Off Air, No Event). A link under the results shows them again.">
+        <Toggle label="Hide channels off air" checked={l.hideOffAir} onChange={(v) => setPref('live', { hideOffAir: v })} />
+      </Row>
       {all && (
         <>
           {(['phone', 'large', 'tv'] as const)

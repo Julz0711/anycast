@@ -304,3 +304,12 @@ export interface PlaybackInfo {
   /** Audio and subtitle tracks of the source and which ones this stream uses (PB-3) */
   tracks?: PlaybackTracks;
 }
+
+/**
+ * Programme titles panels use while a channel shows nothing (event channels between matches):
+ * "Sendepause", "Off Air", "No Event", "Kein Programm"...
+ */
+const OFF_AIR = /^\s*(sendepause|programmpause|sendeschluss|kein(e)? (programm|sendung|event|übertragung)|off[ -]?air|no (event|events|programme|program|broadcast|transmission)( (today|now|scheduled))?|event (not started|ended)|closed)\s*[.!]?\s*$/i;
+
+/** The programme says the channel is off air right now. */
+export const isOffAir = (title: string | null | undefined): boolean => Boolean(title && OFF_AIR.test(title));

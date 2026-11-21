@@ -134,6 +134,8 @@ export interface Preferences {
     guideOnlyWithEpg: boolean;
     /** one row per channel when the provider has it in several versions (HD, FHD, RAW…) */
     mergeVariants: boolean;
+    /** Search leaves out channels whose guide says they're off air ("Sendepause", "No Event") */
+    hideOffAir: boolean;
   };
   player: {
     skipBackSeconds: 5 | 10 | 15 | 30;
@@ -234,6 +236,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     guideHoursVisible: 3,
     guideOnlyWithEpg: false,
     mergeVariants: true,
+    hideOffAir: true,
   },
   player: {
     skipBackSeconds: 10,

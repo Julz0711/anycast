@@ -1,7 +1,7 @@
 /** One box, instant results grouped Live / Movies / Series. Debounced; stale requests are aborted. */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import type { SearchResults } from '@anycast/shared';
+import { isOffAir, type SearchResults } from '@anycast/shared';
 import { call, errorMessage, isAbort } from '../api/client';
 import { remember, visibleCategories } from '../api/catalog';
 import { setZapList } from '../store/actions';
@@ -28,6 +28,9 @@ export function SearchScreen() {
   const version = useApp((s) => s.catalogVersion);
   /** shown under a channel without guide data */
   const cats = useAsync(() => visibleCategories('live', rules), [rules, version]);
+  const hideOffAir = useApp((s) => s.prefs.live.hideOffAir);
+  const [showOffAir, setShowOffAir] = useState(false);
+  useEffect(() => setShowOffAir(false), [q]);
   const catNames = useMemo(() => new Map((cats.data ?? []).map((c) => [c.id, catLabel(c)])), [cats.data]);
 
   useEffect(() => {
@@ -64,6 +67,9 @@ export function SearchScreen() {
   }, [q, setParams]);
 
   const empty = res && res.live.length + res.movies.length + res.series.length === 0;
+  /** channels whose guide says nothing is on ("Sendepause") go out unless asked for */
+  const offAir = res && hideOffAir && !showOffAir ? res.live.filter((c) => c.now && c.now.end > now && isOffAir(c.now.title)).length : 0;
+  const live = res ? (offAir ? res.live.filter((c) => !(c.now && c.now.end > now && isOffAir(c.now.title))) : res.live) : [];
 
   return (
     <div>
@@ -90,13 +96,13 @@ export function SearchScreen() {
         {!q.trim() && <Empty title="Find anything">Type a channel, movie or series name. Results appear as you type.</Empty>}
         {empty && !loading && <Empty title={`Nothing found for "${q.trim()}"`}>Check the spelling, or it may be hidden by your filters.</Empty>}
         {loading && !res && <ResultsSkeleton />}
-        {res && res.live.length > 0 && (
+        {res && res.live.length > 0 && (live.length > 0 || offAir > 0) && (
           <section className="search-group" aria-label="Live channels">
             <div className="row-title">
               <h2>Live</h2>
             </div>
             <div className="search-live">
-              {res.live.map((ch) => (
+              {live.map((ch) => (
                 <ChannelRow
                   key={ch.id}
                   ch={ch}
@@ -104,13 +110,21 @@ export function SearchScreen() {
                   showNext={form !== 'phone'}
                   category={catNames.get(ch.categoryId)}
                   onOpen={(id) => {
-                    setZapList(res.live.map((c) => c.id));
+                    setZapList(live.map((c) => c.id));
                     writeLocal('anycast.lastChannel', id);
                     navigate(`/play/live/${id}`);
                   }}
                 />
               ))}
             </div>
+            {offAir > 0 && (
+              <p className="search-offair muted">
+                {offAir === 1 ? '1 channel' : `${offAir} channels`} off air right now{' '}
+                <button type="button" className="link-btn" onClick={() => setShowOffAir(true)}>
+                  Show
+                </button>
+              </p>
+            )}
           </section>
         )}
         {res && res.movies.length > 0 && (

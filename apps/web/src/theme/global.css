@@ -266,6 +266,8 @@ h1, h2, h3, p { margin: 0; }
 .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--poster-w), 1fr)); gap: 1rem; }
 [data-form="phone"] .poster-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; padding: 0 var(--gutter); }
 [data-form="phone"] .search-live { padding: 0; }
+.search-offair { padding: 0.5rem 0.75rem 0; font-size: 0.875rem; }
+[data-form="phone"] .search-offair { padding: 0.5rem var(--gutter) 0; }
 
 /* ---------- live screen ---------- */
 .live-screen { display: flex; flex-direction: column; height: 100%; min-height: 0; }
