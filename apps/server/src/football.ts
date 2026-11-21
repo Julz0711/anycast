@@ -48,8 +48,8 @@ export function homeKey(description: string | null | undefined): string | null {
 
 /** kickoff from this long before the programme starts ... */
 const BEFORE_MS = 20 * 60_000;
-/** ... to this long after (pre-match shows start 15-45 min early) */
-const AFTER_MS = 75 * 60_000;
+/** ... to this long after (pre-match shows start 15-90 min early) */
+const AFTER_MS = 105 * 60_000;
 
 /** The fixture a programme shows, or null when unsure. */
 export function findFixture(p: Pick<EpgProgram, 'description' | 'start'>, fixtures: Fixture[]): Fixture | null {
