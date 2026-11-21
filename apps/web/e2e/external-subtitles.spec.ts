@@ -148,7 +148,8 @@ test('on a TV: the remote reaches the close button, Back closes the menu, and dr
 
   // Back on the remote (Vega's WebView may name it anything but Escape) closes it, and the player stays
   await open();
-  const key = (init: KeyboardEventInit) => page.evaluate((i) => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { ...i, bubbles: true, cancelable: true })), init);
+  const key = (init: { key: string; keyCode?: number }) =>
+    page.evaluate(({ key, keyCode }) => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, keyCode, bubbles: true, cancelable: true })), init);
   await key({ key: 'GoBack' });
   await expect(menu).toBeHidden();
   await expect(page).toHaveURL(new RegExp(`/play/movie/${id}`));
