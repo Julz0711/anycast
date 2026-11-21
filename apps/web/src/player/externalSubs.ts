@@ -45,9 +45,12 @@ function firstEndingAfter(cues: Cue[], t: number): number {
   return lo;
 }
 
-/** The cues showing at video time `t`, with `offsetMs` (positive: the subtitles come later). */
-export function activeCues(cues: Cue[], t: number, offsetMs: number): Cue[] {
-  const at = t - offsetMs / 1000;
+/**
+ * The cues showing at video time `t`, with `offsetMs` (positive: the subtitles come later) and the
+ * drift fix `rate` (a cue made for time c shows at c × rate + offset, see SUBTITLE_DRIFT).
+ */
+export function activeCues(cues: Cue[], t: number, offsetMs: number, rate = 1): Cue[] {
+  const at = (t - offsetMs / 1000) / (rate > 0 ? rate : 1);
   const out: Cue[] = [];
   // a cue longer than 30 s is rare; starting there keeps this cheap every frame
   for (let i = firstEndingAfter(cues, at); i < cues.length; i++) {

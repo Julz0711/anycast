@@ -1,21 +1,33 @@
 /**
  * Audio & subtitles menu (PB-3): two columns of radio items. Arrow keys move within a column
- * (up/down) and between the columns (left/right), on every device; Escape closes (PlayerScreen).
+ * (up/down) and between the columns (left/right), on every device; up from the top of a column or
+ * right from the last one reaches the close button (a TV remote has no pointer). Escape or a
+ * remote's Back closes (PlayerScreen).
  *
  * Movies and episodes also list external subtitles (kept files, found online or loaded from the
- * device), with a timing control for the one showing, and a search view for finding more.
+ * device), with a timing control for the one showing (steps of 0.5 s and 5 s, and a drift fix for
+ * subtitles made for another frame rate), and a search view for finding more.
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import type { PlaybackTracks, SubtitleSearchResult } from '@anycast/shared';
+import { SUBTITLE_DRIFT, type PlaybackTracks, type SubtitleSearchResult } from '@anycast/shared';
 import { call, errorMessage } from '../api/client';
 import { IconBack, IconClose } from '../components/Icons';
 import { COMMON_LANGUAGES, languageName } from '../lib/lang';
 import { fmtOffset } from './externalSubs';
 import { audioLabel, subtitleLabel } from './tracks';
-import type { ExternalSubtitles } from './useExternalSubtitles';
+import { rateOf, type ExternalSubtitles } from './useExternalSubtitles';
 
 const NO_TRACKS: PlaybackTracks = { audio: [], subtitles: [], audioIndex: null, subtitleIndex: null, subtitlesInStream: false };
-const OFFSET_STEP = 500;
+const STEP = 500;
+const BIG_STEP = 5000;
+
+/** The drift fix as a choice: the rate it stands for (null = worked out from the frame rates). */
+const DRIFT_CHOICES: { label: string; rate: number; hint: string }[] = [
+  { label: 'None', rate: 1, hint: 'Subtitles stay as made' },
+  { label: 'Later and later', rate: SUBTITLE_DRIFT.later, hint: 'Fixes subtitles that fall further behind as it plays (made for 23.976 fps, video at 25)' },
+  { label: 'Earlier and earlier', rate: SUBTITLE_DRIFT.earlier, hint: 'Fixes subtitles that come earlier and earlier (made for 25 fps, video at 23.976)' },
+];
+const near = (a: number, b: number) => Math.abs(a - b) < 0.001;
 
 export interface ExternalMenu {
   kind: 'movie' | 'episode';
@@ -54,17 +66,30 @@ export function TracksMenu(props: {
     if (k !== 'ArrowUp' && k !== 'ArrowDown' && k !== 'ArrowLeft' && k !== 'ArrowRight') return;
     if ((e.target as HTMLElement).tagName === 'SELECT') return;
     const cols = [...(ref.current?.querySelectorAll<HTMLElement>('.pl-menu-col') ?? [])];
-    const col = cols.findIndex((c) => c.contains(document.activeElement));
-    if (col < 0) return;
+    const close = ref.current?.querySelector<HTMLElement>('.pl-menu-close') ?? undefined;
     const items = (c: HTMLElement) => [...c.querySelectorAll<HTMLElement>('.pl-menu-item:not(:disabled)')];
+    const entry = (c: HTMLElement | undefined) => c && (c.querySelector<HTMLElement>('.pl-menu-item[aria-checked="true"]') ?? items(c)[0]);
     let target: HTMLElement | undefined;
-    if (k === 'ArrowUp' || k === 'ArrowDown') {
-      const list = items(cols[col]!);
-      const i = list.indexOf(document.activeElement as HTMLElement);
-      target = list[i + (k === 'ArrowDown' ? 1 : -1)];
+    if (close && document.activeElement === close) {
+      // from the close button: back into the last column
+      if (k === 'ArrowDown' || k === 'ArrowLeft') target = entry(cols[cols.length - 1]);
     } else {
-      const other = cols[col + (k === 'ArrowRight' ? 1 : -1)];
-      if (other) target = other.querySelector<HTMLElement>('.pl-menu-item[aria-checked="true"]') ?? items(other)[0];
+      const col = cols.findIndex((c) => c.contains(document.activeElement));
+      if (col < 0) return;
+      if (k === 'ArrowUp' || k === 'ArrowDown') {
+        const list = items(cols[col]!);
+        const i = list.indexOf(document.activeElement as HTMLElement);
+        target = list[i + (k === 'ArrowDown' ? 1 : -1)] ?? (k === 'ArrowUp' ? close : undefined);
+      } else {
+        // a row of buttons (the timing steps): left and right move along it first
+        const row = (document.activeElement as HTMLElement).closest<HTMLElement>('[data-menu-row]');
+        if (row) {
+          const inRow = items(row);
+          const i = inRow.indexOf(document.activeElement as HTMLElement);
+          target = inRow[i + (k === 'ArrowRight' ? 1 : -1)];
+        }
+        if (!target) target = col + (k === 'ArrowRight' ? 1 : -1) < cols.length ? entry(cols[col + (k === 'ArrowRight' ? 1 : -1)]) : k === 'ArrowRight' ? close : undefined;
+      }
     }
     e.preventDefault();
     e.stopPropagation();
@@ -134,25 +159,7 @@ export function TracksMenu(props: {
             </span>
           </button>
         ))}
-        {ext?.active && (
-          <div className="pl-subs-timing" role="group" aria-label="Subtitle timing">
-            <span className="pl-menu-detail">Timing</span>
-            <button type="button" className="pl-menu-item pl-subs-step" aria-label="Show subtitles earlier" onClick={() => ext.setOffset(ext.active!.offsetMs - OFFSET_STEP)}>
-              −0.5 s
-            </button>
-            <span className="pl-subs-offset tabnum" aria-live="polite">
-              {fmtOffset(ext.active.offsetMs)}
-            </span>
-            <button type="button" className="pl-menu-item pl-subs-step" aria-label="Show subtitles later" onClick={() => ext.setOffset(ext.active!.offsetMs + OFFSET_STEP)}>
-              +0.5 s
-            </button>
-            {ext.active.offsetMs !== 0 && (
-              <button type="button" className="pl-menu-item pl-subs-step" onClick={() => ext.setOffset(0)}>
-                Reset
-              </button>
-            )}
-          </div>
-        )}
+        {ext?.active && <Timing ext={ext} />}
         {external && (
           <>
             <button type="button" className="pl-menu-item pl-menu-action" onClick={() => setView('search')}>
@@ -191,6 +198,59 @@ export function TracksMenu(props: {
         <IconClose />
       </button>
     </div>
+  );
+}
+
+/* ---------------- timing of an external subtitle ---------------- */
+
+function Timing({ ext }: { ext: ExternalSubtitles }) {
+  const a = ext.active!;
+  const rate = rateOf(a);
+  const step = (ms: number) => ext.setOffset(a.offsetMs + ms);
+  const autoOn = a.rate === null && !near(a.autoRate, 1);
+  return (
+    <>
+      <div className="pl-subs-timing" role="group" aria-label="Subtitle timing" data-menu-row="">
+        <span className="pl-menu-detail">Timing</span>
+        <button type="button" className="pl-menu-item pl-subs-step" aria-label="Show subtitles 5 seconds earlier" onClick={() => step(-BIG_STEP)}>
+          −5
+        </button>
+        <button type="button" className="pl-menu-item pl-subs-step" aria-label="Show subtitles half a second earlier" onClick={() => step(-STEP)}>
+          −0.5
+        </button>
+        <span className="pl-subs-offset tabnum" aria-live="polite">
+          {fmtOffset(a.offsetMs)}
+        </span>
+        <button type="button" className="pl-menu-item pl-subs-step" aria-label="Show subtitles half a second later" onClick={() => step(STEP)}>
+          +0.5
+        </button>
+        <button type="button" className="pl-menu-item pl-subs-step" aria-label="Show subtitles 5 seconds later" onClick={() => step(BIG_STEP)}>
+          +5
+        </button>
+        {a.offsetMs !== 0 && (
+          <button type="button" className="pl-menu-item pl-subs-step" onClick={() => ext.setOffset(0)}>
+            Reset
+          </button>
+        )}
+      </div>
+      <div className="pl-subs-timing pl-subs-drift" role="radiogroup" aria-label="Subtitle drift" data-menu-row="">
+        <span className="pl-menu-detail">Drift</span>
+        {DRIFT_CHOICES.map((c) => (
+          <button
+            key={c.label}
+            type="button"
+            role="radio"
+            aria-checked={near(rate, c.rate)}
+            className="pl-menu-item pl-subs-step"
+            title={c.hint}
+            onClick={() => ext.setRate(near(c.rate, a.autoRate) ? null : c.rate)}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+      {autoOn && <p className="muted pl-menu-note">Drift fixed on its own: the subtitle was made for {a.file.fps} fps, the video runs at another frame rate.</p>}
+    </>
   );
 }
 

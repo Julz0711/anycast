@@ -70,12 +70,14 @@ describe('OpenSubtitles requests and results', () => {
       data: [
         { attributes: { language: 'de', download_count: 900, machine_translated: true, release: 'MT', files: [{ file_id: 1 }] } },
         { attributes: { language: 'de', download_count: 50, hearing_impaired: true, release: 'HI', files: [{ file_id: 2 }] } },
-        { attributes: { language: 'de', download_count: 40, release: 'Plain', files: [{ file_id: 3 }] } },
+        { attributes: { language: 'de', download_count: 40, release: 'Plain', fps: 23.976, files: [{ file_id: 3 }] } },
         { attributes: { language: 'de', download_count: 99, release: 'No file', files: [] } },
       ],
     });
     // most downloaded first, machine translations last
     expect(rankResults(results).map((r) => r.release)).toEqual(['HI', 'Plain', 'MT']);
+    // the frame rate it was timed for, when given (OpenSubtitles sends 0 for unknown)
+    expect(results.map((r) => r.fps)).toEqual([null, null, 23.976]);
   });
 });
 
@@ -99,7 +101,7 @@ function fakeOpenSubtitles(opts: { badKey?: boolean; results?: object[]; remaini
     if (path.startsWith('/subtitles?')) {
       return json({
         data: opts.results ?? [
-          { attributes: { language: 'de', download_count: 10, release: 'GoT.S03E05.German', feature_details: { parent_title: 'Game of Thrones', season_number: 3, episode_number: 5 }, files: [{ file_id: 111 }] } },
+          { attributes: { language: 'de', download_count: 10, release: 'GoT.S03E05.German', fps: 23.976, feature_details: { parent_title: 'Game of Thrones', season_number: 3, episode_number: 5 }, files: [{ file_id: 111 }] } },
           { attributes: { language: 'de', download_count: 999, release: 'Wrong episode', feature_details: { season_number: 3, episode_number: 6 }, files: [{ file_id: 222 }] } },
           { attributes: { language: 'de', download_count: 5, hearing_impaired: true, release: 'GoT.S03E05.HI', feature_details: { season_number: 3, episode_number: 5 }, files: [{ file_id: 333 }] } },
         ],
@@ -177,7 +179,7 @@ describe('external subtitles API', () => {
     expect(seen.at(-1)!.url).toContain('query=game+of+thrones');
 
     const dl = (await req('POST', '/api/subtitles/episode/e1/download', { fileId: '111' })).json<SubtitleDownloadResponse>();
-    expect(dl).toMatchObject({ file: { id: 'os-111', source: 'opensubtitles', language: 'de', label: 'GoT.S03E05.German', cues: 2 }, remaining: 4 });
+    expect(dl).toMatchObject({ file: { id: 'os-111', source: 'opensubtitles', language: 'de', label: 'GoT.S03E05.German', cues: 2, fps: 23.976 }, remaining: 4 });
     const downloads = seen.filter((s) => s.url.endsWith('/download')).length;
     // again: kept, no second download
     await req('POST', '/api/subtitles/episode/e1/download', { fileId: '111' });
@@ -187,7 +189,13 @@ describe('external subtitles API', () => {
     // pick it with an offset; the state remembers it per profile
     expect((await req('PUT', '/api/subtitles/episode/e1/choice', { fileId: 'os-111', offsetMs: 1500 })).statusCode).toBe(200);
     let st = (await req('GET', '/api/subtitles/episode/e1')).json<ExternalSubtitleState>();
-    expect(st).toMatchObject({ online: true, choice: { fileId: 'os-111', offsetMs: 1500 } });
+    expect(st).toMatchObject({ online: true, choice: { fileId: 'os-111', offsetMs: 1500, rate: null } });
+    // a drift fix picked in the menu is kept with it (and kept within bounds)
+    await req('PUT', '/api/subtitles/episode/e1/choice', { fileId: 'os-111', offsetMs: 1500, rate: 0.95904 });
+    expect((await req('GET', '/api/subtitles/episode/e1')).json<ExternalSubtitleState>().choice).toEqual({ fileId: 'os-111', offsetMs: 1500, rate: 0.95904 });
+    await req('PUT', '/api/subtitles/episode/e1/choice', { fileId: 'os-111', offsetMs: 1500, rate: 3 });
+    expect((await req('GET', '/api/subtitles/episode/e1')).json<ExternalSubtitleState>().choice!.rate).toBe(1.1);
+    expect((await req('PUT', '/api/subtitles/episode/e1/choice', { fileId: 'os-111', rate: -1 })).statusCode).toBe(400);
     expect(st.files.map((f) => f.id)).toEqual(['os-111']);
     // the series remembers the language for its other episodes
     expect((await req('GET', '/api/subtitles/episode/e2')).json<ExternalSubtitleState>()).toMatchObject({ choice: null, seriesLanguage: 'de' });
@@ -196,7 +204,7 @@ describe('external subtitles API', () => {
     // off
     await req('PUT', '/api/subtitles/episode/e1/choice', { fileId: null });
     st = (await req('GET', '/api/subtitles/episode/e1')).json<ExternalSubtitleState>();
-    expect(st.choice).toEqual({ fileId: null, offsetMs: 0 });
+    expect(st.choice).toEqual({ fileId: null, offsetMs: 0, rate: null });
     // off in one episode: off for the series too
     expect((await req('GET', '/api/subtitles/episode/e2')).json<ExternalSubtitleState>().seriesLanguage).toBeNull();
     // subtitles turned off in the player for the stream's own tracks show as savedOff

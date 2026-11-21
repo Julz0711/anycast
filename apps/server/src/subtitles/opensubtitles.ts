@@ -34,6 +34,8 @@ export interface OsResult {
   hearingImpaired: boolean;
   machineTranslated: boolean;
   trusted: boolean;
+  /** the frame rate of the release it was timed for, when the uploader said */
+  fps: number | null;
   /** what OpenSubtitles matched the result to */
   feature: { title: string | null; year: number | null; season: number | null; episode: number | null };
 }
@@ -97,6 +99,7 @@ export function parseResults(data: unknown): OsResult[] {
       hearingImpaired: a.hearing_impaired === true,
       machineTranslated: a.machine_translated === true || a.ai_translated === true,
       trusted: a.from_trusted === true,
+      fps: num(a.fps) || null,
       feature: {
         title: str(f.parent_title) ?? str(f.title) ?? str(f.movie_name),
         year: num(f.year),

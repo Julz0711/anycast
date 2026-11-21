@@ -434,7 +434,7 @@ export interface Api {
   /** Keeps a subtitle file from the device (SRT or WebVTT, base64 of its bytes, any common encoding). */
   'POST /api/subtitles/:kind/:id/upload': { body: { name: string; data: string; language?: string | null }; res: SubtitleDownloadResponse };
   /** This profile's pick for the item (fileId null = off) and its timing offset in ms (positive = later). */
-  'PUT /api/subtitles/:kind/:id/choice': { body: { fileId: string | null; offsetMs?: number }; res: { ok: true } };
+  'PUT /api/subtitles/:kind/:id/choice': { body: { fileId: string | null; offsetMs?: number; rate?: number | null }; res: { ok: true } };
   /** A kept file as WebVTT (text/vtt). */
   'GET /api/subtitles/file/:fileId': { res: string };
   /** Admins: the OpenSubtitles login (never the key or password). */

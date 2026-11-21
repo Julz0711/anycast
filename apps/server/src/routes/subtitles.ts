@@ -15,7 +15,7 @@ const SettingsBody = z.object({
   username: z.string().max(SUBTITLE_LIMITS.username).optional(),
   password: z.string().max(SUBTITLE_LIMITS.password).optional(),
 });
-const ChoiceBody = z.object({ fileId: z.string().max(40).nullable(), offsetMs: z.number().finite().optional() });
+const ChoiceBody = z.object({ fileId: z.string().max(40).nullable(), offsetMs: z.number().finite().optional(), rate: z.number().finite().positive().nullable().optional() });
 const UploadBody = z.object({
   name: z.string().max(SUBTITLE_LIMITS.name * 2),
   // base64 of up to uploadBytes
@@ -154,7 +154,7 @@ export function subtitleRoutes(app: FastifyInstance, s: Services): void {
       const { kind, id } = item(req);
       const body = ChoiceBody.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: 'bad_request', message: 'fileId is a kept subtitle id, or null for off' });
-      sub.saveChoice(auth(req).profileId, kind, id, body.data.fileId, body.data.offsetMs);
+      sub.saveChoice(auth(req).profileId, kind, id, body.data.fileId, body.data.offsetMs, body.data.rate);
       return { ok: true as const };
     } catch (err) {
       return fail(reply, err);

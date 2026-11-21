@@ -432,4 +432,10 @@ export const MIGRATIONS: string[] = [
     PRIMARY KEY (profile_id, series_id)
   ) WITHOUT ROWID;
   `,
+  `
+  -- drift (subtitles/service.ts): the frame rate a subtitle was timed for, and the fix a profile
+  -- picked for it (cue times multiplied by rate; NULL = worked out from the frame rates)
+  ALTER TABLE subtitle_files ADD COLUMN fps REAL;
+  ALTER TABLE subtitle_choices ADD COLUMN rate REAL;
+  `,
 ];
