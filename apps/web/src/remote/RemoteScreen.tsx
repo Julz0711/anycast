@@ -6,7 +6,7 @@
  * It can be its own icon on the home screen: on this route the page points to a manifest of its
  * own (remote.webmanifest), so "Add to Home Screen" here adds the remote, not the whole app.
  */
-import type { Channel, Episode, Movie, RemoteCommand, RemoteForm, RemoteNowPlaying, Series } from '@anycast/shared';
+import type { Channel, Episode, Movie, RemoteCommand, RemoteForm, RemoteNowPlaying, SearchResults, Series } from '@anycast/shared';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError, call, errorMessage } from '../api/client';
@@ -506,7 +506,7 @@ function ContinueRows({ isActive, onOpen }: RowsProps) {
 
 function SearchRows({ isActive, onOpen }: RowsProps) {
   const [q, setQ] = useState('');
-  const [res, setRes] = useState<{ live: Channel[]; movies: Movie[]; series: Series[] } | null>(null);
+  const [res, setRes] = useState<SearchResults | null>(null);
   const [busy, setBusy] = useState(false);
   const progress = useApp((s) => s.progress);
   const seq = useRef(0);
@@ -552,7 +552,7 @@ function SearchRows({ isActive, onOpen }: RowsProps) {
       </label>
       {busy && !res ? <ListSkeleton /> : null}
       {res && !res.live.length && !res.movies.length && !res.series.length && <p className="rm-list-empty muted">Nothing found for “{q.trim()}”.</p>}
-      {res && res.live.length > 0 && <Rows label="Channels" rows={res.live.slice(0, 8).map((c) => channelRow(c, isActive))} onOpen={onOpen} />}
+      {res && res.live.length > 0 && <Rows label="Channels" rows={res.live.slice(0, 8).map((c) => channelRow(c, isActive, c.now?.title ?? null))} onOpen={onOpen} />}
       {res && res.movies.length > 0 && (
         <Rows
           label="Movies"

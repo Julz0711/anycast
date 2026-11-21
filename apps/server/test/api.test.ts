@@ -143,6 +143,17 @@ describe('catalog', () => {
     expect((await json<{ live: unknown[] }>({ url: '/api/search?q=%20%20' })).live).toEqual([]);
   });
 
+  test('live search hits carry what is on now and next', async () => {
+    const all = await json<Page<{ id: string; name: string; now: { title: string } | null }>>({ url: '/api/live?limit=500' });
+    const onAir = all.items.find((c) => c.now)!;
+    const r = await json<{ live: { id: string; now: { title: string } | null; next: { title: string } | null }[] }>({
+      url: `/api/search?q=${encodeURIComponent(onAir.name)}`,
+    });
+    const hit = r.live.find((c) => c.id === onAir.id)!;
+    expect(hit.now?.title).toBe(onAir.now!.title);
+    expect(hit).toHaveProperty('next');
+  });
+
   test('series detail fetches episodes lazily', async () => {
     const list = await json<Page<{ id: string }>>({ url: '/api/series?limit=1' });
     const detail = await json<{ seasons: { season: number; episodes: { id: string; seriesId: string }[] }[] }>({ url: `/api/series/${list.items[0]!.id}` });

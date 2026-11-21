@@ -196,7 +196,7 @@ export const ChannelRow = memo(function ChannelRow(props: {
       {live.showLogos && <LogoTile name={ch.name} logo={ch.logo} locked={ch.locked} />}
       <div className="ch-main">
         <div className="ch-top">
-          <span className="name">
+          <span className="name" title={ch.name}>
             {ch.name} {fav && !props.noFavMark && <IconStar filled className="ico ch-fav" />}
           </span>
           {live.showChannelNumbers && <span className="ch-num tabnum">{ch.number}</span>}
