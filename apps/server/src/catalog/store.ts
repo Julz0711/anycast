@@ -214,6 +214,12 @@ export function refreshHasEpg(db: Db): void {
 }
 
 /** Programs overlapping [from, to) for the given channels, keyed by AnyCast channel id. */
+/** Rewrites guide entries on their way out (football.ts names Bundesliga matches); identity by default. */
+let decorate: (p: EpgProgram) => EpgProgram = (p) => p;
+export function setProgramDecorator(fn: ((p: EpgProgram) => EpgProgram) | null): void {
+  decorate = fn ?? ((p) => p);
+}
+
 export function epgFor(db: Db, channels: Pick<ChannelRow, 'id' | 'epg_channel_id'>[], from: number, to: number): Record<string, EpgProgram[]> {
   const out: Record<string, EpgProgram[]> = {};
   const byEpg = new Map<string, string[]>();
@@ -228,7 +234,7 @@ export function epgFor(db: Db, channels: Pick<ChannelRow, 'id' | 'epg_channel_id
   for (const [epgId, ids] of byEpg) {
     const rows = stmt.all(epgId, to, from) as EpgRow[];
     for (const id of ids) {
-      out[id] = rows.map((r) => ({ channelId: id, title: r.title, description: r.description, start: r.start, end: r.end }));
+      out[id] = rows.map((r) => decorate({ channelId: id, title: r.title, description: r.description, start: r.start, end: r.end }));
     }
   }
   return out;
@@ -240,7 +246,7 @@ export function nowNext(db: Db, channel: Pick<ChannelRow, 'id' | 'epg_channel_id
     .prepare('SELECT * FROM epg WHERE epg_id = ? AND end > ? ORDER BY start LIMIT 2')
     .all(channel.epg_channel_id, now) as EpgRow[];
   const map = (r: EpgRow | undefined): EpgProgram | null =>
-    r ? { channelId: channel.id, title: r.title, description: r.description, start: r.start, end: r.end } : null;
+    r ? decorate({ channelId: channel.id, title: r.title, description: r.description, start: r.start, end: r.end }) : null;
   const first = rows[0];
   if (first && first.start <= now) return { now: map(first), next: map(rows[1]) };
   return { now: null, next: map(first) };
